@@ -318,6 +318,16 @@ extension ChartData {
         }
     }
 
+    /// "ver" (譜面のバージョン。整数)。nil なら書き出さない
+    var bxVer: Int? {
+        get { Beatrix.intValue(bx["ver"]) }
+        set {
+            var b = bx
+            if let v = newValue { b["ver"] = v } else { b.removeValue(forKey: "ver") }
+            bx = b
+        }
+    }
+
     var bxPreview: Double? {
         get { Beatrix.doubleValue(bx["preview"]) }
         set {
@@ -499,7 +509,7 @@ extension ChartData {
         out["speeds_each"] = beatrixSpeedsEach()
 
         out["notes"] = beatrixNotes()
-        return try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
+        return BeatrixJSONWriter.data(out)
     }
 
     /// ノーツ個別の速さを JSON の "speeds_each" の形にする (同じ位置に複数あるときは 1 つにまとめる)
@@ -639,4 +649,79 @@ extension ChartData {
 struct BeatrixKey: Hashable {
     let beat: Beat
     let block: Int
+}
+
+
+// MARK: - JSON の書き出し (NoteEditor と同じ見た目)
+//   ・キーの順番を固定する (上: name → maxBlock → BPM → LEVEL → difficulty → artist → offset → preview → ver
+//     → bpms → speeds → speeds_each → part → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
+//   ・字下げは 2 つ、"キー": 値 (コロンの前に空白を入れない)、中身が空の配列は []
+//   ・数は、整数なら小数点を付けない (149)、小数は短い表記 (4.7)
+
+enum BeatrixJSONWriter {
+    static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
+                           "bpms", "speeds", "speeds_each", "part", "notes"]
+    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "notes", "parts"]
+
+    static func data(_ obj: [String: Any]) -> Data {
+        var out = ""
+        write(obj, indent: 0, order: topOrder, into: &out)
+        out += "\n"
+        return Data(out.utf8)
+    }
+
+    private static func orderedKeys(_ d: [String: Any], _ order: [String]) -> [String] {
+        let known = order.filter { d[$0] != nil }
+        let rest = d.keys.filter { !order.contains($0) }.sorted()
+        return known + rest
+    }
+
+    private static func write(_ v: Any, indent: Int, order: [String], into out: inout String) {
+        let pad = String(repeating: "  ", count: indent)
+        let pad1 = String(repeating: "  ", count: indent + 1)
+        if let d = v as? [String: Any] {
+            if d.isEmpty { out += "{}"; return }
+            out += "{\n"
+            let keys = orderedKeys(d, order)
+            for (i, k) in keys.enumerated() {
+                out += pad1 + string(k) + ": "
+                write(d[k]!, indent: indent + 1, order: innerOrder, into: &out)
+                out += i == keys.count - 1 ? "\n" : ",\n"
+            }
+            out += pad + "}"
+        } else if let a = v as? [Any] {
+            if a.isEmpty { out += "[]"; return }
+            out += "[\n"
+            for (i, e) in a.enumerated() {
+                out += pad1
+                write(e, indent: indent + 1, order: innerOrder, into: &out)
+                out += i == a.count - 1 ? "\n" : ",\n"
+            }
+            out += pad + "]"
+        } else if let s = v as? String {
+            out += string(s)
+        } else if let n = v as? NSNumber {
+            out += number(n)
+        } else if v is NSNull {
+            out += "null"
+        } else {
+            out += string("\(v)")
+        }
+    }
+
+    private static func number(_ n: NSNumber) -> String {
+        if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue ? "true" : "false" }
+        let d = n.doubleValue
+        if !d.isFinite { return "0" }
+        if d == d.rounded() && abs(d) < 1e15 { return String(Int64(d)) }
+        return "\(d)"          // Swift の Double の表記は、元の値に戻せるいちばん短い形 (4.7 など)
+    }
+
+    private static func string(_ s: String) -> String {
+        if let data = try? JSONSerialization.data(withJSONObject: s, options: [.fragmentsAllowed, .withoutEscapingSlashes]),
+           let t = String(data: data, encoding: .utf8) {
+            return t
+        }
+        return "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
 }

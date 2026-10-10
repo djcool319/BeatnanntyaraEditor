@@ -515,6 +515,7 @@ private struct InformationWindowContent: View {
     @ObservedObject var state: EditorState
     @State private var levelText: String
     @State private var previewText: String
+    @State private var verText: String
     @State private var offsetText: String
     @State private var unit: BeatrixOffsetUnit
 
@@ -523,6 +524,7 @@ private struct InformationWindowContent: View {
         // 開いた最初のフレームから値が入っているように、ここで決める
         self._levelText = State(initialValue: Self.numberText(state.chart.bxLevel))
         self._previewText = State(initialValue: state.chart.bxPreview.map { Self.numberText($0) } ?? "")
+        self._verText = State(initialValue: state.chart.bxVer.map { String($0) } ?? "")
         self._offsetText = State(initialValue: String(state.chart.bxOffsetRaw))
         self._unit = State(initialValue: BeatrixOffsetUnit.current)
     }
@@ -544,6 +546,7 @@ private struct InformationWindowContent: View {
                     }
                     labeled("LEVEL") { SideWideField(text: $levelText, keyboard: .decimalPad) }
                     labeled("プレビュー開始 (秒)") { SideWideField(text: $previewText, keyboard: .decimalPad) }
+                    labeled("ver (整数。空欄なら書き出さない)") { SideWideField(text: $verText, keyboard: .numberPad) }
                 }
                 Group {
                     labeled("offset (サンプル数。\(Int(Beatrix.offsetSampleRate)) = 1 秒あとにずらす)") {
@@ -583,6 +586,18 @@ private struct InformationWindowContent: View {
                 }
             } else if let v = Double(t), v != state.chart.bxPreview {
                 state.chart.bxPreview = v
+                state.metaChanged()
+            }
+        }
+        .onChange(of: verText) { text in
+            let t = text.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty {
+                if state.chart.bxVer != nil {
+                    state.chart.bxVer = nil
+                    state.metaChanged()
+                }
+            } else if let v = Int(t), v != state.chart.bxVer {
+                state.chart.bxVer = v
                 state.metaChanged()
             }
         }
