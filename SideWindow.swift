@@ -754,6 +754,12 @@ private struct SettingWindowContent: View {
 
             SideDivider()
 
+            checkRow(title: "タップした位置のすぐ下の線にノーツを置く",
+                     note: "オンのとき (初期値): ノーツの棒は線の少し上に描かれるので、棒を出したいマスの中をタップすると、そのマスの下の線に置かれます。オフにすると、タップした位置にいちばん近い線に置きます (前の動き)。",
+                     isOn: $state.placeOnLowerLine)
+
+            SideDivider()
+
             checkRow(title: "slide modifyでのsegの移動で縦方向の移動を許可する",
                      note: "オフのとき (初期値): Slide modify で seg を動かしても、横 (x) にだけ動きます。時間 (拍) は変わりません。オンにすると、縦にも動かせます (1/n 拍に吸着)。",
                      isOn: $state.allowSegVerticalMove)

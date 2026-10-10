@@ -10,6 +10,17 @@ extension EditorState {
         Beat.nearest(max(0, v), den: snapDen)
     }
 
+    /// ノーツを置くときの拍。
+    /// placeOnLowerLine (初期設定): タップした位置の「すぐ下の線」に置く。ノーツの棒は線の少し上 (マスの下の方) に描かれるので、
+    ///   棒が出てほしいマスの中をタップすれば、そこに置ける
+    /// オフ: いちばん近い線に置く (これまでの動き)
+    func placeBeat(_ y: CGFloat, _ g: LaneGeo) -> Beat {
+        let v = max(0, g.beatOf(y))
+        guard placeOnLowerLine else { return snapBeat(v) }
+        let den = max(1, snapDen)
+        return Beat.ticks(Int((v * Double(den) + 1e-6).rounded(.down)), den: den)
+    }
+
     /// 中心x(0...255)から、保存用の (x, w) を決める。
     /// びーとり: 幅はいつもレーンの 1/3。位置は、タップ / 赤タップのツールなら 3 鍵 (block 0 / 3 / 6)、
     /// それ以外 (ホールド / ワイプ / スライド / Slide modify) は 7 鍵 (block 0〜6) のいちばん近い所。
@@ -42,7 +53,7 @@ extension EditorState {
             if ended && !moved { orderTap(at: current, g: g) }     // 「順番に選択」: タップしたスライドに番号を付ける
 
         case .note, .red, .wipe:
-            let b = snapBeat(g.beatOf(current.y))
+            let b = placeBeat(current.y, g)
             let p = snapNote(centerX: g.xOf(current.x), widthUnits: widthUnits)
             let type: Int? = tool == .wipe ? 4 : (tool == .red ? 3 : nil)
             if ended {
@@ -55,7 +66,7 @@ extension EditorState {
         case .hold:
             // 1 回目のタップ = 始点 (7 鍵)、2 回目のタップ = 終点 (始点と同じ鍵。横の位置は見ない)。
             // 始点 (タップ) は、Hold ボタンが「始点あり」のとき保存で自動で付く。「始点なし」のときは付けない
-            let b = snapBeat(g.beatOf(current.y))
+            let b = placeBeat(current.y, g)
             if let d = holdDraft {
                 if ended {
                     ghost = nil
@@ -89,7 +100,7 @@ extension EditorState {
             //   作成中のとき    : タップするたびに seg を足す (時系列の順でなくてよい)。
             //                     直前に置いた点 (終点) より前の時間 (始点より前 = beat がマイナスも) は、SETTING の「beatが時系列順でないsegを置くのを許可する」がオンのときだけ置ける。
             //                     オフのときは、終点より前の時間をタップすると「完」と同じ (seg の配置を終える)
-            let b = snapBeat(g.beatOf(current.y))
+            let b = placeBeat(current.y, g)
             if let base = slideDraftBase(), let from = slideDraftLastPoint() {
                 let p = snapNote(centerX: g.xOf(current.x), widthUnits: base.w)
                 if !allowUnorderedSeg && b < from.beat {
@@ -120,7 +131,7 @@ extension EditorState {
             }
 
         case .part:
-            if ended && !moved { partTap(beat: snapBeat(g.beatOf(current.y))) }
+            if ended && !moved { partTap(beat: placeBeat(current.y, g)) }
 
         case .selectRange:
             if ended && !moved {
@@ -925,7 +936,7 @@ extension EditorState {
     /// タップした位置 (拍は 1/n に吸着、x はグリッドに吸着) に seg を足す
     private func addSegAt(note i: Int, point p: CGPoint, g: LaneGeo) {
         let n = chart.notes[i]
-        let b = snapBeat(g.beatOf(p.y))
+        let b = placeBeat(p.y, g)
         let lastBeat = n.segs.last.map { n.beat + $0.beat } ?? n.beat      // 終点の seg (いちばん最後に置いた点) の時間
         if !allowUnorderedSeg && b < lastBeat {
             deselectModifySlide()                       // 時系列順でない位置は置けない設定のとき: 置かずに、選択を外す

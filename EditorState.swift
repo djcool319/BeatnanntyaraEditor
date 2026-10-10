@@ -216,6 +216,11 @@ final class EditorState: ObservableObject {
     // Slide modify で seg を動かすとき、縦 (時間) 方向にも動かせるようにするか。次回起動時も保存される。初期値はオフ (本家と同じ)
     //   オフ: seg は横 (x) にだけ動く。拍 (時間) は掴んだ時のまま
     //   オン: 縦にも動く (1/n 拍に吸着)
+    // ノーツを置く位置: true (初期値) = タップした位置のすぐ下の線 / false = いちばん近い線。次回起動時も保存される
+    @Published var placeOnLowerLine = true {
+        didSet { UserDefaults.standard.set(placeOnLowerLine, forKey: "editor.placeOnLowerLine") }
+    }
+
     @Published var allowSegVerticalMove = false {
         didSet { UserDefaults.standard.set(allowSegVerticalMove, forKey: "editor.allowSegVerticalMove") }
     }
@@ -347,6 +352,7 @@ final class EditorState: ObservableObject {
             self.allowUnorderedSeg = v          // 前の版の設定「beatがマイナスのsegを置くのを許可する」の値を引き継ぐ
         }
         if let v = ud.object(forKey: "editor.allowSegVerticalMove") as? Bool { self.allowSegVerticalMove = v }
+        if let v = ud.object(forKey: "editor.placeOnLowerLine") as? Bool { self.placeOnLowerLine = v }
         if let v = ud.object(forKey: "editor.holdDeselectSec") as? Double {
             self.holdDeselectSec = min(max(v, Self.holdRange.lowerBound), Self.holdRange.upperBound)
         }
