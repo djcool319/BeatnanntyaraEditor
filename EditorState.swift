@@ -154,7 +154,7 @@ final class EditorState: ObservableObject {
     var tempoDetectCancel: TempoDetectCancelFlag? = nil
     @Published var holdDraft: HoldDraft? = nil       // Hold ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdWithHead = true               // Hold ツールで置くホールドに始点を付けるか (Hold ボタンで切り替え)
-    @Published var playbackCorrection = 41          // 再生の補正 (ms)。変えるときは setPlaybackCorrection
+    @Published var playbackCorrection = 0           // 再生の補正 (ms)。変えるときは setPlaybackCorrection
     @Published var slideWithHead = true {            // Slide ツールで置くスライドに始点を付けるか (Slide ボタンで切り替え。次回起動時も保存)
         didSet { UserDefaults.standard.set(slideWithHead, forKey: "editor.slideWithHead") }
     }
@@ -371,11 +371,8 @@ final class EditorState: ObservableObject {
         if let v = ud.object(forKey: "editor.holdDeselectSec") as? Double {
             self.holdDeselectSec = min(max(v, Self.holdRange.lowerBound), Self.holdRange.upperBound)
         }
-        if let v = ud.object(forKey: "beatrix.playbackCorrectionMs") as? Int {
-            self.playbackCorrection = v
-        } else if let v = ud.object(forKey: "beatrix.playbackCorrection") as? Int {
-            self.playbackCorrection = Int((Double(v) / 44.1).rounded())     // 前はサンプル数 (44100 = 1 秒) で持っていた
-        }
+        // 前のサンプル数の設定 (beatrix.playbackCorrection = 1800) は使わない。ms にしたので、本家と同じく 0 から
+        if let v = ud.object(forKey: "beatrix.playbackCorrectionMs") as? Int { self.playbackCorrection = v }
         Beatrix.playbackCorrectionMs = playbackCorrection
         prepareEngineAudio()
         // offset は ms (曲のサンプリング周波数に関係ない)

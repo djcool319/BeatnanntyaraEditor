@@ -518,3 +518,13 @@
    - 再生中に offset を変えても曲を止めない
 10. ソフランを「全体（speeds）」と「個別（speeds_each）」に分けた（今回）
 11. 難易度を切り替えるときに part を引き継ぐようにした（今回）
+
+## 10. offset を ms にした（2026-10-11）
+
+- JSON の `offset` は ms（1000 = 1 秒）。曲のサンプルレートは関係ない
+- Unity 側の設定（ユーザーが対応する方針）:
+  - `Chart Offset Sample Rate`: 44100 → 1000（offset いくつで 1 秒か）
+  - `Editor Playback Correction Samples`: 1800 → 0（同じ単位で引かれるので、1800 のままだと 1.8 秒ずれる）
+  - `Offset Adjust Ms`: 今の値のまま（全曲まとめてずらす用）
+- エディタの「再生の補正」も ms・初期値 0（Unity と同じ）
+- 前の形式（サンプル数）の譜面は、Information の「サンプル数 → ms に変換」で 1 回だけ変換する

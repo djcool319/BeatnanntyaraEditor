@@ -795,9 +795,9 @@ private struct SettingWindowContent: View {
                     SideSmallButton(title: "-1") { state.setPlaybackCorrection(state.playbackCorrection - 1) }
                     SideSmallButton(title: "+1") { state.setPlaybackCorrection(state.playbackCorrection + 1) }
                     SideSmallButton(title: "+10") { state.setPlaybackCorrection(state.playbackCorrection + 10) }
-                    SideSmallButton(title: "41 に戻す") { state.setPlaybackCorrection(41) }
+                    SideSmallButton(title: "0 に戻す") { state.setPlaybackCorrection(0) }
                 }
-                Text("JSON の offset は変えずに、エディタの再生とテストプレイのときだけノーツを早めます。前の譜面エディタ (NoteEditor) はノーツ音を 1800 サンプル (約 41ms) 早く鳴らしていたので、初期値は 41ms です。ずれるときに調整してください (+ にするとノーツが早く、− にすると遅くなります)。曲を再生したまま変えられます。")
+                Text("JSON の offset は変えずに、エディタの再生とテストプレイのときだけノーツを早めます。本家 (Unity) の Editor Playback Correction と同じく、初期値は 0 です。エディタで聞いたときだけずれるときに調整してください (+ にするとノーツが早く、− にすると遅くなります)。本家と違う値にすると、エディタで合わせた offset が本家ではずれます。曲を再生したまま変えられます。")
                     .font(.system(size: 11))
                     .foregroundColor(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)

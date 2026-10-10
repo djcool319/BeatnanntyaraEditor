@@ -38,9 +38,8 @@ enum Beatrix {
     static var offsetSampleRate: Double = 1000
 
     /// 再生のときだけ使う補正 (ms)。JSON の offset はそのまま。
-    /// 前の譜面エディタ (NoteEditor) は、ノーツ音を 1800 サンプル (約 41ms) 早く鳴らして合わせていた (ClapSoundPlayer の clapOffsetSamples)。
-    /// それと同じになるよう、初期値は 41ms (SETTING で変えられる)
-    static var playbackCorrectionMs: Int = 41
+    /// 本家 (Unity) の Editor Playback Correction と同じ考え方。offset を ms にしたので、本家と同じく初期値は 0 (SETTING で変えられる)
+    static var playbackCorrectionMs: Int = 0
 
     /// 3 鍵の 1 マスの幅 (タップを横に動かすときの 1 段)
     static let noteW = 85
