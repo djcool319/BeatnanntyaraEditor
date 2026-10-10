@@ -211,7 +211,9 @@ final class BeatrixGameView: UIView, GameSessionView {
         scoreLabel.frame = CGRect(x: 10, y: 0, width: 290, height: 34)
         titleBox.frame = CGRect(x: 0, y: 52, width: 300, height: 50)
         titleLabel.frame = CGRect(x: 10, y: 0, width: 286, height: 50)
-        diffLabel.frame = CGRect(x: 0, y: 102, width: 170, height: 24)
+        // 文字の長さに合わせて帯を伸ばす (INSANE Lv.Oops! などで「...」にならないように)
+        let diffW = ceil(diffLabel.sizeThatFits(CGSize(width: 1000, height: 24)).width) + 16
+        diffLabel.frame = CGRect(x: 0, y: 102, width: max(170, diffW), height: 24)
         countsLabel.frame = CGRect(x: 10, y: 130, width: 400, height: 18)
         let g = geo()
         let midY = g.judgeY - h * 0.33

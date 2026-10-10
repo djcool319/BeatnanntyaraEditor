@@ -546,18 +546,11 @@ private struct InformationWindowContent: View {
                     labeled("プレビュー開始 (秒)") { SideWideField(text: $previewText, keyboard: .decimalPad) }
                 }
                 Group {
-                    labeled("offset (\(unit.label))") {
+                    labeled("offset (44100 = 1 秒あとにずらす)") {
                         HStack(spacing: 8) {
                             SideWideField(text: $offsetText, keyboard: .numbersAndPunctuation)
                             SideSmallButton(title: "-10ms") { nudgeOffset(-0.01) }
                             SideSmallButton(title: "+10ms") { nudgeOffset(0.01) }
-                        }
-                    }
-                    labeled("offset の単位") {
-                        HStack(spacing: 8) {
-                            ForEach(BeatrixOffsetUnit.allCases, id: \.rawValue) { u in
-                                SideChoice(title: u.label, selected: unit == u) { setUnit(u) }
-                            }
                         }
                     }
                     labeled("保存するファイル名") { readOnly(state.chart.bxFileName) }

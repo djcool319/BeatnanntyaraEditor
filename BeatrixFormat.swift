@@ -237,9 +237,10 @@ enum BeatrixOffsetUnit: Int, CaseIterable {
         }
     }
 
+    /// びーとりの offset は「44100 = 1 秒あとにずらす」で固定 (NoteEditor の OffsetSamples と同じ。切り替えはしない)
     static var current: BeatrixOffsetUnit {
-        get { BeatrixOffsetUnit(rawValue: UserDefaults.standard.integer(forKey: "beatrix.offsetUnit")) ?? .samples44100 }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "beatrix.offsetUnit") }
+        get { .samples44100 }
+        set { }
     }
 }
 

@@ -261,6 +261,8 @@ struct DifficultyBadge: View {
             HStack(spacing: 8) {
                 Text("\(d.label) Lv.\(Beatrix.lvRank(state.chart.bxLevel))")
                     .font(.system(size: 15, weight: .heavy))
+                    .lineLimit(1)
+                    .fixedSize()                          // 縮めない (「...」にしない)
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
