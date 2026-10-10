@@ -1859,7 +1859,7 @@ final class GameSession: ObservableObject {
     /// びーとり式テストプレイの offset (JSON の値。44100 = 1 秒あとにずらす)。nil のときは、これまでのテストプレイ
     @Published var chartOffsetRaw: Int? = nil
     /// びーとり式テストプレイの補正 (ms)。譜面の offset に足して使う (譜面には入らない)。− にするとノーツが早くなる。
-    /// エディタでノーツ音ぴったりに合わせた譜面が、プレイでは約 -20ms ずらしたほうがちょうどよく感じるので、初期値は -20
+    /// エディタでノーツ音ぴったりに合わせた譜面が、プレイでは約 -30ms ずらしたほうがちょうどよく感じるので、初期値は -30
     @Published var playAdjustMs: Double {
         didSet { UserDefaults.standard.set(playAdjustMs, forKey: "bx.playAdjustMs") }
     }
@@ -1872,7 +1872,13 @@ final class GameSession: ObservableObject {
         offsetMs = min(max(UserDefaults.standard.double(forKey: "slide.offset"), -300), 300)
         judgeAtEdge = (UserDefaults.standard.object(forKey: "bx.judgeAtEdge") as? Bool) ?? true
         seOn = (UserDefaults.standard.object(forKey: "bx.seOn") as? Bool) ?? true
-        playAdjustMs = min(max((UserDefaults.standard.object(forKey: "bx.playAdjustMs") as? Double) ?? -20, -100), 100)
+        var adj = (UserDefaults.standard.object(forKey: "bx.playAdjustMs") as? Double) ?? -30
+        // 初期値を -20 → -30 に変えた。前の初期値 (-20) のままの人は、1 回だけ -30 にする
+        if !UserDefaults.standard.bool(forKey: "bx.playAdjustMs.v30") {
+            UserDefaults.standard.set(true, forKey: "bx.playAdjustMs.v30")
+            if adj == -20 { adj = -30 }
+        }
+        playAdjustMs = min(max(adj, -100), 100)
     }
     
     func pause() { view?.pause() }
@@ -3127,7 +3133,7 @@ struct PauseOverlay: View {
                         Slider(value: $session.speed, in: 0.5...2.0, step: 0.1)
                     }
                     
-                    // びーとり式テストプレイ: テストプレイの補正 (譜面の offset に足す。初期値 -20ms)
+                    // びーとり式テストプレイ: テストプレイの補正 (譜面の offset に足す。初期値 -30ms)
                     if session.chartOffsetRaw != nil {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
@@ -3136,7 +3142,7 @@ struct PauseOverlay: View {
                                 Text(String(format: "%+.0f ms", session.playAdjustMs)).monospacedDigit()
                             }
                             Slider(value: $session.playAdjustMs, in: -100...100, step: 1)
-                            Text("譜面の offset はそのままで、テストプレイのときだけノーツをずらします (− で早く、+ で遅く)。エディタでノーツ音がぴったりの譜面が、プレイでちょうどよくなるよう、初期値は -20ms。次回も残ります")
+                            Text("譜面の offset はそのままで、テストプレイのときだけノーツをずらします (− で早く、+ で遅く)。エディタでノーツ音がぴったりの譜面が、プレイでちょうどよくなるよう、初期値は -30ms。次回も残ります")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }
