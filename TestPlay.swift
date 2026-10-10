@@ -1472,6 +1472,8 @@ final class GameAudio: @unchecked Sendable {
     private let cache: CachedPCMSource?       // 曲を背景で先に PCM へ展開するとき (エディタ用)。nil なら従来どおり
     private let format: AVAudioFormat
     private let sr: Double
+    /// 曲のファイルのサンプリング周波数 (44100 / 48000 など)。びーとりの offset (サンプル数) を秒にするのに使う
+    var sampleRate: Double { sr }
     
     // デコード用(decodeQueue上でのみ触る)
     private let decodeQueue = DispatchQueue(label: "malody.decode", qos: .userInteractive)
@@ -3123,7 +3125,7 @@ struct PauseOverlay: View {
                         // びーとり式テストプレイ: offset (44100 = 1 秒あとにずらす)。はじめは譜面の値。ここで変えても譜面には入らない
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("offset (44100 = 1 秒あとにずらす)")
+                                Text("offset (サンプル数。\(Int(Beatrix.offsetSampleRate)) = 1 秒)")
                                 Spacer()
                                 TextField("0", value: chartOffsetBinding, format: .number)
                                     .keyboardType(.numbersAndPunctuation)
@@ -3132,12 +3134,12 @@ struct PauseOverlay: View {
                                     .frame(width: 110)
                             }
                             HStack(spacing: 10) {
-                                Button("-10ms") { chartOffsetBinding.wrappedValue -= 441 }
+                                Button("-10ms") { chartOffsetBinding.wrappedValue -= Int(Beatrix.offsetSampleRate / 100) }
                                     .buttonStyle(.bordered)
-                                Button("+10ms") { chartOffsetBinding.wrappedValue += 441 }
+                                Button("+10ms") { chartOffsetBinding.wrappedValue += Int(Beatrix.offsetSampleRate / 100) }
                                     .buttonStyle(.bordered)
                                 Spacer()
-                                Text(String(format: "%.3f 秒", Double(session.chartOffsetRaw ?? 0) / 44100.0))
+                                Text(String(format: "%.3f 秒", Double(session.chartOffsetRaw ?? 0) / Beatrix.offsetSampleRate))
                                     .monospacedDigit()
                                     .foregroundColor(.gray)
                             }

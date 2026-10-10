@@ -30,6 +30,11 @@ enum Beatrix {
     ///   白・赤タップ = 横 0.03 / ワイプ・ホールド始点 = 0.028 (レーンの幅 0.9912 に対して 約 30% / 28%)
     static let tapW = 77
     static let sideW = 72
+    /// offset (サンプル数) を秒にするときの 1 秒あたりの値。
+    /// 本家の譜面エディタ (NoteEditor) と同じく、曲のファイルのサンプリング周波数を使う (44.1kHz の曲なら 44100、48kHz の曲なら 48000)。
+    /// 曲を読み込んだときにエディタが入れる。曲が無いときは 44100
+    static var offsetSampleRate: Double = 44100
+
     /// 3 鍵の 1 マスの幅 (タップを横に動かすときの 1 段)
     static let noteW = 85
 
@@ -314,8 +319,7 @@ extension ChartData {
     /// "offset" から、エディタの再生のオフセット (ms) を決める。
     /// びーとりの offset は「0 拍目が曲の何秒目か」、エディタの offsetMs は「譜面時刻 t の音 = 曲の t − offsetMs/1000 秒目」なので、符号が逆
     mutating func applyBeatrixOffset() {
-        let unit = BeatrixOffsetUnit.current
-        offsetMs = -Int((Double(bxOffsetRaw) / unit.perSecond * 1000.0).rounded())
+        offsetMs = -Int((Double(bxOffsetRaw) / Beatrix.offsetSampleRate * 1000.0).rounded())
     }
 
     /// "曲名(EX)"

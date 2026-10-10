@@ -362,6 +362,13 @@ final class EditorState: ObservableObject {
             self.holdDeselectSec = min(max(v, Self.holdRange.lowerBound), Self.holdRange.upperBound)
         }
         prepareEngineAudio()
+        // offset (サンプル数) は、曲のファイルのサンプリング周波数で秒にする (NoteEditor と同じ。48kHz の曲なら 48000 = 1 秒)
+        if let r = engineAudio?.sampleRate, r > 0 {
+            Beatrix.offsetSampleRate = r
+            chart.applyBeatrixOffset()
+        } else {
+            Beatrix.offsetSampleRate = 44100
+        }
         applyVolumes()
         KeySound.shared.prepare()
         BeatrixSounds.shared.prepare()

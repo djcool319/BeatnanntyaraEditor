@@ -546,7 +546,7 @@ private struct InformationWindowContent: View {
                     labeled("プレビュー開始 (秒)") { SideWideField(text: $previewText, keyboard: .decimalPad) }
                 }
                 Group {
-                    labeled("offset (44100 = 1 秒あとにずらす)") {
+                    labeled("offset (サンプル数。\(Int(Beatrix.offsetSampleRate)) = 1 秒あとにずらす)") {
                         HStack(spacing: 8) {
                             SideWideField(text: $offsetText, keyboard: .numbersAndPunctuation)
                             SideSmallButton(title: "-10ms") { nudgeOffset(-0.01) }
@@ -556,7 +556,7 @@ private struct InformationWindowContent: View {
                     labeled("保存するファイル名") { readOnly(state.chart.bxFileName) }
                     labeled("曲のファイル") { readOnly(state.oggFileName) }
                 }
-                Text("offset は「0 拍目が曲の何サンプル目か」(44100 = 1 秒)。+ にすると、ノーツが曲に対して遅くなります。\n" + audioInfo)
+                Text("offset は「0 拍目が曲の何サンプル目か」。本家の譜面エディタと同じく、曲のサンプリング周波数で数えます (この曲は \(Int(Beatrix.offsetSampleRate)) = 1 秒)。+ にすると、ノーツが曲に対して遅くなります。\n" + audioInfo)
                     .font(.system(size: 11))
                     .foregroundColor(Color.white.opacity(0.55))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -627,7 +627,7 @@ private struct InformationWindowContent: View {
 
     /// 10ms ぶん offset を動かす (単位に合わせた値で)
     private func nudgeOffset(_ sec: Double) {
-        let delta = Int((sec * unit.perSecond).rounded())
+        let delta = Int((sec * Beatrix.offsetSampleRate).rounded())
         offsetText = String(state.chart.bxOffsetRaw + delta)
     }
 
