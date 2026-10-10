@@ -1845,6 +1845,12 @@ final class GameSession: ObservableObject {
     @Published var judgeAtEdge: Bool {
         didSet { UserDefaults.standard.set(judgeAtEdge, forKey: "bx.judgeAtEdge") }
     }
+    /// びーとり式テストプレイの効果音 (オフにすると、タップ・ワイプ・赤・「しゅ〜」を鳴らさない)
+    @Published var seOn: Bool {
+        didSet { UserDefaults.standard.set(seOn, forKey: "bx.seOn") }
+    }
+    /// びーとり式テストプレイの offset (JSON の値。44100 = 1 秒あとにずらす)。nil のときは、これまでのテストプレイ
+    @Published var chartOffsetRaw: Int? = nil
     weak var view: GameSessionView?          // これまでの GameView か、びーとり式の BeatrixGameView
     var quit: () -> Void = {}
     
@@ -1853,6 +1859,7 @@ final class GameSession: ObservableObject {
         speed = s == 0 ? 1.0 : min(max(s, 0.5), 2.0)
         offsetMs = min(max(UserDefaults.standard.double(forKey: "slide.offset"), -300), 300)
         judgeAtEdge = (UserDefaults.standard.object(forKey: "bx.judgeAtEdge") as? Bool) ?? true
+        seOn = (UserDefaults.standard.object(forKey: "bx.seOn") as? Bool) ?? true
     }
     
     func pause() { view?.pause() }
@@ -3067,6 +3074,10 @@ struct GameRepresentable: UIViewRepresentable {
 struct PauseOverlay: View {
     @ObservedObject var session: GameSession
     
+    private var chartOffsetBinding: Binding<Int> {
+        Binding(get: { session.chartOffsetRaw ?? 0 }, set: { session.chartOffsetRaw = $0 })
+    }
+
     private var offsetBinding: Binding<Double> {
         Binding(get: { session.offsetMs },
                 set: { session.offsetMs = min(max($0.rounded(), -300), 300) })
@@ -3103,6 +3114,38 @@ struct PauseOverlay: View {
                         Slider(value: $session.speed, in: 0.5...2.0, step: 0.1)
                     }
                     
+                    // びーとり式テストプレイ: 効果音のオン / オフ
+                    if session.chartOffsetRaw != nil {
+                        Toggle("効果音 (SE)", isOn: $session.seOn)
+                    }
+
+                    if session.chartOffsetRaw != nil {
+                        // びーとり式テストプレイ: エディタの Information と同じ offset (44100 = 1 秒あとにずらす)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("offset (44100 = 1 秒あとにずらす)")
+                                Spacer()
+                                TextField("0", value: chartOffsetBinding, format: .number)
+                                    .keyboardType(.numbersAndPunctuation)
+                                    .multilineTextAlignment(.trailing)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 110)
+                            }
+                            HStack(spacing: 10) {
+                                Button("-10ms") { chartOffsetBinding.wrappedValue -= 441 }
+                                    .buttonStyle(.bordered)
+                                Button("+10ms") { chartOffsetBinding.wrappedValue += 441 }
+                                    .buttonStyle(.bordered)
+                                Spacer()
+                                Text(String(format: "%.3f 秒", Double(session.chartOffsetRaw ?? 0) / 44100.0))
+                                    .monospacedDigit()
+                                    .foregroundColor(.gray)
+                            }
+                            Text("エディタの Information の offset と同じ値です。エディタに戻ると、ここで変えた値が譜面に入ります")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    } else {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("オフセット (ms)")
@@ -3119,6 +3162,8 @@ struct PauseOverlay: View {
                             .foregroundColor(.gray)
                     }
                     
+                    }
+
                     HStack(spacing: 12) {
                         Button("終了") { session.quitGame() }
                             .buttonStyle(.bordered)

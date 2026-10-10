@@ -22,7 +22,7 @@ struct BeatrixPlayLaunch: Identifiable {
     let chart: BxPlayChart
     let audio: GameAudio?
     let startSec: Double          // 譜面時刻 (秒)。エディタの表示位置
-    let offsetSec: Double         // エディタのオフセット (chart.offsetMs / 1000)
+    let offsetRaw: Int            // 譜面の offset (JSON の値。44100 = 1 秒あとにずらす)
     let title: String
     let difficulty: BeatrixDifficulty
     let level: Double             // LEVEL (Lv の表示用)
@@ -46,7 +46,6 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let audio: GameAudio?
     private let session: GameSession
     private let startAt: Double
-    private let offsetSec: Double
     private let songTitle: String
     private let difficulty: BeatrixDifficulty
     private let level: Double
@@ -106,7 +105,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         self.audio = launch.audio
         self.session = session
         self.startAt = launch.startSec
-        self.offsetSec = launch.offsetSec
+        session.chartOffsetRaw = launch.offsetRaw          // PAUSE で変えられる (エディタに戻ると譜面に入る)
         self.songTitle = launch.title
         self.difficulty = launch.difficulty
         self.level = launch.level
@@ -190,9 +189,10 @@ final class BeatrixGameView: UIView, GameSessionView {
     private func attachSounds() {
         // 白タップ・始点 = tap / 赤タップ = red_note (+ tap) / ワイプ = yellow (ノーツが判定ラインに来たとき)
         game.onSound = { [weak self] type, t in
+            guard let self = self, self.session.seOn else { return }      // 効果音オフ
             switch type {
             case 3: BeatrixSounds.shared.playNow(.red)
-            case 4: self?.pendingWipeSounds.append(t)
+            case 4: self.pendingWipeSounds.append(t)
             default: BeatrixSounds.shared.playNow(.tap)
             }
         }
@@ -265,7 +265,9 @@ final class BeatrixGameView: UIView, GameSessionView {
     private func uptime() -> Double { ProcessInfo.processInfo.systemUptime }
 
     private func begin(at tc: Double) {
-        let off = offsetSec - session.offsetMs / 1000
+        // エディタと同じ offset (JSON の値 ÷ 44100 秒だけ、ノーツを曲に対して後ろへ)。
+        // エディタの内部の offsetMs と同じ向き: 譜面時刻 t の音 = 曲の t + offset/44100 秒目
+        let off = -Double(session.chartOffsetRaw ?? 0) / 44100.0
         if let a = audio {
             a.begin(chartTime: tc, offsetTotal: off)
         } else {
@@ -316,11 +318,11 @@ final class BeatrixGameView: UIView, GameSessionView {
         let zones = Set(touchZones.values)
         for z in zones { game.hold(zone: z, at: t) }
         game.update(to: t)
-        BeatrixSounds.shared.setHold(anyHoldActive(at: t, zones: zones))      // ホールド / スライドを押さえている間の「しゅ〜」
+        BeatrixSounds.shared.setHold(session.seOn && anyHoldActive(at: t, zones: zones))      // ホールド / スライドを押さえている間の「しゅ〜」
         if !pendingWipeSounds.isEmpty {
             let before = pendingWipeSounds.count
             pendingWipeSounds.removeAll { $0 <= t }
-            if pendingWipeSounds.count < before { BeatrixSounds.shared.playNow(.wipe) }
+            if pendingWipeSounds.count < before && session.seOn { BeatrixSounds.shared.playNow(.wipe) }
         }
         viewTime = chartTime(at: l.targetTimestamp)          // 画面に出る時刻で描く
         renderFrame()
@@ -700,7 +702,8 @@ struct BeatrixPlayRepresentable: UIViewRepresentable {
 /// フルスクリーンで出す、びーとり式のテストプレイ (右上の II → 終了 でエディタに戻る)
 struct BeatrixPlayScreen: View {
     let launch: BeatrixPlayLaunch
-    let onClose: () -> Void
+    /// 終了したとき。引数は PAUSE で変えた offset (変えていなければ元の値)
+    let onClose: (Int?) -> Void
     @StateObject private var session = GameSession()
 
     var body: some View {
@@ -727,7 +730,9 @@ struct BeatrixPlayScreen: View {
         .defersSystemGestures(on: .bottom)
         .onAppear {
             session.paused = false
-            session.quit = onClose
+            let s = session
+            let close = onClose
+            s.quit = { [weak s] in close(s?.chartOffsetRaw) }
         }
     }
 }

@@ -686,7 +686,7 @@ final class EditorState: ObservableObject {
         BeatrixSounds.shared.prepare()
         let start = max(0, timeMap.sec(atBeat: viewBeat))
         bxLaunch = BeatrixPlayLaunch(chart: played, audio: game, startSec: start,
-                                     offsetSec: Double(chart.offsetMs) / 1000.0,
+                                     offsetRaw: chart.bxOffsetRaw,
                                      title: chart.bxTitle, difficulty: chart.bxDifficulty,
                                      level: chart.bxLevel)
     }
