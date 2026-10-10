@@ -204,5 +204,7 @@ jobs:
         run: |
           echo "=== error の行 ==="
           grep -n "error:" build.log | head -40 || true
+          # エラーを Actions の「注釈」にも出す (画面の Summary にまとめて表示される)
+          grep "error:" build.log | sort -u | head -20 | while IFS= read -r line; do echo "::error::$line"; done || true
           echo "=== ログの最後 40 行 ==="
           tail -40 build.log || true
