@@ -45,7 +45,7 @@ struct RootView: View {
 
     private var importView: some View {
         VStack(spacing: 18) {
-            Text("Beatrix Chart Editor")
+            Text("BeatTriX Editor")
                 .font(.system(size: 30, weight: .bold, design: .monospaced))
             Text("譜面 (曲名(EX).json など) と音源を読み込んでから編集に入ります")
                 .foregroundColor(.secondary)

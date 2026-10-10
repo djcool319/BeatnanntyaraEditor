@@ -14,7 +14,7 @@ let package = Package(
     ],
     products: [
         .iOSApplication(
-            name: "MalodySlideEditor",
+            name: "BeatTriX Editor",
             targets: ["AppModule"],
             bundleIdentifier: "local.beatrix.charteditor",
             teamIdentifier: "",

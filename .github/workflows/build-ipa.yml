@@ -4,7 +4,7 @@
 # 動くタイミング:
 #   1) main ブランチに変更を保存(Commit)したとき  2) Actions タブの「Run workflow」ボタンを押したとき
 # 結果:
-#   リポジトリの Releases に「latest」が作られ、その中に MalodySlideEditor.ipa が入ります。
+#   リポジトリの Releases に「latest」が作られ、その中に BeatTriXEditor.ipa が入ります。
 
 name: ipaを作る
 
@@ -124,7 +124,7 @@ jobs:
             exit 1
           fi
           file "$BIN"
-          rm -rf Payload MalodySlideEditor.ipa
+          rm -rf Payload BeatTriXEditor.ipa
           mkdir -p Payload/MalodySlideEditor.app
           cp "$BIN" Payload/MalodySlideEditor.app/MalodySlideEditor
           chmod +x Payload/MalodySlideEditor.app/MalodySlideEditor
@@ -137,8 +137,8 @@ jobs:
             <key>CFBundleExecutable</key><string>MalodySlideEditor</string>
             <key>CFBundleIdentifier</key><string>local.beatrix.charteditor</string>
             <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-            <key>CFBundleName</key><string>MalodySlideEditor</string>
-            <key>CFBundleDisplayName</key><string>BeatrixEditor</string>
+            <key>CFBundleName</key><string>BeatTriX Editor</string>
+            <key>CFBundleDisplayName</key><string>BeatTriX Editor</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleShortVersionString</key><string>1.0</string>
             <key>CFBundleVersion</key><string>1</string>
@@ -164,15 +164,15 @@ jobs:
           </plist>
           PLISTEOF
           plutil -lint Payload/MalodySlideEditor.app/Info.plist
-          zip -qry MalodySlideEditor.ipa Payload
-          ls -lh MalodySlideEditor.ipa
+          zip -qry BeatTriXEditor.ipa Payload
+          ls -lh BeatTriXEditor.ipa
 
       - name: Releases に載せる (ipa を直接ダウンロードできるようにする)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest MalodySlideEditor.ipa \
+          gh release create latest BeatTriXEditor.ipa \
             --target "$GITHUB_SHA" \
             --title "最新ビルド" \
             --notes "SideStore で入れる用の ipa です (署名なし)。"
@@ -180,8 +180,8 @@ jobs:
       - name: ipa を Actions の成果物としても保存 (予備)
         uses: actions/upload-artifact@v4
         with:
-          name: MalodySlideEditor-ipa
-          path: MalodySlideEditor.ipa
+          name: BeatTriXEditor-ipa
+          path: BeatTriXEditor.ipa
 
       # 失敗したときだけ動く。ここに出る文章を、そのままコピーして Claude に貼ってください
       - name: 失敗したときの要点

@@ -1,4 +1,4 @@
-# Beatrix Chart Editor (びーとり譜面エディター / Swift Playgrounds・iPad)
+# BeatTriX Editor (びーとり譜面エディター / Swift Playgrounds・iPad)
 
 友達の Malody Slide Editor を土台にした、びーとり用の譜面エディターです。読み書きは **びーとりの JSON** (`曲名(EX).json`)。
 
