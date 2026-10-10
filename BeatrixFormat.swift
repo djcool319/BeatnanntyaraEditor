@@ -3,7 +3,7 @@ import Foundation
 // MARK: - びーとり (Beatrix) 譜面 JSON
 //
 // 形式:
-//   { "name": "曲名(EX)", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "...",
+//   { "name": "曲名", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "...",
 //     "offset": 1080, "preview": 46.86,
 //     "bpms":   [ {"LPB": 4, "num": 240, "bpm": 306}, ... ],       // 途中の BPM 変化
 //     "speeds": [ {"LPB": 4, "num": 240, "speed": 1.1}, ... ],     // ソフラン (ノーツ全体の流れる速さの倍率。その拍から先ずっと)
@@ -17,7 +17,7 @@ import Foundation
 //   ・ホールド・スライドには「始点」(タップ or ワイプ) が要る。本体と同じ LPB・num だと消えるので、
 //     LPB と num を 2 倍にした別表記で、本体のすぐ後ろに書く (読み込むときは本体に吸収する)
 //   ・difficulty: 0 = BASIC (BS) / 1 = HARD (HD) / 2 = EXTREME (EX) / 3 = INSANE (IN)。
-//     name とファイル名は「曲名(EX)」「曲名(EX).json」のように略称を付ける (付いていないと本家で読めない)
+//     ファイル名にだけ「曲名(EX).json」のように略称を付ける。name は曲名だけ (略称は付けない)
 //
 // エディタの中では、これまでどおり Malody 形式のノーツ (x: 0...255 の中心 / w: 幅) で持ち、
 // 読み込み・保存のときだけ block ⇔ x を変換する。
@@ -485,7 +485,7 @@ extension ChartData {
     /// びーとりの JSON に書き出す
     func beatrixData() throws -> Data {
         var out = bx
-        out["name"] = bxFullName
+        out["name"] = bxTitle            // name は曲名だけ (略称 (EX) などはファイル名にだけ付ける)
         if out["maxBlock"] == nil { out["maxBlock"] = Beatrix.blockCount }
         out["difficulty"] = bxDifficulty.rawValue
         if out["LEVEL"] == nil { out["LEVEL"] = 1.0 }

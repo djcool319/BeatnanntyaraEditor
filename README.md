@@ -45,7 +45,7 @@
 
 ## JSON の形 (BeatrixFormat.swift)
 ```
-{ "name": "曲名(EX)", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "", "offset": 0,
+{ "name": "曲名", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "", "offset": 0,
   "bpms":   [ {"LPB":4, "num":240, "bpm":306} ],
   "speeds": [ {"LPB":4, "num":240, "speed":1.1} ],
   "speeds_each": [ {"LPB":4, "num":256, "block":3, "speed":2.0} ],

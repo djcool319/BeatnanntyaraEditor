@@ -77,7 +77,7 @@
   const downloadButton = document.getElementById('download');
   let loadedMc = null;
 
-  // びーとりの難易度 (difficulty の番号 = 配列の位置)。name とファイル名に略称を付ける (例: 曲名(EX).json)
+  // びーとりの難易度 (difficulty の番号 = 配列の位置)。ファイル名にだけ略称を付ける (例: 曲名(EX).json)。name は曲名だけ
   const DIFFICULTIES = [
     { abbr: 'BS', words: ['BS', 'BASIC'] },
     { abbr: 'HD', words: ['HD', 'HARD'] },
@@ -325,7 +325,7 @@
     const diff = DIFFICULTIES[opts.difficulty] ? opts.difficulty : 2;
     const title = opts.title || 'Untitled';
     return {
-      name: `${title}(${DIFFICULTIES[diff].abbr})`,
+      name: title,
       maxBlock: 7,
       BPM: timing.base,
       LEVEL: opts.level,
