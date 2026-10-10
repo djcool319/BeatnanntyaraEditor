@@ -74,6 +74,63 @@ extension EditorState {
         showToast(toRed ? "赤タップにしました (\(idx.count) 個)" : "通常のタップにしました (\(idx.count) 個)")
     }
 
+    // MARK: ノーツ個別の速さ (speeds_each)
+
+    /// 選択中のノーツの速さ (入力欄の最初の値)。ばらばらなら空
+    var selectedNoteSpeedText: String {
+        let ids = selectedIDs
+        let sps = Set(chart.notes.filter { ids.contains($0.id) }.map { Beatrix.noteSpeed($0) ?? 1 })
+        guard sps.count == 1, let v = sps.first else { return "" }
+        return Beatrix.speedLabel(v)
+    }
+
+    /// 選択中のノーツに、個別の速さを付ける (1 か空欄で解除)。
+    /// 同じ位置 (拍・block が完全に一致) のノーツ (スライドの始点のタップなど) にも同じ速さを付ける
+    /// (保存する JSON では、位置ごとに 1 つの値になるため)
+    func applyNoteSpeedInput(_ text: String) {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        let ids = selectedIDs
+        if ids.isEmpty {
+            showToast("先にノーツを選択してください")
+            return
+        }
+        let t = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "×", with: "")
+            .replacingOccurrences(of: "x", with: "")
+        var value: Double? = nil
+        if !t.isEmpty {
+            guard let v = Double(t), v.isFinite, v != 0, abs(v) <= 100 else {
+                showToast("速さは 0 以外の数で入力してください (例: 2 / 0.5 / 1.25)")
+                return
+            }
+            value = abs(v - 1) < 1e-9 ? nil : v
+        }
+        var keys = Set<BeatrixKey>()
+        for n in chart.notes where ids.contains(n.id) {
+            keys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x))))
+        }
+        pushUndo()
+        var count = 0
+        for i in chart.notes.indices {
+            let n = chart.notes[i]
+            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+            if let v = value {
+                chart.notes[i].extra[Beatrix.speedKey] = v
+            } else {
+                chart.notes[i].extra.removeValue(forKey: Beatrix.speedKey)
+            }
+            count += 1
+        }
+        chartChanged()
+        if let v = value {
+            showToast("ノーツの速さを ×\(Beatrix.speedLabel(v)) にしました (\(count) 個)")
+        } else {
+            showToast("ノーツの速さを解除しました (全体のソフランだけで流れます)")
+        }
+    }
+
     // MARK: part
 
     /// Part ツールでレーンをタップしたとき。

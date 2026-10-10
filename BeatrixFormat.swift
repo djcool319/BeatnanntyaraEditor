@@ -6,7 +6,10 @@ import Foundation
 //   { "name": "曲名(EX)", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "...",
 //     "offset": 1080, "preview": 46.86,
 //     "bpms":   [ {"LPB": 4, "num": 240, "bpm": 306}, ... ],       // 途中の BPM 変化
-//     "speeds": [ {"LPB": 4, "num": 240, "speed": 1.1}, ... ],     // ソフラン (流れる速さの倍率)
+//     "speeds": [ {"LPB": 4, "num": 240, "speed": 1.1}, ... ],     // ソフラン (ノーツ全体の流れる速さの倍率。その拍から先ずっと)
+//     "speeds_each": [ {"LPB": 4, "num": 240, "block": 3, "speed": 2.0}, ... ],
+//                                                                  // ノーツ個別の速さ。LPB・num・block が完全に一致するノーツ
+//                                                                  // (ホールド・スライドは始点の位置) だけ、その倍率で流れてくる
 //     "notes":  [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []}, ... ] }
 //
 //   ・時刻は num / LPB 拍 (0 拍始まり)。block は 0〜6 (7 鍵)
@@ -51,6 +54,20 @@ enum Beatrix {
     static let headKey = "bxHead"
     /// 1 / 3 / 4 以外の type (知らない種類) を、保存のときにそのまま書き戻すためのキー
     static let rawTypeKey = "bxType"
+    /// ノーツ個別の速さ ("speeds_each")。無ければ 1 倍 (全体のソフランだけ)
+    static let speedKey = "bxSpeed"
+
+    static func noteSpeed(_ n: Note) -> Double? {
+        doubleValue(n.extra[speedKey])
+    }
+
+    /// 速さの表示 (2 → "2" / 1.25 → "1.25")
+    static func speedLabel(_ v: Double) -> String {
+        var t = String(format: "%.3f", v)
+        while t.hasSuffix("0") { t.removeLast() }
+        if t.hasSuffix(".") { t.removeLast() }
+        return t
+    }
     /// 始点を本体と別の表記にするための倍率 (本家の譜面と同じ 2 倍)
     static let headLPBMul = 2
 
@@ -358,7 +375,7 @@ extension ChartData {
         }
 
         var b = obj
-        for k in ["notes", "bpms", "speeds"] { b.removeValue(forKey: k) }
+        for k in ["notes", "bpms", "speeds", "speeds_each"] { b.removeValue(forKey: k) }
         let nameInfo = Beatrix.splitName((obj["name"] as? String) ?? "")
         b["name"] = nameInfo.title
         var diff = nameInfo.diff ?? .extreme
@@ -433,6 +450,20 @@ extension ChartData {
             notes[i].extra[Beatrix.headKey] = 0
         }
 
+        // ノーツ個別の速さ: LPB・num・block が完全に一致するノーツ (スライド / ホールドは始点) に割り当てる
+        var eachSpeed: [BeatrixKey: Double] = [:]
+        for e in (obj["speeds_each"] as? [[String: Any]]) ?? [] {
+            guard let sp = Beatrix.doubleValue(e["speed"]) else { continue }
+            let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
+            eachSpeed[BeatrixKey(beat: Beatrix.beat(of: e), block: blk)] = sp
+        }
+        if !eachSpeed.isEmpty {
+            for i in notes.indices {
+                let k = BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))
+                if let sp = eachSpeed[k] { notes[i].extra[Beatrix.speedKey] = sp }
+            }
+        }
+
         var c = ChartData(root: ["beatrix": b], times: times, notes: notes, soundEntries: [],
                           effects: effects, otherEffects: [], hadEffectKey: !effects.isEmpty)
         c.setMetaString(["song", "title"], nameInfo.title)
@@ -465,9 +496,29 @@ extension ChartData {
             speeds.append(["LPB": p.lpb, "num": p.num, "speed": e.value])
         }
         out["speeds"] = speeds
+        out["speeds_each"] = beatrixSpeedsEach()
 
         out["notes"] = beatrixNotes()
         return try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
+    }
+
+    /// ノーツ個別の速さを JSON の "speeds_each" の形にする (同じ位置に複数あるときは 1 つにまとめる)
+    func beatrixSpeedsEach() -> [[String: Any]] {
+        let sorted = notes.sorted { a, b in
+            a.beat == b.beat ? a.x < b.x : a.beat < b.beat
+        }
+        var done = Set<BeatrixKey>()
+        var out: [[String: Any]] = []
+        for n in sorted {
+            guard let sp = Beatrix.noteSpeed(n) else { continue }
+            let blk = Beatrix.block(ofX: Double(n.x))
+            let k = BeatrixKey(beat: n.beat, block: blk)
+            if done.contains(k) { continue }
+            done.insert(k)
+            let p = Beatrix.lpbNum(n.beat)
+            out.append(["LPB": p.lpb, "num": p.num, "block": blk, "speed": sp])
+        }
+        return out
     }
 
     /// ノーツを JSON の "notes" の形にする (スライド / ホールドの後ろに始点を付ける)

@@ -574,7 +574,12 @@ final class BeatrixGameView: UIView, GameSessionView {
     /// 全体を ノーツの厚みの半分だけ奥へずらして描く (判定の時刻そのものは変わらない)
     private var visualShift: Double { session.judgeAtEdge ? tapDepth / 2 : 0 }
 
-    private func depth(_ t: Double) -> Double { (t - viewTime) * depthSpeed + visualShift }
+    /// 奥行き。ソフラン (speeds) は「流れた量」pos で、ノーツ個別の速さ (speeds_each) は sp の倍率で入れる
+    private func depth(_ t: Double, _ sp: Double = 1) -> Double {
+        (source.pos(t) - nowPos) * depthSpeed * sp + visualShift
+    }
+    /// 今の「流れた量」(フレームの最初に 1 回だけ計算する)
+    private var nowPos = 0.0
 
     private static func laneFrac(_ lane: Int) -> Double { Double(3 + 2 * lane) / 18.0 }
 
@@ -620,6 +625,7 @@ final class BeatrixGameView: UIView, GameSessionView {
 
     private func renderFrame() {
         guard bounds.width > 0 else { return }
+        nowPos = source.pos(viewTime)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         renderLane()
@@ -674,8 +680,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         let hw = sideWidth / 2 * 1.0              // 帯の太さ (始点の棒と同じ幅)
         for h in source.holds {
             let active = holdActive(h, at: viewTime, zones: zones)
-            let d0 = max(depth(h.t0), 0)
-            let d1 = min(depth(h.t1), r.top)
+            let d0 = max(depth(h.t0, h.sp), 0)
+            let d1 = min(depth(h.t1, h.sp), r.top)
             if d1 <= d0 { continue }
             let f = Self.laneFrac(h.lane)
             addQuad(active ? hActive : hIdle, g, f0: f - hw, f1: f + hw, d0: d0, d1: d1)
@@ -688,29 +694,48 @@ final class BeatrixGameView: UIView, GameSessionView {
         let sActive = CGMutablePath()
         for s in source.slides {
             guard let firstP = s.pts.first, let lastP = s.pts.last else { continue }
-            if depth(lastP.t) < r.bot || depth(firstP.t) > r.top { continue }
+            if lastP.t < viewTime { continue }
+            if depth(firstP.t, s.sp) > r.top && depth(lastP.t, s.sp) > r.top { continue }
             let active = slideActive(s, at: viewTime, zones: zones)
             let path = active ? sActive : sIdle
             let lo = viewTime
-            let hi = viewTime + r.top / depthSpeed
             for k in 0..<(s.pts.count - 1) {
                 let a = s.pts[k]
                 let b = s.pts[k + 1]
-                if b.t <= a.t || b.t < lo || a.t > hi { continue }
+                if b.t <= a.t || b.t < lo { continue }
                 let fa0 = Self.laneFrac(a.lane)
                 let fb0 = Self.laneFrac(b.lane)
                 let ta = max(a.t, lo)
-                let tb = min(b.t, hi)
+                let tb = b.t
                 if tb <= ta { continue }
-                let fa = fa0 + (fb0 - fa0) * (ta - a.t) / (b.t - a.t)
-                let fb = fa0 + (fb0 - fa0) * (tb - a.t) / (b.t - a.t)
-                let da = depth(ta)
-                let db = depth(tb)
-                path.move(to: CGPoint(x: g.x(fa - hw, da), y: g.y(da)))
-                path.addLine(to: CGPoint(x: g.x(fa + hw, da), y: g.y(da)))
-                path.addLine(to: CGPoint(x: g.x(fb + hw, db), y: g.y(db)))
-                path.addLine(to: CGPoint(x: g.x(fb - hw, db), y: g.y(db)))
-                path.closeSubpath()
+                // ソフランの変わり目で区切る (区切りの中では、奥行きは時刻に比例する)
+                var cuts = [ta]
+                for sc in source.scroll where sc.t > ta && sc.t < tb { cuts.append(sc.t) }
+                cuts.append(tb)
+                for c in 0..<(cuts.count - 1) {
+                    var t0 = cuts[c]
+                    var t1 = cuts[c + 1]
+                    var d0 = depth(t0, s.sp)
+                    var d1 = depth(t1, s.sp)
+                    if d0 > r.top && d1 > r.top { continue }
+                    // 画面の奥 (r.top) より先は切る
+                    if d1 > r.top && d1 != d0 {
+                        let u = (r.top - d0) / (d1 - d0)
+                        t1 = t0 + (t1 - t0) * u
+                        d1 = r.top
+                    } else if d0 > r.top && d1 != d0 {
+                        let u = (r.top - d0) / (d1 - d0)
+                        t0 = t0 + (t1 - t0) * u
+                        d0 = r.top
+                    }
+                    let fa = fa0 + (fb0 - fa0) * (t0 - a.t) / (b.t - a.t)
+                    let fb = fa0 + (fb0 - fa0) * (t1 - a.t) / (b.t - a.t)
+                    path.move(to: CGPoint(x: g.x(fa - hw, d0), y: g.y(d0)))
+                    path.addLine(to: CGPoint(x: g.x(fa + hw, d0), y: g.y(d0)))
+                    path.addLine(to: CGPoint(x: g.x(fb + hw, d1), y: g.y(d1)))
+                    path.addLine(to: CGPoint(x: g.x(fb - hw, d1), y: g.y(d1)))
+                    path.closeSubpath()
+                }
             }
         }
         slideIdleLayer.path = sIdle
@@ -719,7 +744,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         // 同時押しの線
         let sims = CGMutablePath()
         for sim in source.sims {
-            let d = depth(sim.t)
+            let d = depth(sim.t, sim.sp)
             if d < -0.02 || d > r.top { continue }
             sims.move(to: CGPoint(x: g.x(Self.laneFrac(sim.a), d), y: g.y(d)))
             sims.addLine(to: CGPoint(x: g.x(Self.laneFrac(sim.b), d), y: g.y(d)))
@@ -731,8 +756,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         let g = geo()
         let r = depthRange
         let notes = game.notes
-        let tLo = viewTime + r.bot / depthSpeed - 0.05
-        let tHi = viewTime + r.top / depthSpeed + 0.05
+        // ソフランがあると「画面に入る時刻の範囲」が決まらないので、少し前から最後まで見て、奥行きで画面の外を飛ばす
+        let tLo = viewTime - 1.0
         // 画面に入る最初のノーツを二分探索 (ノーツは時刻順)
         var lo = 0
         var hi = notes.count
@@ -745,13 +770,14 @@ final class BeatrixGameView: UIView, GameSessionView {
         let redP = CGMutablePath()
         let wipeP = CGMutablePath()
         var i = lo
-        while i < notes.count && notes[i].t <= tHi {
+        while i < notes.count {
             let n = notes[i]
             i += 1
             if n.type == 5 { continue }
             // 取ったノーツは消す。ただしワイプは本家と同じく、判定ラインに来るまで流れ続ける (早く押しても、すぐには消えない)
             if n.done && !(n.type == 4 && viewTime < n.t) { continue }
-            let d = depth(n.t)
+            let d = depth(n.t, n.sp)
+            if d < r.bot - 0.1 || d > r.top + 0.1 { continue }
             let f = Self.laneFrac(n.lane)
             switch n.type {
             case 2:

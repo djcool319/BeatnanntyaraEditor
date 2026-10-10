@@ -35,7 +35,9 @@
 
 ## BPM 変化 / ソフラン
 - BPM ボタンの BPM list = JSON の `BPM` (先頭) と `bpms` (途中の変化)
-- ✦ (Effect list) の **scroll** = JSON の `speeds` (ソフラン)。jump は JSON に無いので書き出さない
+- ✦ (Effect list) の **scroll** = JSON の `speeds` (ソフラン。ノーツ全体の速さ)。jump は JSON に無いので書き出さない
+- More → **Note speed** = JSON の `speeds_each` (選んだノーツだけの速さ)。`{"LPB","num","block","speed"}` で、拍と block が完全に一致するノーツ (ホールド・スライドは始点の位置) だけがその倍率で流れてくる。全体のソフランと掛け算。エディタではノーツの右上に「×2」と出る
+- テストプレイは `speeds` と `speeds_each` の両方を見た目に反映する (判定の時刻は変わらない)
 
 ## META → Information
 曲名 (略称なし) / アーティスト / 難易度 (BS・HD・EX・IN → `difficulty` 0〜3、`name` とファイル名に付く) / LEVEL / プレビュー / offset。
@@ -46,6 +48,7 @@
 { "name": "曲名(EX)", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "", "offset": 0,
   "bpms":   [ {"LPB":4, "num":240, "bpm":306} ],
   "speeds": [ {"LPB":4, "num":240, "speed":1.1} ],
+  "speeds_each": [ {"LPB":4, "num":256, "block":3, "speed":2.0} ],
   "notes":  [ {"LPB":4, "num":0, "block":3, "type":2, "notes":[ {"LPB":4, "num":8, "block":3, "type":2, "notes":[]} ]},
               {"LPB":8, "num":0, "block":3, "type":1, "notes":[]} ] }   ← スライド / ホールドの始点は LPB・num を 2 倍にした別表記
 ```

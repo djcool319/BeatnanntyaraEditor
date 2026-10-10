@@ -10,7 +10,7 @@ import SwiftUI
 // 同じく本家に無い「Lasso」は、点線の輪と、そこから垂れる縄 (パスで描いている)。
 
 enum MoreMenuIconKind {
-    case copy, paste, timeRange, lasso, flip, grid, slideModify, slideToWipe, wipeToSlide
+    case copy, paste, timeRange, lasso, flip, grid, slideModify, slideToWipe, wipeToSlide, speed
 }
 
 struct MoreMenuIcon: View {
@@ -33,6 +33,7 @@ struct MoreMenuIcon: View {
             case .slideModify: Self.fillPolys(ctx, MoreMenuIconData.slideModify, center: center, color: color)
             case .slideToWipe: Self.fillPolys(ctx, MoreMenuIconData.slideToWipe, center: center, color: color)
             case .wipeToSlide: Self.fillPolys(ctx, MoreMenuIconData.wipeToSlide, center: center, color: color)
+            case .speed:       Self.drawSpeed(ctx, center: center, color: color)
             }
         }
     }
@@ -82,6 +83,18 @@ struct MoreMenuIcon: View {
         arrow.addLine(to: CGPoint(x: c.x, y: c.y - 7.5))
         arrow.addLine(to: CGPoint(x: c.x + 6.5, y: c.y - 1))
         ctx.stroke(arrow, with: .color(color), style: style)
+    }
+
+    /// ノーツの速さ: 上向きの山 2 つ (速く流れてくる)
+    private static func drawSpeed(_ ctx: GraphicsContext, center c: CGPoint, color: Color) {
+        let style = StrokeStyle(lineWidth: 3.6, lineCap: .round, lineJoin: .round)
+        var p = Path()
+        for dy in [CGFloat(-5), CGFloat(6)] {
+            p.move(to: CGPoint(x: c.x - 10, y: c.y + dy + 5))
+            p.addLine(to: CGPoint(x: c.x, y: c.y + dy - 5))
+            p.addLine(to: CGPoint(x: c.x + 10, y: c.y + dy + 5))
+        }
+        ctx.stroke(p, with: .color(color), style: style)
     }
 }
 

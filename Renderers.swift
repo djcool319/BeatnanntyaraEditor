@@ -90,6 +90,7 @@ enum LaneRenderer {
         drawHoldDraft(&c, g, state)
         drawSims(&c, g, state.chart.notes)
         drawNotes(&c, g, state.chart.notes, selected: state.selectedIDs)
+        drawNoteSpeeds(&c, g, state.chart.notes)
         drawOrder(&c, g, state)
         drawSprites(&c, g, state)
         drawSlideModify(&c, g, state)
@@ -414,6 +415,25 @@ enum LaneRenderer {
     static let drawSlideHeadBar = false
     /// Slide modify で選択中のスライドの seg に、動かせる目印のシアンの輪を付けるか。本家には無いので、false にすると輪は出ない (掴んでいる点の白い輪だけ残る)
     static let drawSegRings = true
+
+    /// ノーツ個別の速さ (speeds_each) が付いているノーツの右に「×2」のように出す (同じ位置は 1 回だけ)
+    static func drawNoteSpeeds(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note]) {
+        var done = Set<BeatrixKey>()
+        for n in notes {
+            guard let sp = Beatrix.noteSpeed(n) else { continue }
+            let y = g.py(n.beat.value) - barLift
+            if y < -24 || y > g.H + 24 { continue }
+            let k = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
+            if done.contains(k) { continue }
+            done.insert(k)
+            let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
+            let p = CGPoint(x: g.px(Double(n.x)) + hw - 2, y: y - 7)
+            let t = Text("×" + Beatrix.speedLabel(sp))
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(sp > 1 ? Color(red: 1, green: 0.45, blue: 0.75) : Color(red: 0.45, green: 0.85, blue: 1))
+            c.draw(t, at: p, anchor: .bottomTrailing)
+        }
+    }
 
     static func drawNotes(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note], selected: Set<UUID> = []) {
         let lo = g.beatOf(g.H) - 0.05

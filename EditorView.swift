@@ -848,6 +848,9 @@ struct EditorView: View {
     /// 右下の分割の「入力…」で開く数値入力
     @State private var showInput = false
     @State private var inputText = ""
+    /// More → Note speed の数値入力
+    @State private var showSpeedInput = false
+    @State private var speedText = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -884,6 +887,15 @@ struct EditorView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("n を 2〜1024 の整数で (例: 48 → 1/48)")
+        }
+        .alert("ノーツの速さ", isPresented: $showSpeedInput) {
+            TextField("1", text: $speedText)
+                .keyboardType(.numbersAndPunctuation)
+            Button("OK") { state.applyNoteSpeedInput(speedText) }
+            Button("解除") { state.applyNoteSpeedInput("") }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("選んだノーツだけ、この倍率で流れてきます (例: 2 = 2 倍速 / 0.5 = 半分)。\n保存すると \"speeds_each\" に、拍・block が同じノーツの速さとして入ります。全体のソフランは Effect list の scroll (\"speeds\")")
         }
         // TEST: びーとり式のテストプレイ (BeatrixPlayView.swift)
         .fullScreenCover(item: $state.bxLaunch) { launch in
@@ -1011,7 +1023,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 11
+    private static let moreRowCount = 12
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1054,6 +1066,16 @@ struct EditorView: View {
             moreItem("Tap / Red", icon: .flip, dim: state.selectedIDs.isEmpty) {
                 state.popup = .none
                 state.toggleRedTap()
+            }
+            // ノーツ個別の速さ (speeds_each)
+            moreItem("Note speed", icon: .speed, dim: state.selectedIDs.isEmpty) {
+                state.popup = .none
+                if state.selectedIDs.isEmpty {
+                    state.showToast("先にノーツを選択してください")
+                } else {
+                    speedText = state.selectedNoteSpeedText
+                    showSpeedInput = true
+                }
             }
             moreItem("Slide modify", icon: .slideModify, active: state.tool == .slideModify) {
                 state.popup = .none

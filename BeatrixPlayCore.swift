@@ -28,6 +28,7 @@ struct BxNote {
     let t: Double
     let lane: Int
     let type: Int
+    var sp: Double = 1                     // ノーツ個別の速さ (speeds_each)
     var suppressed = false
     var done = false
 }
@@ -36,6 +37,7 @@ struct BxHold {
     let t0: Double
     let t1: Double
     let lane: Int
+    var sp: Double = 1
 }
 
 struct BxSlidePoint {
@@ -45,6 +47,7 @@ struct BxSlidePoint {
 
 struct BxSlide {
     let pts: [BxSlidePoint]
+    var sp: Double = 1
 }
 
 /// 同時押しの線 (2 つのレーンが 2 以上離れているとき)
@@ -52,6 +55,14 @@ struct BxSim {
     let t: Double
     let a: Int
     let b: Int
+    var sp: Double = 1
+}
+
+/// ソフラン (speeds) の 1 区間: 時刻 t から速さ speed。pos = その時刻までに流れた量 (速さ 1 なら秒と同じ)
+struct BxScroll {
+    let t: Double
+    let pos: Double
+    let speed: Double
 }
 
 struct BxPlayChart {
@@ -62,6 +73,21 @@ struct BxPlayChart {
     var beats: [Double] = []
     var parts: [(start: Double, end: Double)] = []
     var endTime: Double = 0
+    /// ソフラン。時刻順。空なら全部 1 倍
+    var scroll: [BxScroll] = []
+
+    /// 時刻 t までに流れた量 (ソフランを入れた「位置」)。ノーツの見た目の奥行きは (pos(ノーツ) − pos(今)) × 速さ
+    func pos(_ t: Double) -> Double {
+        if scroll.isEmpty || t <= scroll[0].t { return t }
+        var lo = 0
+        var hi = scroll.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if scroll[mid].t <= t { lo = mid } else { hi = mid - 1 }
+        }
+        let s = scroll[lo]
+        return s.pos + (t - s.t) * s.speed
+    }
 
     /// ボタンごとの範囲 (本家の ButtonZones)。黄色直後のタップの抑制に使う
     static let buttonZones: [[Int]] = [[0, 1, 2], [1, 2, 3, 4], [2, 3, 4, 5], [4, 5, 6]]
@@ -74,6 +100,33 @@ struct BxPlayChart {
 
         let raw = chart.beatrixNotes()
         var out = BxPlayChart()
+
+        // ノーツ個別の速さ (保存する JSON の speeds_each と同じ。LPB・num・block が完全に一致するノーツだけ)
+        var each: [BeatrixKey: Double] = [:]
+        for e in chart.beatrixSpeedsEach() {
+            if let sp = Beatrix.doubleValue(e["speed"]) {
+                each[BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))] = sp
+            }
+        }
+        func spOf(_ d: [String: Any]) -> Double { each[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? 1 }
+
+        // ソフラン (speeds): 0 拍目より前は 1 倍
+        var sps: [(t: Double, speed: Double)] = []
+        for e in chart.effects.sorted(by: { $0.beat < $1.beat }) where e.kind == .scroll {
+            let t = tm.sec(atBeat: e.beat.value)
+            if let last = sps.last, abs(last.t - t) < 1e-9 {
+                sps[sps.count - 1].speed = e.value
+            } else {
+                sps.append((t: t, speed: e.value))
+            }
+        }
+        if !sps.isEmpty {
+            var pos = sps[0].t
+            for (i, p) in sps.enumerated() {
+                if i > 0 { pos += (p.t - sps[i - 1].t) * sps[i - 1].speed }
+                out.scroll.append(BxScroll(t: p.t, pos: pos, speed: p.speed))
+            }
+        }
 
         // ホールド始点 (子のある type 2) の位置。同じ位置の白タップは「始点タップ」(type 2) になる
         var holdStarts = Set<BeatrixKey>()
@@ -88,7 +141,7 @@ struct BxPlayChart {
             var tp = type
             if type == 1 && holdStarts.contains(BeatrixKey(beat: Beatrix.beat(of: n), block: blk)) { tp = 2 }
             if tp < 1 || tp > 4 { tp = 1 }
-            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp))
+            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n)))
         }
 
         for n in raw where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
@@ -101,7 +154,7 @@ struct BxPlayChart {
                 guard let last = ks.last else { continue }
                 let endBeat = Beatrix.beat(of: last).value
                 if endBeat <= startBeat { continue }
-                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk))
+                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n)))
                 var curLane = blk
                 var curBeat = startBeat
                 for k in ks {
@@ -121,7 +174,7 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts))
+                out.slides.append(BxSlide(pts: pts, sp: spOf(n)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5)) }
             }
         }
@@ -143,14 +196,16 @@ struct BxPlayChart {
         }
 
         // 同時押しの線 (判定点は除く)
-        var groups: [Int: [Int]] = [:]
+        //   (ノーツ個別の速さが違うノーツどうしは、流れてくる位置が違うので線を引かない)
+        struct SimKey: Hashable { let ms: Int; let sp: Double }
+        var groups: [SimKey: [Int]] = [:]
         for n in out.notes where n.type != 5 {
-            groups[Int((n.t * 1000).rounded()), default: []].append(n.lane)
+            groups[SimKey(ms: Int((n.t * 1000).rounded()), sp: n.sp), default: []].append(n.lane)
         }
         for (k, lanes) in groups where lanes.count >= 2 {
             for a in 0..<lanes.count {
                 for b in (a + 1)..<lanes.count where abs(lanes[a] - lanes[b]) > 1 {
-                    out.sims.append(BxSim(t: Double(k) / 1000, a: lanes[a], b: lanes[b]))
+                    out.sims.append(BxSim(t: Double(k.ms) / 1000, a: lanes[a], b: lanes[b], sp: k.sp))
                 }
             }
         }
