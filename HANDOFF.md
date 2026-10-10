@@ -33,10 +33,11 @@
   "artist": "作曲者",
   "offset": 1080,
   "preview": 46.86,
-  "part":   [ {"LPB":4, "num":560, "parts":[ {"LPB":4, "num":688, "parts":[]} ]} ],
+  "ver": 1001,
   "bpms":   [ {"LPB":4, "num":240, "bpm":306} ],
   "speeds": [ {"LPB":4, "num":240, "speed":1.1} ],
   "speeds_each": [ {"LPB":4, "num":256, "block":3, "speed":2.0} ],
+  "part":   [ {"LPB":4, "num":560, "parts":[ {"LPB":4, "num":688, "parts":[]} ]} ],
   "notes":  [ {"LPB":4, "num":0, "block":0, "type":1, "notes":[]} ]
 }
 ```
@@ -52,6 +53,7 @@
 | `artist` | 作曲者 |
 | `offset` | **サンプル数**。曲ファイルのサンプルレートで秒にする（44100Hz なら 44100 = 1 秒）。ノーツを曲に対して後ろへずらす向き |
 | `preview` | 選曲画面で流す位置（秒） |
+| `ver` | 譜面のバージョン（整数）。Information で入力。空欄なら書き出さない |
 | `part` | 区間（サビなど）。外側の LPB/num が始まり、`parts[0]` が終わり。本家では区間に入ると演出が出る |
 | `bpms` | 途中の BPM 変化 |
 | `speeds` | ソフラン（ノーツ**全体**の流れる速さの倍率。その拍から先ずっと） |
@@ -60,6 +62,7 @@
 
 - 時刻はすべて **num / LPB 拍**（0 拍始まり）。例: LPB 4・num 6 は 1.5 拍目
 - 書き出すときは、拍を約分した LPB と num にする（`Beatrix.lpbNum`）
+- 書き出しの見た目は NoteEditor と同じ（`BeatrixJSONWriter`）: キーの順番は上の例のとおり固定、ノーツは LPB → num → block → type → notes、字下げ 2、`"キー": 値`、空の配列は `[]`
 
 ### 1-2. 時刻の計算
 
