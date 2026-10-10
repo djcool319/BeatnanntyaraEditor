@@ -459,7 +459,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         audio?.refreshAnchor()
         let t = chartTime(at: uptime())
         let zones = Set(touchZones.values)
-        for z in zones { game.hold(zone: z, at: t) }
+        let tj = t + session.judgeAdjustMs / 1000          // 判定のタイミング補正 (PAUSE で変えられる)
+        for z in zones { game.hold(zone: z, at: tj) }
         game.update(to: t)
         BeatrixSounds.shared.setHold(session.seOn && anyHoldActive(at: t, zones: zones))      // ホールド / スライドを押さえている間の「しゅ〜」
         if !pendingWipeSounds.isEmpty {
@@ -510,7 +511,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         for tc in touches {
             let z = zone(at: tc.location(in: self))
             touchZones[ObjectIdentifier(tc)] = z
-            game.press(zone: z, at: chartTime(at: tc.timestamp))
+            game.press(zone: z, at: chartTime(at: tc.timestamp) + session.judgeAdjustMs / 1000)
         }
     }
 

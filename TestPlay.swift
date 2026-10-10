@@ -1858,6 +1858,11 @@ final class GameSession: ObservableObject {
     }
     /// びーとり式テストプレイの offset (JSON の値。44100 = 1 秒あとにずらす)。nil のときは、これまでのテストプレイ
     @Published var chartOffsetRaw: Int? = nil
+    /// びーとり式テストプレイの判定タイミング補正 (ms)。+ にすると、少し早く押しても PERFECT になる。
+    /// エディタでノーツ音にぴったり合わせた譜面で、押すと早めに出る分 (約 20ms) を初期値にしている
+    @Published var judgeAdjustMs: Double {
+        didSet { UserDefaults.standard.set(judgeAdjustMs, forKey: "bx.judgeAdjustMs") }
+    }
     weak var view: GameSessionView?          // これまでの GameView か、びーとり式の BeatrixGameView
     var quit: () -> Void = {}
     
@@ -1867,6 +1872,7 @@ final class GameSession: ObservableObject {
         offsetMs = min(max(UserDefaults.standard.double(forKey: "slide.offset"), -300), 300)
         judgeAtEdge = (UserDefaults.standard.object(forKey: "bx.judgeAtEdge") as? Bool) ?? true
         seOn = (UserDefaults.standard.object(forKey: "bx.seOn") as? Bool) ?? true
+        judgeAdjustMs = min(max((UserDefaults.standard.object(forKey: "bx.judgeAdjustMs") as? Double) ?? 20, -100), 100)
     }
     
     func pause() { view?.pause() }
@@ -3121,6 +3127,21 @@ struct PauseOverlay: View {
                         Slider(value: $session.speed, in: 0.5...2.0, step: 0.1)
                     }
                     
+                    // びーとり式テストプレイ: 判定のタイミング補正
+                    if session.chartOffsetRaw != nil {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("判定のタイミング補正")
+                                Spacer()
+                                Text(String(format: "%+.0f ms", session.judgeAdjustMs)).monospacedDigit()
+                            }
+                            Slider(value: $session.judgeAdjustMs, in: -100...100, step: 1)
+                            Text("+ にすると、少し早く押しても PERFECT になります (押したときに EARLY が多いなら + へ、LATE が多いなら − へ)。ノーツや曲の位置は変わりません")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+
                     // びーとり式テストプレイ: 効果音のオン / オフ
                     if session.chartOffsetRaw != nil {
                         Toggle("効果音 (SE)", isOn: $session.seOn)
