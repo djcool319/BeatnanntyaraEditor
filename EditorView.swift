@@ -571,13 +571,13 @@ struct RightPanel: View {
     /// アイコンの中心どうしの間隔。本家の間隔を基本にして、入りきらないとき (EDIT 中のボタンが多いとき・小さい画面) だけ詰める。
     /// 上の並びのボタン数は、EDIT 中は 9 (アイコンが増える。LASSO は More メニューの中)、通常は 6
     static func pitch(forHeight height: CGFloat, editing: Bool) -> CGFloat {
-        let topCount = editing ? 11 : 6
+        let topCount = editing ? 10 : 6
         return min(slotPitch, (height - edgeInset * 2) / CGFloat(topCount + bottomCount))
     }
 
-    /// EDIT 中の More ボタン (上から 10 番目) の中心の高さ。More メニューは、これを基準に置く
+    /// EDIT 中の More ボタン (上から 9 番目) の中心の高さ。More メニューは、これを基準に置く
     static func moreCenterY(forHeight height: CGFloat) -> CGFloat {
-        edgeInset + pitch(forHeight: height, editing: true) * 9.5
+        edgeInset + pitch(forHeight: height, editing: true) * 8.5
     }
 
     var body: some View {
@@ -643,7 +643,7 @@ struct RightPanel: View {
 
     /// EDIT 中のアイコンの左に出る名前 (上から、editButtons の並びと同じ順)
     private var editLabels: [String] {
-        ["Back", "Tap", "Red", state.tool == .hold && !state.holdWithHead ? "Hold (始点なし)" : "Hold", "Wipe", state.slideDraft != nil ? "Done" : (state.tool == .slide && !state.slideWithHead ? "Slide (始点なし)" : "Slide"), "Remove",
+        ["Back", "Tap", "Red", "Wipe", state.slideDraft != nil ? "Done" : (state.tool == .slide && !state.slideWithHead ? "Slide (始点なし)" : "Slide"), "Remove",
          "Order", "Adv.", "More", "Undo / Redo"]
     }
 
@@ -784,12 +784,7 @@ struct RightPanel: View {
                 state.toggleTool(.red)
             }
             .frame(height: pitch)
-            // ホールド (7 鍵)。始点をタップ → 終点をタップ。押すたびに 始点あり → 始点なし → オフ (アイコンも変わる)
-            PanelButton(glyph: "┃", active: state.tool == .hold,
-                        icon: { c in AnyView(HoldPanelIcon(color: c, withHead: state.tool != .hold || state.holdWithHead)) }) {
-                state.holdButtonTapped()
-            }
-            .frame(height: pitch)
+            // ホールドのボタンは無い: Slide で、始点と同じ鍵に経由点を置けば (横に動かなければ) ホールドになる
             PanelButton(glyph: "◆", active: state.tool == .wipe,
                         icon: { AnyView(PanelIconView(kind: .wipe, color: $0)) }) { state.toggleTool(.wipe) }      // Wipe
                 .frame(height: pitch)
