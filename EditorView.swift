@@ -86,6 +86,12 @@ struct LaneView: View {
                 .onChange(of: pinchActive) { active in
                     if !active { pinchStart = nil }    // ピンチの onEnded が届かなかった場合の保険
                 }
+                // Tap / Red / Wipe のときは、指を何本でも受けられる受け口を重ねる (2 本同時にタップすると 2 つ置ける)
+                .overlay {
+                    if state.editing && (state.tool == .note || state.tool == .red || state.tool == .wipe) {
+                        LaneMultiTouch(state: state, size: size)
+                    }
+                }
                 .overlay(alignment: .topLeading) {
                     // 枠をはみ出したノーツ (リボン・点・棒) も、本家と同じく左の帯・シークバー・右のボタン列の下まで描く。
                     // 描画の座標は、いつものレーンの座標のまま (左へ spillL だけ平行移動して描くので、はみ出しは負の x になる)。
@@ -1097,6 +1103,84 @@ struct EditorView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 60)
                 .allowsHitTesting(false)
+        }
+    }
+}
+
+// MARK: - 同時押しの配置 (Tap / Red / Wipe)
+
+/// SwiftUI のドラッグは指 1 本しか追えないので、Tap / Red / Wipe のときだけ、UIKit で全部の指を受ける。
+/// 1 本目の指は、これまでと同じ処理 (laneTouch: 配置 / 選択 / 移動) に渡す。
+/// 2 本目以降の指は、動かさずに離したらその位置にノーツを置く (同時押しを 1 回で置ける)
+struct LaneMultiTouch: UIViewRepresentable {
+    let state: EditorState
+    let size: CGSize
+
+    func makeUIView(context: Context) -> LaneMultiTouchView {
+        let v = LaneMultiTouchView()
+        v.backgroundColor = .clear
+        v.isMultipleTouchEnabled = true
+        v.state = state
+        v.size = size
+        return v
+    }
+
+    func updateUIView(_ v: LaneMultiTouchView, context: Context) {
+        v.state = state
+        v.size = size
+    }
+}
+
+final class LaneMultiTouchView: UIView {
+    weak var state: EditorState?
+    var size: CGSize = .zero
+    private var primary: UITouch?
+    private var primaryStart: CGPoint = .zero         // 1 本目の指を置いた位置 (laneTouch はいつも「始点」と「今の位置」を受け取る)
+    private var extras: [ObjectIdentifier: (start: CGPoint, time: TimeInterval)] = [:]
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let st = state else { return }
+        for t in touches {
+            let p = t.location(in: self)
+            if primary == nil {
+                primary = t
+                primaryStart = p
+                st.laneTouch(start: p, current: p, size: size, phase: .began)
+            } else {
+                extras[ObjectIdentifier(t)] = (start: p, time: t.timestamp)
+            }
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let st = state, let pt = primary, touches.contains(pt) else { return }
+        st.laneTouch(start: primaryStart, current: pt.location(in: self), size: size, phase: .changed)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let st = state else { return }
+        for t in touches {
+            let p = t.location(in: self)
+            if t === primary {
+                st.laneTouch(start: primaryStart, current: p, size: size, phase: .ended)
+                primary = nil
+            } else if let e = extras.removeValue(forKey: ObjectIdentifier(t)) {
+                // 動かさずに離した 2 本目以降の指 → その位置に置く
+                if hypot(p.x - e.start.x, p.y - e.start.y) < 12 && t.timestamp - e.time < 0.8 {
+                    st.placeTapAt(p, size: size)
+                }
+            }
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for t in touches {
+            if t === primary {
+                state?.laneTouchCancel()
+                primary = nil
+            } else {
+                extras.removeValue(forKey: ObjectIdentifier(t))
+            }
         }
     }
 }

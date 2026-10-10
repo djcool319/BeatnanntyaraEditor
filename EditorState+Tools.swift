@@ -215,6 +215,14 @@ extension EditorState {
         if phase == .ended { resetDragState() }
     }
 
+    /// タッチが途中で取り消されたとき (同時押し用のタッチの受け口から)。置かずに終わる
+    func laneTouchCancel() {
+        if dragMode == .moving { finishMove() }
+        if dragMode == .segDrag { finishSegDrag() }
+        ghost = nil
+        resetDragState()
+    }
+
     private func resetDragState() {
         dragMode = .idle
         dragMoved = false

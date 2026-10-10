@@ -137,20 +137,34 @@ extension EditorState {
         }
     }
 
-    /// Slide ボタン: 作成中なら「完」。それ以外は押すたびに「始点あり」→「始点なし」→ オフ (アイコンも変わる)
+    /// Slide ボタン: 作成中なら「完」。
+    /// それ以外: オフ → Slide (前回の 始点あり / なし のまま) → 押すと 始点あり / なし が入れ替わる → もう一度押すとオフ。
+    /// 始点なしにしたら、自分で始点ありに戻すまで、次に Slide を選んだときも始点なしのまま (アイコンも変わる)
     func slideButtonTapped() {
         if slideDraft != nil {
             finishSlide()
         } else if tool != .slide {
             tool = .slide
-            slideWithHead = true
-            showToast("スライド (始点あり): 始点 → 経由点を順にタップ → 完")
-        } else if slideWithHead {
-            slideWithHead = false
-            showToast("スライド (始点なし): 始点 → 経由点を順にタップ → 完")
+            slideModeToggled = false
+            showToast(slideWithHead ? "スライド (始点あり): 始点 → 経由点を順にタップ → 完"
+                                    : "スライド (始点なし): 始点 → 経由点を順にタップ → 完")
+        } else if !slideModeToggled {
+            slideWithHead.toggle()
+            slideModeToggled = true
+            showToast(slideWithHead ? "始点ありに切り替えました" : "始点なしに切り替えました")
         } else {
             tool = .unselected
         }
+    }
+
+    /// 同時押し: 1 本目の指とは別に、2 本目以降の指でタップしたとき (Tap / Red / Wipe のとき)
+    func placeTapAt(_ p: CGPoint, size: CGSize) {
+        guard !isPlaying, tool == .note || tool == .red || tool == .wipe else { return }
+        let g = geo(size)
+        if hitNote(at: p, g: g) != nil { return }           // ノーツの上なら置かない (1 本目と同じく、選択の操作とみなす)
+        let b = placeBeat(p.y, g)
+        let q = snapNote(centerX: g.xOf(p.x), widthUnits: widthUnits)
+        addNote(Note(beat: b, x: q.x, w: q.w, type: tool == .wipe ? 4 : (tool == .red ? 3 : nil)))
     }
 
     func togglePartTool() {

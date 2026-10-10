@@ -137,7 +137,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         add(edgeLayer, fill: nil, stroke: UIColor(white: 0.85, alpha: 1), width: 2)
         add(dividerLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.35), width: 1.2)
         add(zoneLayer, fill: UIColor(white: 1, alpha: 0.10))
-        add(holdIdleLayer, fill: UIColor(red: 0.192, green: 0.231, blue: 0.403, alpha: 1))
+        add(holdIdleLayer, fill: UIColor(red: 0.501, green: 0.592, blue: 1, alpha: 0.7))          // 押していないときはスライドと同じ色
         add(holdActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))           // 押さえている間は明るく
         add(slideIdleLayer, fill: UIColor(red: 0.501, green: 0.592, blue: 1, alpha: 0.7))
         add(slideActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))         // 押さえている間はホールドと同じ色
@@ -517,7 +517,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         // ホールドの帯 (判定ラインより手前はいつも隠す)
         let hIdle = CGMutablePath()
         let hActive = CGMutablePath()
-        let hw = sideWidth / 2 * 0.9
+        let hw = sideWidth / 2 * 1.0              // 帯の太さ (始点の棒と同じ幅)
         for h in source.holds {
             let active = holdActive(h, at: viewTime, zones: zones)
             let d0 = max(depth(h.t0), 0)

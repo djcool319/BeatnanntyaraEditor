@@ -151,7 +151,10 @@ final class EditorState: ObservableObject {
     @Published var partStart: Beat? = nil            // Part ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdDraft: HoldDraft? = nil       // Hold ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdWithHead = true               // Hold ツールで置くホールドに始点を付けるか (Hold ボタンで切り替え)
-    @Published var slideWithHead = true              // Slide ツールで置くスライドに始点を付けるか (Slide ボタンで切り替え)
+    @Published var slideWithHead = true {            // Slide ツールで置くスライドに始点を付けるか (Slide ボタンで切り替え。次回起動時も保存)
+        didSet { UserDefaults.standard.set(slideWithHead, forKey: "editor.slideWithHead") }
+    }
+    var slideModeToggled = false                     // 今の Slide ツールの間に、始点あり / なしを切り替えたか
     @Published var bxLaunch: BeatrixPlayLaunch? = nil  // びーとり式テストプレイ (EditorView が fullScreenCover で出す)
 
     // MARK: Adv. (Lua プラグイン)
@@ -354,6 +357,7 @@ final class EditorState: ObservableObject {
         }
         if let v = ud.object(forKey: "editor.allowSegVerticalMove") as? Bool { self.allowSegVerticalMove = v }
         if let v = ud.object(forKey: "editor.placeOnLowerLine") as? Bool { self.placeOnLowerLine = v }
+        if let v = ud.object(forKey: "editor.slideWithHead") as? Bool { self.slideWithHead = v }
         if let v = ud.object(forKey: "editor.holdDeselectSec") as? Double {
             self.holdDeselectSec = min(max(v, Self.holdRange.lowerBound), Self.holdRange.upperBound)
         }
