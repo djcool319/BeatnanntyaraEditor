@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Malody → Beatrix 譜面変換</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: #000; color: #fff; }
+  body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding: 24px; }
+  main { width: min(680px,100%); margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 20px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button, .file-button {
+    appearance: none; border: 1px solid #fff; background: #000; color: #fff;
+    border-radius: 8px; padding: 11px 15px; font: inherit; cursor: pointer;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  .file-button { display: inline-block; }
+  input[type=file] { display: none; }
+  #status { margin-top: 16px; min-height: 1.5em; white-space: pre-wrap; word-break: break-word; }
+  #form { display: none; margin-top: 18px; }
+  #form label { display: block; margin: 12px 0 4px; color: #ccc; font-size: 13px; }
+  #form input[type=text], #form input[type=number], #form select {
+    width: 100%; padding: 9px 10px; font: inherit; color: #fff; background: #111;
+    border: 1px solid #666; border-radius: 6px;
+  }
+  #fileName { margin-top: 14px; color: #8fd; word-break: break-all; }
+  #download { margin-top: 16px; }
+  .sub { margin-top: 8px; color: #aaa; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Malody → Beatrix 譜面変換</h1>
+  <div class="row">
+    <label class="file-button" for="mcFile">mcを選択</label>
+    <input id="mcFile" type="file">
+  </div>
+  <div id="status">ファイルを選択してください</div>
+  <div class="sub">選択したファイルはブラウザ内だけで処理します。BPM変化 (bpms) とソフラン (speeds) にも対応しています。</div>
+
+  <div id="form">
+    <label for="title">曲名 (難易度の略称は付けない)</label>
+    <input id="title" type="text">
+    <label for="difficulty">難易度</label>
+    <select id="difficulty">
+      <option value="0">BASIC (BS)</option>
+      <option value="1">HARD (HD)</option>
+      <option value="2" selected>EXTREME (EX)</option>
+      <option value="3">INSANE (IN)</option>
+    </select>
+    <label for="artist">アーティスト</label>
+    <input id="artist" type="text">
+    <label for="level">LEVEL</label>
+    <input id="level" type="number" step="0.1" value="1.0">
+    <label for="offset">offset</label>
+    <input id="offset" type="number" step="1" value="0">
+    <div id="fileName"></div>
+    <button id="download" type="button">jsonダウンロードする</button>
+  </div>
+</main>
+<script>
+(() => {
+  'use strict';
+
+  const fileInput = document.getElementById('mcFile');
+  const status = document.getElementById('status');
+  const form = document.getElementById('form');
+  const titleInput = document.getElementById('title');
+  const diffSelect = document.getElementById('difficulty');
+  const artistInput = document.getElementById('artist');
+  const levelInput = document.getElementById('level');
+  const offsetInput = document.getElementById('offset');
+  const fileNameView = document.getElementById('fileName');
+  const downloadButton = document.getElementById('download');
+  let loadedMc = null;
+
+  // びーとりの難易度 (difficulty の番号 = 配列の位置)。name とファイル名に略称を付ける (例: 曲名(EX).json)
+  const DIFFICULTIES = [
+    { abbr: 'BS', words: ['BS', 'BASIC'] },
+    { abbr: 'HD', words: ['HD', 'HARD'] },
+    { abbr: 'EX', words: ['EX', 'EXTREME'] },
+    { abbr: 'IN', words: ['IN', 'INSANE'] }
+  ];
+
+  // Malodyで今回の7鍵譜面に現れる代表的なX座標。
+  // 実際のXはこの中心値に一番近い鍵へ量子化する。
+  const LANE_X = [51, 77, 102, 128, 153, 179, 204];
+
+  function gcd(a, b) {
+    a = a < 0n ? -a : a;
+    b = b < 0n ? -b : b;
+    while (b !== 0n) {
+      const r = a % b;
+      a = b;
+      b = r;
+    }
+    return a || 1n;
+  }
+
+  function rational(numerator, denominator) {
+    let n = BigInt(numerator);
+    let d = BigInt(denominator);
+    if (d === 0n) throw new Error('0で割るbeatが含まれています');
+    if (d < 0n) { n = -n; d = -d; }
+    const g = gcd(n, d);
+    return { n: n / g, d: d / g };
+  }
+
+  function addRational(a, b) {
+    return rational(a.n * b.d + b.n * a.d, a.d * b.d);
+  }
+
+  function beatToRational(beat, isSegment) {
+    if (!Array.isArray(beat) || beat.length !== 3) {
+      throw new Error('beat形式が不正です');
+    }
+    const a = Number(beat[0]);
+    const b = Number(beat[1]);
+    const c = Number(beat[2]);
+    if (![a, b, c].every(Number.isFinite) || !Number.isInteger(a) || !Number.isInteger(b) || !Number.isInteger(c) || c <= 0) {
+      throw new Error('beatの値が不正です');
+    }
+    // note: [小節(1始まり), 分子, 分母]
+    // seg : [相対拍, 分子, 分母]
+    // BPM変化 (time) とソフラン (effect) も、ノーツと同じ数え方 (isSegment = false) で変換する
+    return rational(BigInt(isSegment ? a : a - 1) * BigInt(c) + BigInt(b), c);
+  }
+
+  function rationalToLPB(r) {
+    if (r.n > BigInt(Number.MAX_SAFE_INTEGER) || r.n < BigInt(Number.MIN_SAFE_INTEGER) || r.d > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('譜面の時間値が大きすぎます');
+    }
+    return { LPB: Number(r.d), num: Number(r.n) };
+  }
+
+  function compareRational(a, b) {
+    const l = a.n * b.d;
+    const r = b.n * a.d;
+    return l < r ? -1 : (l > r ? 1 : 0);
+  }
+
+  function nearestLaneBlock(x) {
+    if (!Number.isFinite(x)) throw new Error('X座標が不正です');
+    let best = 0;
+    let bestDistance = Math.abs(x - LANE_X[0]);
+    for (let i = 1; i < LANE_X.length; i++) {
+      const distance = Math.abs(x - LANE_X[i]);
+      if (distance < bestDistance) {
+        best = i;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  // Beatrix側のtype値。wipeの値が違う場合はここだけ直す。
+  const TYPE_TAP = 1;
+  const TYPE_SLIDE = 2;
+  const TYPE_WIPE = 4;      // Malodyのwipe(type 4)をそのまま使う
+  // スライド始点のtap/wipeは、スライド本体と「同じLPB・同じnum」だと
+  // 消える／つながらないので、分母を5倍にした別表記で出力する。
+  const HEAD_LPB_MULT = 5;
+
+  function timeKey(r, block) {
+    return `${r.n}/${r.d}|${block}`;
+  }
+
+  // ---- BPM変化: mc の time → BPM (最初の値) + bpms (途中の変化) ----
+  function convertBpms(mc) {
+    const list = [];
+    for (const t of mc.time) {
+      if (!t || typeof t !== 'object') continue;
+      const bpm = Number(t.bpm);
+      if (!Number.isFinite(bpm) || bpm <= 0) continue;
+      list.push({ r: beatToRational(t.beat, false), bpm });
+    }
+    if (list.length === 0) throw new Error('BPM情報が不正です');
+    list.sort((a, b) => compareRational(a.r, b.r));
+
+    // 最初の BPM が「BPM」。0拍目以前 (ずらした結果マイナスになるもの) の変化も「BPM」にまとめる
+    let base = list[0].bpm;
+    const bpms = [];
+    for (let i = 1; i < list.length; i++) {
+      const e = list[i];
+      if (e.r.n <= 0n) { base = e.bpm; continue; }
+      const prev = bpms[bpms.length - 1];
+      const t = rationalToLPB(e.r);
+      if (prev && prev.LPB === t.LPB && prev.num === t.num) {
+        prev.bpm = e.bpm;          // 同じ拍に2つあるときは、後ろの値
+      } else {
+        bpms.push({ LPB: t.LPB, num: t.num, bpm: e.bpm });
+      }
+    }
+    return { base, bpms };
+  }
+
+  // ---- ソフラン: mc の effect の scroll → speeds (jump は Beatrix に無いので数えるだけ) ----
+  function convertSpeeds(mc) {
+    const list = [];
+    let jumps = 0;
+    const effects = Array.isArray(mc.effect) ? mc.effect : [];
+    for (const e of effects) {
+      if (!e || typeof e !== 'object') continue;
+      if (e.jump !== undefined) jumps++;
+      if (e.scroll === undefined) continue;
+      const speed = Number(e.scroll);
+      if (!Number.isFinite(speed)) continue;
+      let r = beatToRational(e.beat, false);
+      if (r.n < 0n) r = rational(0, 1);       // 0拍目より前は 0拍目にまとめる
+      list.push({ r, speed });
+    }
+    list.sort((a, b) => compareRational(a.r, b.r));
+    const speeds = [];
+    for (const e of list) {
+      const t = rationalToLPB(e.r);
+      const prev = speeds[speeds.length - 1];
+      if (prev && prev.LPB === t.LPB && prev.num === t.num) {
+        prev.speed = e.speed;
+      } else {
+        speeds.push({ LPB: t.LPB, num: t.num, speed: e.speed });
+      }
+    }
+    return { speeds, jumps };
+  }
+
+  function validateMc(mc) {
+    if (!mc || typeof mc !== 'object') throw new Error('データがJSONオブジェクトではありません');
+    if (!mc.meta || typeof mc.meta !== 'object') throw new Error('Malody形式ではありません');
+    if (Number(mc.meta.mode) !== 7) throw new Error('7KのMalody譜面ではありません');
+    if (!Array.isArray(mc.note)) throw new Error('note配列がありません');
+    if (!Array.isArray(mc.time) || mc.time.length === 0) throw new Error('BPM情報がありません');
+  }
+
+  function convertMcToBeatrix(mc, opts) {
+    validateMc(mc);
+    const timing = convertBpms(mc);
+    const soflan = convertSpeeds(mc);
+
+    // ---- 1周目：全ノーツを解析 ----
+    const items = [];
+    for (const note of mc.note) {
+      if (!note || typeof note !== 'object') throw new Error('noteに不正なデータがあります');
+      // soundノーツはBeatrix譜面ノーツではないため除外。
+      if (typeof note.sound === 'string') continue;
+
+      const start = beatToRational(note.beat, false);
+      const x = Number(note.x);
+      const block = nearestLaneBlock(x);
+      const rawType = Number(note.type);
+      const type = (note.type === undefined || rawType === 0 || !Number.isInteger(rawType)) ? TYPE_TAP : rawType;
+      const segments = Array.isArray(note.seg) ? note.seg : [];
+
+      const vertices = []; // seg頂点（絶対時刻・レーン）
+      for (const seg of segments) {
+        if (!seg || typeof seg !== 'object') throw new Error('segに不正なデータがあります');
+        const absolute = addRational(start, beatToRational(seg.beat, true));
+        vertices.push({ time: absolute, block: nearestLaneBlock(x + Number(seg.x || 0)) });
+      }
+      items.push({ start, block, type, vertices, isSlide: vertices.length > 0 });
+    }
+
+    // ---- スライド始点／頂点のインデックス ----
+    const slideStartKeys = new Set();
+    const slideVertexKeys = new Set();
+    for (const it of items) {
+      if (!it.isSlide) continue;
+      slideStartKeys.add(timeKey(it.start, it.block));
+      for (const v of it.vertices) slideVertexKeys.add(timeKey(v.time, v.block));
+    }
+
+    // スライド始点と同時刻・同レーンにあるtap/wipeは「始点」として吸収する。
+    // wipeがあれば始点はwipe、なければtap。
+    const headTypes = new Map();
+    const consumed = new Set();
+    let droppedWipes = 0;
+    for (const it of items) {
+      if (it.isSlide) continue;
+      const k = timeKey(it.start, it.block);
+      if (slideStartKeys.has(k)) {
+        consumed.add(it);
+        const prev = headTypes.get(k);
+        if (it.type === TYPE_WIPE || prev === undefined) headTypes.set(k, it.type);
+      } else if (it.type === TYPE_WIPE && slideVertexKeys.has(k)) {
+        // スライド途中／終端と重なるwipeはスライド側に統合（出力しない）
+        consumed.add(it);
+        droppedWipes++;
+      }
+    }
+
+    // ---- 2周目：出力 ----
+    const outNotes = [];
+    let headTap = 0, headWipe = 0;
+    for (const it of items) {
+      if (consumed.has(it)) continue;
+      const { LPB, num } = rationalToLPB(it.start);
+
+      if (!it.isSlide) {
+        outNotes.push({ LPB, num, block: it.block, type: it.type, notes: [] });
+        continue;
+      }
+
+      // スライド本体（type 2）＋子ノード
+      const children = it.vertices.map(v => {
+        const t = rationalToLPB(v.time);
+        return { LPB: t.LPB, num: t.num, block: v.block, type: TYPE_SLIDE, notes: [] };
+      });
+      outNotes.push({ LPB, num, block: it.block, type: TYPE_SLIDE, notes: children });
+
+      // 始点ノーツ（別LPB表記）
+      const headType = headTypes.has(timeKey(it.start, it.block))
+        ? headTypes.get(timeKey(it.start, it.block)) : TYPE_TAP;
+      if (headType === TYPE_WIPE) headWipe++; else headTap++;
+      outNotes.push({
+        LPB: LPB * HEAD_LPB_MULT,
+        num: num * HEAD_LPB_MULT,
+        block: it.block,
+        type: headType,
+        notes: []
+      });
+    }
+
+    const diff = DIFFICULTIES[opts.difficulty] ? opts.difficulty : 2;
+    const title = opts.title || 'Untitled';
+    return {
+      name: `${title}(${DIFFICULTIES[diff].abbr})`,
+      maxBlock: 7,
+      BPM: timing.base,
+      LEVEL: opts.level,
+      difficulty: diff,
+      artist: opts.artist,
+      offset: opts.offset,
+      bpms: timing.bpms,
+      speeds: soflan.speeds,
+      notes: outNotes,
+      __stats: { headTap, headWipe, droppedWipes, bpmChanges: timing.bpms.length, speedChanges: soflan.speeds.length, jumps: soflan.jumps }
+    };
+  }
+
+  // mc の version (例: "EXTREME Lv.12" / "[EX]") から難易度を推測する。分からなければ EX
+  function guessDifficulty(version) {
+    const words = String(version || '').toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+    for (let i = DIFFICULTIES.length - 1; i >= 0; i--) {
+      if (DIFFICULTIES[i].words.some(w => words.includes(w))) return i;
+    }
+    return 2;
+  }
+
+  // ファイル名に使えない文字は "_" にする
+  function safeFileName(s) {
+    const r = String(s).replace(/[\/\\:*?"<>|]/g, '_').trim();
+    return r || 'chart';
+  }
+
+  function currentOptions() {
+    const level = Number(levelInput.value);
+    const offset = Number(offsetInput.value);
+    return {
+      title: titleInput.value.trim(),
+      difficulty: Number(diffSelect.value),
+      artist: artistInput.value.trim(),
+      level: Number.isFinite(level) ? level : 1.0,
+      offset: Number.isFinite(offset) ? Math.round(offset) : 0
+    };
+  }
+
+  function currentFileName() {
+    const o = currentOptions();
+    const abbr = (DIFFICULTIES[o.difficulty] || DIFFICULTIES[2]).abbr;
+    return safeFileName(`${o.title || 'Untitled'}(${abbr})`) + '.json';
+  }
+
+  function updateFileName() {
+    fileNameView.textContent = loadedMc ? `保存されるファイル名：${currentFileName()}` : '';
+  }
+
+  function showError(message) {
+    loadedMc = null;
+    form.style.display = 'none';
+    status.textContent = message;
+  }
+
+  fileInput.addEventListener('change', () => {
+    loadedMc = null;
+    form.style.display = 'none';
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      status.textContent = 'ファイルを選択してください';
+      return;
+    }
+
+    status.textContent = '読み込み中...';
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        let text = String(reader.result || '');
+        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+        const mc = JSON.parse(text);
+        validateMc(mc);
+        const song = mc.meta.song && typeof mc.meta.song === 'object' ? mc.meta.song : {};
+        titleInput.value = typeof song.title === 'string' && song.title ? song.title : 'Untitled';
+        artistInput.value = typeof song.artist === 'string' ? song.artist : '';
+        diffSelect.value = String(guessDifficulty(mc.meta.version));
+        // 試しに一度変換して、壊れていないかと中身の数を先に見せる
+        const json = convertMcToBeatrix(mc, currentOptions());
+        const s = json.__stats;
+        loadedMc = mc;
+        form.style.display = 'block';
+        updateFileName();
+        status.textContent = `読み込み完了：${file.name}\n` +
+          `始点tap ${s.headTap} / 始点wipe ${s.headWipe} / スライドに統合したwipe ${s.droppedWipes}\n` +
+          `BPM ${json.BPM} / BPM変化 ${s.bpmChanges} / ソフラン ${s.speedChanges}` +
+          (s.jumps > 0 ? `\n※ jump が ${s.jumps} 個ありましたが、Beatrix に無いので入れていません` : '') +
+          `\n曲名と難易度を確認して、ダウンロードしてください`;
+      } catch (error) {
+        console.error(error);
+        const detail = error && error.message ? `\n（${error.message}）` : '';
+        showError(`非対応のデータ形式です${detail}`);
+      }
+    };
+    reader.onerror = () => showError('ファイルを読み込めませんでした');
+    reader.readAsText(file, 'utf-8');
+  });
+
+  for (const el of [titleInput, diffSelect, artistInput, levelInput, offsetInput]) {
+    el.addEventListener('input', updateFileName);
+    el.addEventListener('change', updateFileName);
+  }
+
+  downloadButton.addEventListener('click', () => {
+    if (!loadedMc) return;
+    try {
+      const json = convertMcToBeatrix(loadedMc, currentOptions());
+      delete json.__stats;
+      const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = currentFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error(error);
+      status.textContent = `変換に失敗しました（${error && error.message ? error.message : error}）`;
+    }
+  });
+
+  // テスト用にグローバルへ露出（通常利用では何もしない）。
+  window.__malodyToBeatrix = { convertMcToBeatrix, guessDifficulty };
+})();
+</script>
+</body>
+</html>
