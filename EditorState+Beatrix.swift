@@ -247,19 +247,29 @@ extension EditorState {
     /// 難易度を切り替える。今の譜面を保存してから、
     ///   その難易度のファイルがあれば → それを開く
     ///   無ければ → copyNotes が true なら今のノーツをコピー、false なら空の譜面で「曲名(XX).json」を作る
-    /// (BPM・offset・曲名などはそのまま引き継ぐ)
+    /// (BPM・offset・曲名・part などはそのまま引き継ぐ。開いた譜面に part が無いときも、今の part を入れる)
     func switchDifficulty(to d: BeatrixDifficulty, copyNotes: Bool) {
         if d == chart.bxDifficulty { return }
         if isPlaying { pause() }
         saveNow()
         let url = chartURL(for: d)
-        if let data = try? Data(contentsOf: url), let c = try? ChartData.parseBeatrix(data) {
+        let curParts = chart.bxParts
+        if let data = try? Data(contentsOf: url), var c = try? ChartData.parseBeatrix(data) {
+            // 開く譜面に part が 1 つも無ければ、今の譜面の part を引き継ぐ (part (サビ) はどの難易度も同じなので)
+            var note = ""
+            if c.bxParts.isEmpty && !curParts.isEmpty {
+                c.bxParts = curParts
+                note = "\npart を \(curParts.count) 個引き継ぎました"
+            }
             replaceChart(c, url: url)
-            showToast("\(d.label) の譜面を開きました (\(url.lastPathComponent))")
+            if !note.isEmpty { saveNow() }
+            showToast("\(d.label) の譜面を開きました (\(url.lastPathComponent))" + note)
             return
         }
+        // 新しく作るときは、曲の情報・BPM・ソフラン・part はそのまま。空から作る場合はノーツだけ消す
         var c = chart
         c.bxDifficulty = d
+        c.bxParts = curParts
         if !copyNotes { c.notes = [] }
         replaceChart(c, url: url)
         saveNow()
