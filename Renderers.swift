@@ -88,6 +88,7 @@ enum LaneRenderer {
         drawRange(&c, g, state)
         drawParts(&c, g, state)
         drawHoldDraft(&c, g, state)
+        drawSims(&c, g, state.chart.notes)
         drawNotes(&c, g, state.chart.notes, selected: state.selectedIDs)
         drawOrder(&c, g, state)
         drawSprites(&c, g, state)
@@ -140,6 +141,31 @@ enum LaneRenderer {
             h.addLine(to: CGPoint(x: right, y: y))
             c.stroke(h, with: .color(Color.white), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
         }
+    }
+
+    /// 同時押しの線 (本家と同じく、同じ拍のノーツどうしで、鍵が 2 以上離れているものを結ぶ)。
+    /// 対象はタップ・赤タップ・ワイプと、始点のあるスライド / ホールド。ノーツの棒の高さに、ノーツの後ろに描く
+    static func drawSims(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note]) {
+        let lo = g.beatOf(g.H) - 0.05
+        let hi = g.beatOf(0) + 0.05
+        var groups: [Beat: [Int]] = [:]
+        for n in notes {
+            let b = n.beat.value
+            if b < lo || b > hi { continue }
+            if n.isSlide && Beatrix.headType(n) == 0 { continue }
+            groups[n.beat, default: []].append(Beatrix.block(ofX: Double(n.x)))
+        }
+        var path = Path()
+        for (beat, blocks) in groups where blocks.count >= 2 {
+            let y = g.py(beat.value) - barLift
+            for a in 0..<blocks.count {
+                for b in (a + 1)..<blocks.count where abs(blocks[a] - blocks[b]) > 1 {
+                    path.move(to: CGPoint(x: g.px(Double(Beatrix.centerX(ofBlock: blocks[a]))), y: y))
+                    path.addLine(to: CGPoint(x: g.px(Double(Beatrix.centerX(ofBlock: blocks[b]))), y: y))
+                }
+            }
+        }
+        c.stroke(path, with: .color(Color(white: 0.8).opacity(0.75)), lineWidth: 2.5)
     }
 
     /// Hold ツールで始点だけ置いているとき、その始点をうすく見せる

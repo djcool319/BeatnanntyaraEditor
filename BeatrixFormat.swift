@@ -404,14 +404,9 @@ extension ChartData {
                 singles.append((beat: bt, block: blk, type: type))
             }
         }
-        var claimed = Set<BeatrixKey>()           // 始点 (タップ / ワイプ) が見つかったスライドの位置
+        // 始点 (スライド / ホールドと同じ位置のタップ・ワイプ) も、エディタの中では普通のタップ・ワイプとして持つ
+        // (始点だけを選んで消したり動かしたりできるように)。保存するときに、また始点の表記に戻す (beatrixNotes)
         for s in singles {
-            let key = BeatrixKey(beat: s.beat, block: s.block)
-            if s.type == 1 || s.type == 4, let i = slideAt[key] {
-                claimed.insert(key)
-                if s.type == 4 { notes[i].extra[Beatrix.headKey] = 4 }      // 始点 (ワイプ)
-                continue                                                    // 始点 (タップ) は何もしない (それが標準)
-            }
             var n = Note(beat: s.beat, x: Beatrix.centerX(ofBlock: s.block), w: s.type == 4 ? Beatrix.sideW : Beatrix.tapW)
             switch s.type {
             case 3: n.type = 3
@@ -423,10 +418,9 @@ extension ChartData {
             }
             notes.append(n)
         }
-        // 始点が無かったスライド / ホールドは「始点なし」(0) にする (保存するときに始点を足さない)
+        // スライド / ホールドの本体は「始点なし」(0)。始点は、上で普通のノーツとして入れてある
         for i in notes.indices where notes[i].isSlide {
-            let key = BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))
-            if !claimed.contains(key) { notes[i].extra[Beatrix.headKey] = 0 }
+            notes[i].extra[Beatrix.headKey] = 0
         }
 
         var c = ChartData(root: ["beatrix": b], times: times, notes: notes, soundEntries: [],

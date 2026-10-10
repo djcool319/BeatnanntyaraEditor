@@ -72,9 +72,14 @@ extension EditorState {
                     ghost = nil
                     holdDraft = nil
                     if d.beat < b {
+                        // 本体は始点なしで置き、「始点あり」のときは始点の位置に普通のタップを 1 つ足す
+                        // (始点のタップだけを選んで消したり動かしたりできる。保存のときに始点の表記になる)
                         var n = Note(beat: d.beat, x: d.x, w: Beatrix.sideW, type: nil, segs: [Seg(beat: b - d.beat, x: 0)])
-                        if !holdWithHead { n.extra[Beatrix.headKey] = 0 }
-                        addNote(n)
+                        n.extra[Beatrix.headKey] = 0
+                        pushUndo()
+                        chart.notes.append(n)
+                        if holdWithHead { chart.notes.append(Note(beat: d.beat, x: d.x, w: Beatrix.tapW, type: nil)) }
+                        chartChanged()
                     } else {
                         showToast("終点は始点より後ろ (上) をタップしてください。始点を取り消しました")
                     }
@@ -864,8 +869,10 @@ extension EditorState {
         } else {
             var n = Note(beat: base.beat, x: base.x, w: base.w, type: nil, segs: [seg])
             n.id = d.noteID
-            if !slideWithHead { n.extra[Beatrix.headKey] = 0 }      // Slide ボタンが「始点なし」のとき
+            n.extra[Beatrix.headKey] = 0
             chart.notes.append(n)
+            // 「始点あり」のときは、始点の位置に普通のタップを 1 つ足す (始点だけを消したり動かしたりできる)
+            if slideWithHead { chart.notes.append(Note(beat: base.beat, x: base.x, w: Beatrix.tapW, type: nil)) }
         }
         chartChanged()
     }
