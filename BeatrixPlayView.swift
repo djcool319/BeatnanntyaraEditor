@@ -140,7 +140,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         add(holdIdleLayer, fill: UIColor(red: 0.192, green: 0.231, blue: 0.403, alpha: 1))
         add(holdActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))           // 押さえている間は明るく
         add(slideIdleLayer, fill: UIColor(red: 0.501, green: 0.592, blue: 1, alpha: 0.7))
-        add(slideActiveLayer, fill: UIColor(red: 0.80, green: 0.86, blue: 1, alpha: 0.95))
+        add(slideActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))         // 押さえている間はホールドと同じ色
         add(simLayer, fill: nil, stroke: UIColor(white: 0.8, alpha: 0.7), width: 2)
         add(tapLayer, fill: .white)
         add(headLayer, fill: UIColor(red: 0.62, green: 0.85, blue: 1.0, alpha: 1))
