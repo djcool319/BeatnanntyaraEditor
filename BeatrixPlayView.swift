@@ -408,7 +408,9 @@ final class BeatrixGameView: UIView, GameSessionView {
         // エディタと同じ offset (JSON の値 ÷ 44100 秒だけ、ノーツを曲に対して後ろへ)。
         // エディタの内部の offsetMs と同じ向き: 譜面時刻 t の音 = 曲の t + offset/44100 秒目
         // (SETTING の「再生の補正」も同じく引く。エディタの再生と同じずれ方にする)
+        // さらに「テストプレイの補正」(初期値 -20ms = ノーツを 20ms 早める。エディタでノーツ音ぴったりの譜面が、プレイでちょうどよく感じる分)
         let off = -Double((session.chartOffsetRaw ?? 0) - Beatrix.playbackCorrectionSamples) / Beatrix.offsetSampleRate
+            - session.playAdjustMs / 1000
         if let a = audio {
             a.begin(chartTime: tc, offsetTotal: off)
         } else {
@@ -459,8 +461,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         audio?.refreshAnchor()
         let t = chartTime(at: uptime())
         let zones = Set(touchZones.values)
-        let tj = t + session.judgeAdjustMs / 1000          // 判定のタイミング補正 (PAUSE で変えられる)
-        for z in zones { game.hold(zone: z, at: tj) }
+        for z in zones { game.hold(zone: z, at: t) }
         game.update(to: t)
         BeatrixSounds.shared.setHold(session.seOn && anyHoldActive(at: t, zones: zones))      // ホールド / スライドを押さえている間の「しゅ〜」
         if !pendingWipeSounds.isEmpty {
@@ -511,7 +512,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         for tc in touches {
             let z = zone(at: tc.location(in: self))
             touchZones[ObjectIdentifier(tc)] = z
-            game.press(zone: z, at: chartTime(at: tc.timestamp) + session.judgeAdjustMs / 1000)
+            game.press(zone: z, at: chartTime(at: tc.timestamp))
         }
     }
 
