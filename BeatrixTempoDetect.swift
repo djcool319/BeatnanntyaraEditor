@@ -50,13 +50,10 @@ final class BeatrixTempoAnalysis {
         BeatrixTempoDetector.firstBeat(env: env, frameRate: frameRate, shift: frameShift, bpm: bpm, musicStart: musicStart)
     }
 
-    /// その BPM での JSON の offset (サンプル数。再生の補正込み = 今の基準)。halfBeat: 半拍うしろへずらす (裏拍を拍と取り違えたとき用)
-    func offsetRaw(bpm: Double, halfBeat: Bool = false) -> Int {
-        var t = firstBeatSec(bpm: bpm)
-        if halfBeat {
-            let half = 30 / bpm
-            t = t >= half ? t - half : t + half          // 0 拍目が 0 秒より前にならないよう、近いほうへ
-        }
+    /// その BPM での JSON の offset (サンプル数。再生の補正込み = 今の基準)。
+    /// shiftBeats: 0 拍目を何拍ずらすか (+ で曲の後ろへ、− で前へ。0.5 = 半拍。裏拍を拍と取り違えたときや、0 拍目を小節の頭に合わせたいとき用)
+    func offsetRaw(bpm: Double, shiftBeats: Double = 0) -> Int {
+        let t = firstBeatSec(bpm: bpm) + shiftBeats * 60 / bpm
         return Int((t * sampleRate).rounded()) + Beatrix.playbackCorrectionSamples
     }
 }

@@ -467,7 +467,8 @@ struct TempoDetectDialog: View {
     @State private var pick = 0
     @State private var useBPM = true
     @State private var useOffset = true
-    @State private var halfBeat = false
+    @State private var shiftBeats = 0.0
+    @State private var shiftText = ""
 
     var body: some View {
         if let phase = state.tempoDetect {
@@ -517,7 +518,7 @@ struct TempoDetectDialog: View {
     private func resultView(_ a: BeatrixTempoAnalysis) -> some View {
         let idx = min(pick, max(0, a.candidates.count - 1))
         let bpm = a.candidates.isEmpty ? a.rawBPM : a.candidates[idx]
-        let raw = a.offsetRaw(bpm: bpm, halfBeat: halfBeat)
+        let raw = a.offsetRaw(bpm: bpm, shiftBeats: shiftBeats)
         VStack(alignment: .leading, spacing: 8) {
             Text("BPM (左がおすすめ。倍・半分の取り違えがあるので、曲に合うほうを選んでください)")
                 .font(.system(size: 12))
@@ -551,9 +552,34 @@ struct TempoDetectDialog: View {
                         Double(raw - Beatrix.playbackCorrectionSamples) / a.sampleRate, Beatrix.playbackCorrectionSamples))
                 .font(.system(size: 12))
                 .foregroundColor(Color.white.opacity(0.7))
-            Toggle("半拍ずらす (裏拍が拍になっていたとき)", isOn: $halfBeat)
+            // 0 拍目をずらす (何拍でも。+ で曲の後ろへ、− で前へ)
+            Text("0 拍目をずらす: \(Self.beatsLabel(shiftBeats)) 拍  (+ で曲の後ろへ / − で前へ)")
                 .font(.system(size: 13))
                 .foregroundColor(.white)
+                .padding(.top, 4)
+            HStack(spacing: 6) {
+                small("-1") { setShift(shiftBeats - 1) }
+                small("-0.5") { setShift(shiftBeats - 0.5) }
+                small("0") { setShift(0) }
+                small("+0.5") { setShift(shiftBeats + 0.5) }
+                small("+1") { setShift(shiftBeats + 1) }
+            }
+            HStack(spacing: 6) {
+                TextField("拍を入力 (例: 2 / -1.5 / 1/4)", text: $shiftText)
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocorrectionDisabled()
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .frame(height: 34)
+                    .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1.2))
+                    .onSubmit { applyShiftText() }
+                small("決定") { applyShiftText() }
+            }
+            if raw - Beatrix.playbackCorrectionSamples < 0 {
+                Text("0 拍目が曲の始まり (0 秒) より前になっています (offset がマイナス寄り)")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 1, green: 0.6, blue: 0.4))
+            }
         }
         if let hint = a.changeHint {
             Text("⚠︎ " + hint)
@@ -585,8 +611,50 @@ struct TempoDetectDialog: View {
             pick = 0
             useBPM = true
             useOffset = true
-            halfBeat = false
+            shiftBeats = 0
+            shiftText = ""
         }
+    }
+
+    private func setShift(_ v: Double) {
+        let r = (v * 1000).rounded() / 1000
+        shiftBeats = abs(r) < 1e-9 ? 0 : r
+        shiftText = Self.beatsLabel(shiftBeats)
+    }
+
+    /// 入力欄の拍: "2" / "-1.5" / "1/4" / "-3/2" / "+0.25"
+    private func applyShiftText() {
+        let t = shiftText.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "＋", with: "+")
+            .replacingOccurrences(of: "−", with: "-").replacingOccurrences(of: "ー", with: "-")
+        var v: Double? = nil
+        if t.contains("/") {
+            let ps = t.split(separator: "/").map { String($0).trimmingCharacters(in: .whitespaces) }
+            if ps.count == 2, let n = Double(ps[0]), let d = Double(ps[1]), d != 0 { v = n / d }
+        } else {
+            v = Double(t)
+        }
+        if let v = v, v.isFinite, abs(v) <= 10000 {
+            setShift(v)
+        } else {
+            state.showToast("拍は 2 / -1.5 / 1/4 のように入力してください")
+        }
+    }
+
+    static func beatsLabel(_ v: Double) -> String {
+        let s = Beatrix.speedLabel(v)
+        return v > 0 ? "+" + s : s
+    }
+
+    private func small(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
     }
 
     private func button(_ title: String, primary: Bool, action: @escaping () -> Void) -> some View {
