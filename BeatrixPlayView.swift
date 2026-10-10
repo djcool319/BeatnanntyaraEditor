@@ -509,11 +509,11 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
         beatLayer.path = beats
 
-        // 押しているボタンの光 (3 鍵ぶん。真ん中は 1 と 2 のどちらでも、真ん中 1 つ)
+        // 押しているボタンの光 (本家と同じく、そのレーンの奥から手前まで全部。真ん中は 1 と 2 のどちらでも、真ん中 1 つ)
         let zp = CGMutablePath()
-        if zones.contains(0) { addQuad(zp, g, f0: 0, f1: 1.0 / 3.0, d0: r.bot, d1: 0) }
-        if zones.contains(1) || zones.contains(2) { addQuad(zp, g, f0: 1.0 / 3.0, f1: 2.0 / 3.0, d0: r.bot, d1: 0) }
-        if zones.contains(3) { addQuad(zp, g, f0: 2.0 / 3.0, f1: 1, d0: r.bot, d1: 0) }
+        if zones.contains(0) { addQuad(zp, g, f0: 0, f1: 1.0 / 3.0, d0: r.bot, d1: r.top) }
+        if zones.contains(1) || zones.contains(2) { addQuad(zp, g, f0: 1.0 / 3.0, f1: 2.0 / 3.0, d0: r.bot, d1: r.top) }
+        if zones.contains(3) { addQuad(zp, g, f0: 2.0 / 3.0, f1: 1, d0: r.bot, d1: r.top) }
         zoneLayer.path = zp
 
         // ホールドの帯 (判定ラインより手前はいつも隠す)
