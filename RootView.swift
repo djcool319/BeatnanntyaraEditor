@@ -16,6 +16,7 @@ struct RootView: View {
     @State private var mcName = ""
     @State private var oggData: Data? = nil
     @State private var oggName = ""
+    @State private var oggURL: URL? = nil       // 音源の場所 (アプリの書類フォルダの中なら、新しい譜面をその隣に作る)
     @State private var bgData: Data? = nil
     @State private var bgName = ""
 
@@ -131,6 +132,7 @@ struct RootView: View {
                 case .ogg:
                     oggData = data
                     oggName = url.lastPathComponent
+                    oggURL = url
                     if ok { url.stopAccessingSecurityScopedResource() }
                 case .bg:
                     bgData = data
@@ -171,7 +173,7 @@ struct RootView: View {
                 let st = EditorState(
                     chart: chart, mcURL: url, mcName: mcName, audio: audio,
                     oggData: oggData, oggFileName: oggName,
-                    bgData: bgData, bgFileName: bgName
+                    bgData: bgData, bgFileName: bgName, audioURL: oggURL
                 )
                 st.onClose = {
                     editor = nil
@@ -186,7 +188,8 @@ struct RootView: View {
         }
     }
 
-    /// 新しい譜面を作って開く。ファイルはアプリ内 (BeatrixEditor フォルダ) に「曲名(EX).json」で作る
+    /// 新しい譜面を作って開く。ファイルは「曲名(EX).json」で、
+    /// 音源がアプリの書類フォルダの中 (例: BeatrixEditor/Song/曲名/) にあれば音源と同じフォルダ、それ以外は BeatrixEditor フォルダに作る
     private func createNew() {
         let bpm = Double(newBPM.trimmingCharacters(in: .whitespaces)) ?? 120
         if bpm <= 0 {
@@ -196,9 +199,10 @@ struct RootView: View {
         var title = (oggName as NSString).deletingPathExtension
         if title.isEmpty { title = "新しい譜面" }
         let chart = ChartData.newBeatrix(title: title, bpm: bpm, difficulty: .extreme)
-        let url = EditorState.appChartDirectory().appendingPathComponent(chart.bxFileName)
+        let dir = EditorState.chartDirectory(json: nil, audio: oggURL)
+        let url = dir.appendingPathComponent(chart.bxFileName)
         if FileManager.default.fileExists(atPath: url.path) {
-            message = "アプリ内に同じ名前の譜面 (\(chart.bxFileName)) があります。上の「譜面」で選んで開いてください"
+            message = "\(dir.lastPathComponent) フォルダに同じ名前の譜面 (\(chart.bxFileName)) があります。上の「譜面」で選んで開いてください"
             return
         }
         do {

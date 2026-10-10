@@ -559,7 +559,7 @@ private struct InformationWindowContent: View {
                     labeled("BPM・offset の自動検出") {
                         SideSmallButton(title: "曲を解析する") { state.startTempoDetect() }
                     }
-                    labeled("保存するファイル名") { readOnly(state.chart.bxFileName) }
+                    labeled("保存する場所") { readOnly(state.chartDir.lastPathComponent + " / " + state.chart.bxFileName) }
                     labeled("曲のファイル") { readOnly(state.oggFileName) }
                 }
                 Text("offset は「0 拍目が曲の何サンプル目か」。本家の譜面エディタと同じく、曲のサンプリング周波数で数えます (この曲は \(Int(Beatrix.offsetSampleRate)) = 1 秒)。+ にすると、ノーツが曲に対して遅くなります。\n" + audioInfo)

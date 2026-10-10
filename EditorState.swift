@@ -235,6 +235,11 @@ final class EditorState: ObservableObject {
 
     // MARK: ファイル
     let audio: AudioController?
+    /// 譜面 (JSON) を作る・保存するフォルダ。
+    ///   開いた譜面がアプリの書類フォルダ (「このiPad内 > BeatTriX Editor」) の中 → その譜面と同じフォルダ
+    ///   新規作成 / 外から開いた譜面で、音源がアプリの書類フォルダの中 (例: BeatrixEditor/Song/曲名/) → 音源と同じフォルダ
+    ///   それ以外 → BeatrixEditor フォルダ
+    var chartDir: URL
     var mcURL: URL            // 開いた譜面 (JSON) のファイル。アプリ内に作った譜面は、曲名・難易度を変えると付け替わる
     let mcName: String
     let oggData: Data?
@@ -332,7 +337,8 @@ final class EditorState: ObservableObject {
     private var redoStack: [Snapshot] = []
 
     init(chart: ChartData, mcURL: URL, mcName: String, audio: AudioController?,
-         oggData: Data?, oggFileName: String, bgData: Data?, bgFileName: String) {
+         oggData: Data?, oggFileName: String, bgData: Data?, bgFileName: String, audioURL: URL? = nil) {
+        self.chartDir = EditorState.chartDirectory(json: mcURL, audio: audioURL)
         var c = chart
         c.times.sort { $0.beat < $1.beat }
         self.chart = c
@@ -850,9 +856,10 @@ final class EditorState: ObservableObject {
         saveWork?.cancel()
         do {
             let data = try chart.beatrixData()
-            let dir = Self.appChartDirectory()
+            let dir = chartDir
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let want = dir.appendingPathComponent(chart.bxFileName)
-            let inApp = mcURL.deletingLastPathComponent().resolvingSymlinksInPath().path == dir.resolvingSymlinksInPath().path
+            let inApp = Self.samePath(mcURL.deletingLastPathComponent(), dir)
             if inApp {
                 // アプリ内の譜面: 曲名・難易度を変えたら、ファイル名も「曲名(EX).json」に付け替える
                 if mcURL.lastPathComponent != want.lastPathComponent {
@@ -874,6 +881,32 @@ final class EditorState: ObservableObject {
         } catch {
             saveStatus = "保存失敗"
         }
+    }
+
+    /// パスを比べるための形 (/private/var と /var の違いをなくす)
+    static func normalizedPath(_ url: URL) -> String {
+        var p = url.standardizedFileURL.resolvingSymlinksInPath().path
+        if p.hasPrefix("/private/") { p.removeFirst("/private".count) }
+        while p.count > 1 && p.hasSuffix("/") { p.removeLast() }
+        return p
+    }
+
+    static func samePath(_ a: URL, _ b: URL) -> Bool {
+        normalizedPath(a) == normalizedPath(b)
+    }
+
+    /// アプリの書類フォルダ (「このiPad内 > BeatTriX Editor」) の中のファイルか (中なら、同じフォルダに自由にファイルを作れる)
+    static func isInAppDocuments(_ url: URL) -> Bool {
+        let docs = normalizedPath(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+        let p = normalizedPath(url)
+        return p.hasPrefix(docs + "/")
+    }
+
+    /// 譜面を作るフォルダを決める (chartDir の説明を参照)
+    static func chartDirectory(json: URL?, audio: URL?) -> URL {
+        if let j = json, isInAppDocuments(j) { return j.deletingLastPathComponent() }
+        if let a = audio, isInAppDocuments(a) { return a.deletingLastPathComponent() }
+        return appChartDirectory()
     }
 
     /// アプリ内の譜面の置き場所 (「ファイル」アプリの このiPad > アプリ名 > BeatrixEditor)

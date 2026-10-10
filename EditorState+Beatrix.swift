@@ -315,7 +315,7 @@ extension EditorState {
     /// その難易度のファイル (アプリ内の BeatrixEditor フォルダの「曲名(XX).json」)
     func chartURL(for d: BeatrixDifficulty) -> URL {
         let t = chart.bxTitle.isEmpty ? "chart" : chart.bxTitle
-        return Self.appChartDirectory().appendingPathComponent(Beatrix.safeFileName("\(t)(\(d.abbr))") + ".json")
+        return chartDir.appendingPathComponent(Beatrix.safeFileName("\(t)(\(d.abbr))") + ".json")
     }
 
     func hasChart(for d: BeatrixDifficulty) -> Bool {
