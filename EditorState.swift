@@ -374,12 +374,8 @@ final class EditorState: ObservableObject {
         if let v = ud.object(forKey: "beatrix.playbackCorrection") as? Int { self.playbackCorrection = v }
         Beatrix.playbackCorrectionSamples = playbackCorrection
         prepareEngineAudio()
-        // offset (サンプル数) は、曲のファイルのサンプリング周波数で秒にする (NoteEditor と同じ。48kHz の曲なら 48000 = 1 秒)
-        if let r = engineAudio?.sampleRate, r > 0 {
-            Beatrix.offsetSampleRate = r
-        } else {
-            Beatrix.offsetSampleRate = 44100
-        }
+        // offset (サンプル数) は、曲のサンプリング周波数に関係なく、いつも 44100 = 1 秒 (48kHz の曲でも同じ。本家側を 44100 だけで扱えるように)
+        Beatrix.offsetSampleRate = 44100
         self.chart.applyBeatrixOffset()                 // サンプリング周波数と再生の補正を入れて、再生用の offset を決め直す
         applyVolumes()
         KeySound.shared.prepare()

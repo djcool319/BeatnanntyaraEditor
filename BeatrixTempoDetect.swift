@@ -54,7 +54,7 @@ final class BeatrixTempoAnalysis {
     /// shiftBeats: 0 拍目を何拍ずらすか (+ で曲の後ろへ、− で前へ。0.5 = 半拍。裏拍を拍と取り違えたときや、0 拍目を小節の頭に合わせたいとき用)
     func offsetRaw(bpm: Double, shiftBeats: Double = 0) -> Int {
         let t = firstBeatSec(bpm: bpm) + shiftBeats * 60 / bpm
-        return Int((t * sampleRate).rounded()) + Beatrix.playbackCorrectionSamples
+        return Int((t * Beatrix.offsetSampleRate).rounded()) + Beatrix.playbackCorrectionSamples      // いつも 44100 = 1 秒
     }
 }
 

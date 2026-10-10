@@ -549,7 +549,7 @@ struct TempoDetectDialog: View {
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(.white)
             Text(String(format: "0 拍目 = 曲の %.3f 秒 (+ 再生の補正 %d サンプル = 今の基準)",
-                        Double(raw - Beatrix.playbackCorrectionSamples) / a.sampleRate, Beatrix.playbackCorrectionSamples))
+                        Double(raw - Beatrix.playbackCorrectionSamples) / Beatrix.offsetSampleRate, Beatrix.playbackCorrectionSamples))
                 .font(.system(size: 12))
                 .foregroundColor(Color.white.opacity(0.7))
             // 0 拍目をずらす (何拍でも。+ で曲の後ろへ、− で前へ)

@@ -34,8 +34,7 @@ enum Beatrix {
     static let tapW = 77
     static let sideW = 72
     /// offset (サンプル数) を秒にするときの 1 秒あたりの値。
-    /// 本家の譜面エディタ (NoteEditor) と同じく、曲のファイルのサンプリング周波数を使う (44.1kHz の曲なら 44100、48kHz の曲なら 48000)。
-    /// 曲を読み込んだときにエディタが入れる。曲が無いときは 44100
+    /// 曲のサンプリング周波数に関係なく、いつも 44100 (48kHz の曲でも 44100 = 1 秒)
     static var offsetSampleRate: Double = 44100
 
     /// 再生のときだけ使う補正 (サンプル数)。JSON の offset はそのまま。
