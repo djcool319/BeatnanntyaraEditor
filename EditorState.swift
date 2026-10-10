@@ -151,6 +151,7 @@ final class EditorState: ObservableObject {
     @Published var partStart: Beat? = nil            // Part ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdDraft: HoldDraft? = nil       // Hold ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdWithHead = true               // Hold ツールで置くホールドに始点を付けるか (Hold ボタンで切り替え)
+    @Published var playbackCorrection = 1800        // 再生の補正 (サンプル数)。変えるときは setPlaybackCorrection
     @Published var slideWithHead = true {            // Slide ツールで置くスライドに始点を付けるか (Slide ボタンで切り替え。次回起動時も保存)
         didSet { UserDefaults.standard.set(slideWithHead, forKey: "editor.slideWithHead") }
     }
@@ -361,14 +362,16 @@ final class EditorState: ObservableObject {
         if let v = ud.object(forKey: "editor.holdDeselectSec") as? Double {
             self.holdDeselectSec = min(max(v, Self.holdRange.lowerBound), Self.holdRange.upperBound)
         }
+        if let v = ud.object(forKey: "beatrix.playbackCorrection") as? Int { self.playbackCorrection = v }
+        Beatrix.playbackCorrectionSamples = playbackCorrection
         prepareEngineAudio()
         // offset (サンプル数) は、曲のファイルのサンプリング周波数で秒にする (NoteEditor と同じ。48kHz の曲なら 48000 = 1 秒)
         if let r = engineAudio?.sampleRate, r > 0 {
             Beatrix.offsetSampleRate = r
-            self.chart.applyBeatrixOffset()
         } else {
             Beatrix.offsetSampleRate = 44100
         }
+        self.chart.applyBeatrixOffset()                 // サンプリング周波数と再生の補正を入れて、再生用の offset を決め直す
         applyVolumes()
         KeySound.shared.prepare()
         BeatrixSounds.shared.prepare()
@@ -935,6 +938,24 @@ final class EditorState: ObservableObject {
     func setBeatrixOffset(_ raw: Int) {
         let oldMs = chart.offsetMs
         chart.bxOffsetRaw = raw
+        offsetChangedWhilePlaying(oldMs: oldMs)
+        metaChanged()
+    }
+
+    /// SETTING の「再生の補正」(サンプル数)。JSON には入らない。次回起動時も保存される
+    func setPlaybackCorrection(_ samples: Int) {
+        let v = max(-20000, min(20000, samples))
+        playbackCorrection = v
+        UserDefaults.standard.set(v, forKey: "beatrix.playbackCorrection")
+        Beatrix.playbackCorrectionSamples = v
+        let oldMs = chart.offsetMs
+        chart.applyBeatrixOffset()
+        offsetChangedWhilePlaying(oldMs: oldMs)
+        metaChanged()
+    }
+
+    /// 再生中に offset (の秒) が変わったとき: 曲は止めずに、譜面の時計だけずらす
+    private func offsetChangedWhilePlaying(oldMs: Int) {
         if isPlaying && chart.offsetMs != oldMs {
             let delta = Double(chart.offsetMs - oldMs) / 1000.0
             if useEngine, let a = engineAudio {
@@ -946,7 +967,6 @@ final class EditorState: ObservableObject {
                 play()
             }
         }
-        metaChanged()
     }
 
     func setOffset(_ ms: Int) {

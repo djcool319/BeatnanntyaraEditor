@@ -407,7 +407,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     private func begin(at tc: Double) {
         // エディタと同じ offset (JSON の値 ÷ 44100 秒だけ、ノーツを曲に対して後ろへ)。
         // エディタの内部の offsetMs と同じ向き: 譜面時刻 t の音 = 曲の t + offset/44100 秒目
-        let off = -Double(session.chartOffsetRaw ?? 0) / Beatrix.offsetSampleRate
+        // (SETTING の「再生の補正」も同じく引く。エディタの再生と同じずれ方にする)
+        let off = -Double((session.chartOffsetRaw ?? 0) - Beatrix.playbackCorrectionSamples) / Beatrix.offsetSampleRate
         if let a = audio {
             a.begin(chartTime: tc, offsetTotal: off)
         } else {

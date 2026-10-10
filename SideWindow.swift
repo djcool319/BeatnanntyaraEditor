@@ -756,6 +756,24 @@ private struct SettingWindowContent: View {
             checkRow(title: "slide modifyでのsegの移動で縦方向の移動を許可する",
                      note: "オフのとき (初期値): Slide modify で seg を動かしても、横 (x) にだけ動きます。時間 (拍) は変わりません。オンにすると、縦にも動かせます (1/n 拍に吸着)。",
                      isOn: $state.allowSegVerticalMove)
+
+            SideDivider()
+
+            // 再生の補正 (前の譜面エディタと合わせるため)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("再生の補正: \(state.playbackCorrection) サンプル早める (約 \(Int((Double(state.playbackCorrection) / Beatrix.offsetSampleRate * 1000).rounded())) ms)")
+                    .font(PanelFont.label(18))
+                    .foregroundColor(.white)
+                HStack(spacing: 8) {
+                    SideSmallButton(title: "-441") { state.setPlaybackCorrection(state.playbackCorrection - 441) }
+                    SideSmallButton(title: "+441") { state.setPlaybackCorrection(state.playbackCorrection + 441) }
+                    SideSmallButton(title: "1800 に戻す") { state.setPlaybackCorrection(1800) }
+                }
+                Text("JSON の offset は変えずに、エディタの再生とテストプレイのときだけノーツを早めます。前の譜面エディタ (NoteEditor) はノーツ音を 1800 サンプル早く鳴らしていたので、初期値は同じ 1800 です。前のエディタでぴったりだった offset が、ここで少しずれるときに調整してください (+ にするとノーツが早く、− にすると遅くなります。441 ≒ 10ms)。曲を再生したまま変えられます。")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

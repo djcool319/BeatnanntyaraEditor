@@ -35,6 +35,11 @@ enum Beatrix {
     /// 曲を読み込んだときにエディタが入れる。曲が無いときは 44100
     static var offsetSampleRate: Double = 44100
 
+    /// 再生のときだけ使う補正 (サンプル数)。JSON の offset はそのまま。
+    /// 前の譜面エディタ (NoteEditor) は、ノーツ音を 1800 サンプル早く鳴らして合わせていた (ClapSoundPlayer の clapOffsetSamples)。
+    /// そのエディタでぴったりに合わせた offset が、こちらでもぴったりになるよう、初期値は同じ 1800 (SETTING で変えられる)
+    static var playbackCorrectionSamples: Int = 1800
+
     /// 3 鍵の 1 マスの幅 (タップを横に動かすときの 1 段)
     static let noteW = 85
 
@@ -319,7 +324,8 @@ extension ChartData {
     /// "offset" から、エディタの再生のオフセット (ms) を決める。
     /// びーとりの offset は「0 拍目が曲の何秒目か」、エディタの offsetMs は「譜面時刻 t の音 = 曲の t − offsetMs/1000 秒目」なので、符号が逆
     mutating func applyBeatrixOffset() {
-        offsetMs = -Int((Double(bxOffsetRaw) / Beatrix.offsetSampleRate * 1000.0).rounded())
+        let effective = Double(bxOffsetRaw - Beatrix.playbackCorrectionSamples)
+        offsetMs = -Int((effective / Beatrix.offsetSampleRate * 1000.0).rounded())
     }
 
     /// "曲名(EX)"
