@@ -154,7 +154,7 @@ final class EditorState: ObservableObject {
     var tempoDetectCancel: TempoDetectCancelFlag? = nil
     @Published var holdDraft: HoldDraft? = nil       // Hold ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdWithHead = true               // Hold ツールで置くホールドに始点を付けるか (Hold ボタンで切り替え)
-    @Published var playbackCorrection = 1800        // 再生の補正 (サンプル数)。変えるときは setPlaybackCorrection
+    @Published var playbackCorrection = 41          // 再生の補正 (ms)。変えるときは setPlaybackCorrection
     @Published var slideWithHead = true {            // Slide ツールで置くスライドに始点を付けるか (Slide ボタンで切り替え。次回起動時も保存)
         didSet { UserDefaults.standard.set(slideWithHead, forKey: "editor.slideWithHead") }
     }
@@ -371,11 +371,15 @@ final class EditorState: ObservableObject {
         if let v = ud.object(forKey: "editor.holdDeselectSec") as? Double {
             self.holdDeselectSec = min(max(v, Self.holdRange.lowerBound), Self.holdRange.upperBound)
         }
-        if let v = ud.object(forKey: "beatrix.playbackCorrection") as? Int { self.playbackCorrection = v }
-        Beatrix.playbackCorrectionSamples = playbackCorrection
+        if let v = ud.object(forKey: "beatrix.playbackCorrectionMs") as? Int {
+            self.playbackCorrection = v
+        } else if let v = ud.object(forKey: "beatrix.playbackCorrection") as? Int {
+            self.playbackCorrection = Int((Double(v) / 44.1).rounded())     // 前はサンプル数 (44100 = 1 秒) で持っていた
+        }
+        Beatrix.playbackCorrectionMs = playbackCorrection
         prepareEngineAudio()
-        // offset (サンプル数) は、曲のサンプリング周波数に関係なく、いつも 44100 = 1 秒 (48kHz の曲でも同じ。本家側を 44100 だけで扱えるように)
-        Beatrix.offsetSampleRate = 44100
+        // offset は ms (曲のサンプリング周波数に関係ない)
+        Beatrix.offsetSampleRate = 1000
         self.chart.applyBeatrixOffset()                 // サンプリング周波数と再生の補正を入れて、再生用の offset を決め直す
         applyVolumes()
         KeySound.shared.prepare()
@@ -974,12 +978,12 @@ final class EditorState: ObservableObject {
         metaChanged()
     }
 
-    /// SETTING の「再生の補正」(サンプル数)。JSON には入らない。次回起動時も保存される
-    func setPlaybackCorrection(_ samples: Int) {
-        let v = max(-20000, min(20000, samples))
+    /// SETTING の「再生の補正」(ms)。JSON には入らない。次回起動時も保存される
+    func setPlaybackCorrection(_ ms: Int) {
+        let v = max(-500, min(500, ms))
         playbackCorrection = v
-        UserDefaults.standard.set(v, forKey: "beatrix.playbackCorrection")
-        Beatrix.playbackCorrectionSamples = v
+        UserDefaults.standard.set(v, forKey: "beatrix.playbackCorrectionMs")
+        Beatrix.playbackCorrectionMs = v
         let oldMs = chart.offsetMs
         chart.applyBeatrixOffset()
         offsetChangedWhilePlaying(oldMs: oldMs)

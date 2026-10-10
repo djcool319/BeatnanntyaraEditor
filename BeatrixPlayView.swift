@@ -22,7 +22,7 @@ struct BeatrixPlayLaunch: Identifiable {
     let chart: BxPlayChart
     let audio: GameAudio?
     let startSec: Double          // 譜面時刻 (秒)。エディタの表示位置
-    let offsetRaw: Int            // 譜面の offset (JSON の値。44100 = 1 秒あとにずらす)
+    let offsetRaw: Int            // 譜面の offset (JSON の値。ms)
     let title: String
     let difficulty: BeatrixDifficulty
     let level: Double             // LEVEL (Lv の表示用)
@@ -405,11 +405,11 @@ final class BeatrixGameView: UIView, GameSessionView {
     private func uptime() -> Double { ProcessInfo.processInfo.systemUptime }
 
     private func begin(at tc: Double) {
-        // エディタと同じ offset (JSON の値 ÷ 44100 秒だけ、ノーツを曲に対して後ろへ)。
-        // エディタの内部の offsetMs と同じ向き: 譜面時刻 t の音 = 曲の t + offset/44100 秒目
+        // エディタと同じ offset (JSON の値 ms だけ、ノーツを曲に対して後ろへ)。
+        // エディタの内部の offsetMs と同じ向き: 譜面時刻 t の音 = 曲の t + offset/1000 秒目
         // (SETTING の「再生の補正」も同じく引く。エディタの再生と同じずれ方にする)
         // さらに「テストプレイの補正」(初期値 -30ms = ノーツを 30ms 早める。エディタでノーツ音ぴったりの譜面が、プレイでちょうどよく感じる分)
-        let off = -Double((session.chartOffsetRaw ?? 0) - Beatrix.playbackCorrectionSamples) / Beatrix.offsetSampleRate
+        let off = -Double((session.chartOffsetRaw ?? 0) - Beatrix.playbackCorrectionMs) / Beatrix.offsetSampleRate
             - session.playAdjustMs / 1000
         if let a = audio {
             a.begin(chartTime: tc, offsetTotal: off)

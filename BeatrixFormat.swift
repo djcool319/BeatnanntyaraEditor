@@ -33,14 +33,14 @@ enum Beatrix {
     ///   白・赤タップ = 横 0.03 / ワイプ・ホールド始点 = 0.028 (レーンの幅 0.9912 に対して 約 30% / 28%)
     static let tapW = 77
     static let sideW = 72
-    /// offset (サンプル数) を秒にするときの 1 秒あたりの値。
-    /// 曲のサンプリング周波数に関係なく、いつも 44100 (48kHz の曲でも 44100 = 1 秒)
-    static var offsetSampleRate: Double = 44100
+    /// JSON の offset を秒にするときの「1 秒あたりの値」。offset は ms (ミリ秒) なので、いつも 1000。
+    /// (前は 44100 = 1 秒のサンプル数だった。名前はそのまま使っている)
+    static var offsetSampleRate: Double = 1000
 
-    /// 再生のときだけ使う補正 (サンプル数)。JSON の offset はそのまま。
-    /// 前の譜面エディタ (NoteEditor) は、ノーツ音を 1800 サンプル早く鳴らして合わせていた (ClapSoundPlayer の clapOffsetSamples)。
-    /// そのエディタでぴったりに合わせた offset が、こちらでもぴったりになるよう、初期値は同じ 1800 (SETTING で変えられる)
-    static var playbackCorrectionSamples: Int = 1800
+    /// 再生のときだけ使う補正 (ms)。JSON の offset はそのまま。
+    /// 前の譜面エディタ (NoteEditor) は、ノーツ音を 1800 サンプル (約 41ms) 早く鳴らして合わせていた (ClapSoundPlayer の clapOffsetSamples)。
+    /// それと同じになるよう、初期値は 41ms (SETTING で変えられる)
+    static var playbackCorrectionMs: Int = 41
 
     /// 3 鍵の 1 マスの幅 (タップを横に動かすときの 1 段)
     static let noteW = 85
@@ -241,7 +241,7 @@ enum BeatrixDifficulty: Int, CaseIterable {
     }
 }
 
-/// JSON の "offset" の単位。びーとりは「44100 = 1 秒」(44.1kHz のサンプル数)。
+/// JSON の "offset" の単位 (今は使っていない。offset は ms で固定)。
 /// 念のため Information で切り替えられるようにしてある (次回起動時も保存される)
 enum BeatrixOffsetUnit: Int, CaseIterable {
     case samples44100 = 0, samples48000 = 1, milliseconds = 2
@@ -263,9 +263,9 @@ enum BeatrixOffsetUnit: Int, CaseIterable {
         }
     }
 
-    /// びーとりの offset は「44100 = 1 秒あとにずらす」で固定 (NoteEditor の OffsetSamples と同じ。切り替えはしない)
+    /// びーとりの offset は ms で固定 (切り替えはしない)
     static var current: BeatrixOffsetUnit {
-        get { .samples44100 }
+        get { .milliseconds }
         set { }
     }
 }
@@ -350,7 +350,7 @@ extension ChartData {
     /// "offset" から、エディタの再生のオフセット (ms) を決める。
     /// びーとりの offset は「0 拍目が曲の何秒目か」、エディタの offsetMs は「譜面時刻 t の音 = 曲の t − offsetMs/1000 秒目」なので、符号が逆
     mutating func applyBeatrixOffset() {
-        let effective = Double(bxOffsetRaw - Beatrix.playbackCorrectionSamples)
+        let effective = Double(bxOffsetRaw - Beatrix.playbackCorrectionMs)
         offsetMs = -Int((effective / Beatrix.offsetSampleRate * 1000.0).rounded())
     }
 

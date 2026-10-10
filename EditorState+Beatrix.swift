@@ -548,8 +548,8 @@ struct TempoDetectDialog: View {
             Text("offset: \(raw)")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(.white)
-            Text(String(format: "0 拍目 = 曲の %.3f 秒 (+ 再生の補正 %d サンプル = 今の基準)",
-                        Double(raw - Beatrix.playbackCorrectionSamples) / Beatrix.offsetSampleRate, Beatrix.playbackCorrectionSamples))
+            Text(String(format: "0 拍目 = 曲の %.3f 秒 (+ 再生の補正 %d ms = 今の基準)",
+                        Double(raw - Beatrix.playbackCorrectionMs) / Beatrix.offsetSampleRate, Beatrix.playbackCorrectionMs))
                 .font(.system(size: 12))
                 .foregroundColor(Color.white.opacity(0.7))
             // 0 拍目をずらす (何拍でも。+ で曲の後ろへ、− で前へ)
@@ -575,7 +575,7 @@ struct TempoDetectDialog: View {
                     .onSubmit { applyShiftText() }
                 small("決定") { applyShiftText() }
             }
-            if raw - Beatrix.playbackCorrectionSamples < 0 {
+            if raw - Beatrix.playbackCorrectionMs < 0 {
                 Text("0 拍目が曲の始まり (0 秒) より前になっています (offset がマイナス寄り)")
                     .font(.system(size: 11))
                     .foregroundColor(Color(red: 1, green: 0.6, blue: 0.4))

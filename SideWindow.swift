@@ -549,11 +549,19 @@ private struct InformationWindowContent: View {
                     labeled("ver (整数。空欄なら書き出さない)") { SideWideField(text: $verText, keyboard: .numberPad) }
                 }
                 Group {
-                    labeled("offset (サンプル数。\(Int(Beatrix.offsetSampleRate)) = 1 秒あとにずらす)") {
+                    labeled("offset (ms。1000 = 1 秒あとにずらす)") {
                         HStack(spacing: 8) {
                             SideWideField(text: $offsetText, keyboard: .numbersAndPunctuation)
                             SideSmallButton(title: "-10ms") { nudgeOffset(-0.01) }
                             SideSmallButton(title: "+10ms") { nudgeOffset(0.01) }
+                        }
+                    }
+                    labeled("前の形式 (サンプル数 44100 = 1 秒) の offset を ms にする") {
+                        SideSmallButton(title: "サンプル数 → ms に変換") {
+                            let ms = Int((Double(state.chart.bxOffsetRaw) / 44.1).rounded())
+                            offsetText = String(ms)
+                            state.setBeatrixOffset(ms)
+                            state.showToast("offset を ms にしました (\(ms) ms)")
                         }
                     }
                     labeled("BPM・offset の自動検出") {
@@ -562,7 +570,7 @@ private struct InformationWindowContent: View {
                     labeled("保存する場所") { readOnly(state.chartDir.lastPathComponent + " / " + state.chart.bxFileName) }
                     labeled("曲のファイル") { readOnly(state.oggFileName) }
                 }
-                Text("offset は「0 拍目が曲の何サンプル目か」。曲のサンプリング周波数 (48kHz など) に関係なく、いつも 44100 = 1 秒で数えます。+ にすると、ノーツが曲に対して遅くなります。\n" + audioInfo)
+                Text("offset は「0 拍目が曲の何 ms 目か」(ms、1000 = 1 秒)。+ にすると、ノーツが曲に対して遅くなります。前の形式 (サンプル数) の譜面を開いたときは、上の「サンプル数 → ms に変換」を 1 回だけ押してください。\n" + audioInfo)
                     .font(.system(size: 11))
                     .foregroundColor(Color.white.opacity(0.55))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -779,15 +787,17 @@ private struct SettingWindowContent: View {
 
             // 再生の補正 (前の譜面エディタと合わせるため)
             VStack(alignment: .leading, spacing: 8) {
-                Text("再生の補正: \(state.playbackCorrection) サンプル早める (約 \(Int((Double(state.playbackCorrection) / Beatrix.offsetSampleRate * 1000).rounded())) ms)")
+                Text("再生の補正: \(state.playbackCorrection) ms 早める")
                     .font(PanelFont.label(18))
                     .foregroundColor(.white)
                 HStack(spacing: 8) {
-                    SideSmallButton(title: "-441") { state.setPlaybackCorrection(state.playbackCorrection - 441) }
-                    SideSmallButton(title: "+441") { state.setPlaybackCorrection(state.playbackCorrection + 441) }
-                    SideSmallButton(title: "1800 に戻す") { state.setPlaybackCorrection(1800) }
+                    SideSmallButton(title: "-10") { state.setPlaybackCorrection(state.playbackCorrection - 10) }
+                    SideSmallButton(title: "-1") { state.setPlaybackCorrection(state.playbackCorrection - 1) }
+                    SideSmallButton(title: "+1") { state.setPlaybackCorrection(state.playbackCorrection + 1) }
+                    SideSmallButton(title: "+10") { state.setPlaybackCorrection(state.playbackCorrection + 10) }
+                    SideSmallButton(title: "41 に戻す") { state.setPlaybackCorrection(41) }
                 }
-                Text("JSON の offset は変えずに、エディタの再生とテストプレイのときだけノーツを早めます。前の譜面エディタ (NoteEditor) はノーツ音を 1800 サンプル早く鳴らしていたので、初期値は同じ 1800 です。前のエディタでぴったりだった offset が、ここで少しずれるときに調整してください (+ にするとノーツが早く、− にすると遅くなります。441 ≒ 10ms)。曲を再生したまま変えられます。")
+                Text("JSON の offset は変えずに、エディタの再生とテストプレイのときだけノーツを早めます。前の譜面エディタ (NoteEditor) はノーツ音を 1800 サンプル (約 41ms) 早く鳴らしていたので、初期値は 41ms です。ずれるときに調整してください (+ にするとノーツが早く、− にすると遅くなります)。曲を再生したまま変えられます。")
                     .font(.system(size: 11))
                     .foregroundColor(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)

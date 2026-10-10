@@ -1477,7 +1477,7 @@ final class GameAudio: @unchecked Sendable {
         offsetTotal += delta
     }
 
-    /// 曲のファイルのサンプリング周波数 (44100 / 48000 など)。びーとりの offset (サンプル数) を秒にするのに使う
+    /// 曲のファイルのサンプリング周波数 (44100 / 48000 など)。(びーとりの offset は ms なので、今は使っていない)
     var sampleRate: Double { sr }
     
     // デコード用(decodeQueue上でのみ触る)
@@ -1856,7 +1856,7 @@ final class GameSession: ObservableObject {
     @Published var seOn: Bool {
         didSet { UserDefaults.standard.set(seOn, forKey: "bx.seOn") }
     }
-    /// びーとり式テストプレイの offset (JSON の値。44100 = 1 秒あとにずらす)。nil のときは、これまでのテストプレイ
+    /// びーとり式テストプレイの offset (JSON の値。ms)。nil のときは、これまでのテストプレイ
     @Published var chartOffsetRaw: Int? = nil
     /// びーとり式テストプレイの補正 (ms)。譜面の offset に足して使う (譜面には入らない)。− にするとノーツが早くなる。
     /// エディタでノーツ音ぴったりに合わせた譜面が、プレイでは約 -30ms ずらしたほうがちょうどよく感じるので、初期値は -30
@@ -3154,10 +3154,10 @@ struct PauseOverlay: View {
                     }
 
                     if session.chartOffsetRaw != nil {
-                        // びーとり式テストプレイ: offset (44100 = 1 秒あとにずらす)。はじめは譜面の値。ここで変えても譜面には入らない
+                        // びーとり式テストプレイ: offset (ms。1000 = 1 秒あとにずらす)。はじめは譜面の値。ここで変えても譜面には入らない
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("offset (サンプル数。\(Int(Beatrix.offsetSampleRate)) = 1 秒)")
+                                Text("offset (ms)")
                                 Spacer()
                                 TextField("0", value: chartOffsetBinding, format: .number)
                                     .keyboardType(.numbersAndPunctuation)

@@ -13,7 +13,7 @@ import Accelerate
 //        ・整数 / 0.5 刻みに近ければ、その値に丸める
 //   4. offset: 選んだ BPM の拍の位置 (位相) を、曲の最初の 30 秒で「拍の位置の立ち上がりの合計」が最大になるところに決め、
 //        さらに拍ごとのずれの中央値で細かく合わせる (解析の窓のぶん約 2ms 早く出るので、そのぶん足す)。0 拍目は「音が鳴り始めたところにいちばん近い拍」。
-//        JSON の offset (サンプル数) = 0 拍目の秒 × 曲のサンプリング周波数 + SETTING の「再生の補正」
+//        JSON の offset (ms) = 0 拍目の秒 × 1000 + SETTING の「再生の補正」(ms)
 //        (エディタでノーツ音がちょうど音に重なる値 = 今の基準)
 //   5. BPM 変化: 15 秒ずつずらしながら局所の BPM を見て、最初の BPM から 1% 以上ずれた区間が続いたら
 //        「このあたりで変わっていそう」と知らせるだけ (自動では入れない。誤検出しやすいため)
@@ -50,11 +50,11 @@ final class BeatrixTempoAnalysis {
         BeatrixTempoDetector.firstBeat(env: env, frameRate: frameRate, shift: frameShift, bpm: bpm, musicStart: musicStart)
     }
 
-    /// その BPM での JSON の offset (サンプル数。再生の補正込み = 今の基準)。
+    /// その BPM での JSON の offset (ms。再生の補正込み = 今の基準)。
     /// shiftBeats: 0 拍目を何拍ずらすか (+ で曲の後ろへ、− で前へ。0.5 = 半拍。裏拍を拍と取り違えたときや、0 拍目を小節の頭に合わせたいとき用)
     func offsetRaw(bpm: Double, shiftBeats: Double = 0) -> Int {
         let t = firstBeatSec(bpm: bpm) + shiftBeats * 60 / bpm
-        return Int((t * Beatrix.offsetSampleRate).rounded()) + Beatrix.playbackCorrectionSamples      // いつも 44100 = 1 秒
+        return Int((t * Beatrix.offsetSampleRate).rounded()) + Beatrix.playbackCorrectionMs      // ms
     }
 }
 
