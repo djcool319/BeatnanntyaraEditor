@@ -1472,6 +1472,11 @@ final class GameAudio: @unchecked Sendable {
     private let cache: CachedPCMSource?       // 曲を背景で先に PCM へ展開するとき (エディタ用)。nil なら従来どおり
     private let format: AVAudioFormat
     private let sr: Double
+    /// 再生中に offset を変えたとき: 曲はそのまま流し、譜面の時計だけ delta 秒ずらす (メインスレッドから)
+    func shiftOffset(by delta: Double) {
+        offsetTotal += delta
+    }
+
     /// 曲のファイルのサンプリング周波数 (44100 / 48000 など)。びーとりの offset (サンプル数) を秒にするのに使う
     var sampleRate: Double { sr }
     

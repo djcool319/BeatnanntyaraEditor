@@ -931,9 +931,21 @@ final class EditorState: ObservableObject {
     }
 
     /// Information の offset (JSON の値そのまま) を変える
+    /// 再生中でも止めない (曲を聞きながら合わせられるように)。曲はそのまま流れ、ノーツの位置だけがずれる
     func setBeatrixOffset(_ raw: Int) {
-        if isPlaying { pause() }
+        let oldMs = chart.offsetMs
         chart.bxOffsetRaw = raw
+        if isPlaying && chart.offsetMs != oldMs {
+            let delta = Double(chart.offsetMs - oldMs) / 1000.0
+            if useEngine, let a = engineAudio {
+                a.shiftOffset(by: delta)                 // 曲の再生位置はそのまま、譜面の時計だけずらす
+                BeatrixSounds.shared.cancelScheduled()   // 予約済みのノーツ音は、ずらす前の時刻なので捨てて予約し直す
+                keyDone = playSec(atHost: CACurrentMediaTime())
+            } else {
+                pause()                                  // 従来方式 (予備) のときだけ、その場で再生し直す
+                play()
+            }
+        }
         metaChanged()
     }
 
