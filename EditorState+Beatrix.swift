@@ -137,6 +137,22 @@ extension EditorState {
         }
     }
 
+    /// Slide ボタン: 作成中なら「完」。それ以外は押すたびに「始点あり」→「始点なし」→ オフ (アイコンも変わる)
+    func slideButtonTapped() {
+        if slideDraft != nil {
+            finishSlide()
+        } else if tool != .slide {
+            tool = .slide
+            slideWithHead = true
+            showToast("スライド (始点あり): 始点 → 経由点を順にタップ → 完")
+        } else if slideWithHead {
+            slideWithHead = false
+            showToast("スライド (始点なし): 始点 → 経由点を順にタップ → 完")
+        } else {
+            tool = .unselected
+        }
+    }
+
     func togglePartTool() {
         editing = true
         toggleTool(.part)

@@ -80,7 +80,7 @@ jobs:
                       name: "AppModule",
                       dependencies: ["CRubberBand"],
                       path: ".",
-                      exclude: ["Vendor"]
+                      exclude: ["Vendor", "AppIcon"]
                   ),
                   .target(
                       name: "CRubberBand",
@@ -127,6 +127,7 @@ jobs:
           rm -rf Payload BeatTriXEditor.ipa
           mkdir -p Payload/MalodySlideEditor.app
           cp "$BIN" Payload/MalodySlideEditor.app/MalodySlideEditor
+          cp AppIcon/AppIcon*.png Payload/MalodySlideEditor.app/      # アプリのアイコン (BT のロゴ)
           chmod +x Payload/MalodySlideEditor.app/MalodySlideEditor
           cat > Payload/MalodySlideEditor.app/Info.plist <<'PLISTEOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -148,6 +149,20 @@ jobs:
             <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
             <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
             <key>UILaunchScreen</key><dict/>
+            <key>CFBundleIcons</key>
+            <dict>
+              <key>CFBundlePrimaryIcon</key>
+              <dict>
+                <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array>
+              </dict>
+            </dict>
+            <key>CFBundleIcons~ipad</key>
+            <dict>
+              <key>CFBundlePrimaryIcon</key>
+              <dict>
+                <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon76x76</string><string>AppIcon83.5x83.5</string></array>
+              </dict>
+            </dict>
             <key>UIFileSharingEnabled</key><true/>
             <key>LSSupportsOpeningDocumentsInPlace</key><true/>
             <key>UISupportedInterfaceOrientations</key>

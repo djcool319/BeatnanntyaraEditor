@@ -864,6 +864,7 @@ extension EditorState {
         } else {
             var n = Note(beat: base.beat, x: base.x, w: base.w, type: nil, segs: [seg])
             n.id = d.noteID
+            if !slideWithHead { n.extra[Beatrix.headKey] = 0 }      // Slide ボタンが「始点なし」のとき
             chart.notes.append(n)
         }
         chartChanged()

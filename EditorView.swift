@@ -643,7 +643,7 @@ struct RightPanel: View {
 
     /// EDIT 中のアイコンの左に出る名前 (上から、editButtons の並びと同じ順)
     private var editLabels: [String] {
-        ["Back", "Tap", "Red", state.tool == .hold && !state.holdWithHead ? "Hold (始点なし)" : "Hold", "Wipe", state.slideDraft != nil ? "Done" : "Slide", "Remove",
+        ["Back", "Tap", "Red", state.tool == .hold && !state.holdWithHead ? "Hold (始点なし)" : "Hold", "Wipe", state.slideDraft != nil ? "Done" : (state.tool == .slide && !state.slideWithHead ? "Slide (始点なし)" : "Slide"), "Remove",
          "Order", "Adv.", "More", "Undo / Redo"]
     }
 
@@ -741,7 +741,21 @@ struct RightPanel: View {
     /// Slide のアイコン。スライド作成中 (始点を置いたあと) は「完」の文字になるので、アイコンは出さない
     private func slideIconBuilder() -> ((Color) -> AnyView)? {
         if state.slideDraft != nil { return nil }
-        return { AnyView(PanelIconView(kind: .slide, color: $0)) }
+        let noHead = state.tool == .slide && !state.slideWithHead
+        return { c in
+            // 始点なしのときは、ホールドと同じく右下がりの斜線を重ねる
+            AnyView(ZStack {
+                PanelIconView(kind: .slide, color: c)
+                if noHead {
+                    Path { p in
+                        p.move(to: CGPoint(x: 8, y: 36))
+                        p.addLine(to: CGPoint(x: 42, y: 24))
+                    }
+                    .stroke(c, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: 50, height: PanelIconView.refHeight + 6)
+                }
+            })
+        }
     }
 
     private func editButtons(pitch: CGFloat) -> some View {
@@ -781,7 +795,7 @@ struct RightPanel: View {
                 .frame(height: pitch)
             // スライド作成中 (始点を置いたあと) は「完」になり、押すとその始点の seg 配置を終える
             PanelButton(glyph: state.slideDraft != nil ? "完" : "⌇", active: state.tool == .slide, icon: slideIcon) {      // Slide
-                if state.slideDraft != nil { state.finishSlide() } else { state.toggleTool(.slide) }
+                state.slideButtonTapped()
             }
             .frame(height: pitch)
           }
