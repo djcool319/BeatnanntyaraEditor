@@ -556,6 +556,9 @@ private struct InformationWindowContent: View {
                             SideSmallButton(title: "+10ms") { nudgeOffset(0.01) }
                         }
                     }
+                    labeled("BPM・offset の自動検出") {
+                        SideSmallButton(title: "曲を解析する") { state.startTempoDetect() }
+                    }
                     labeled("保存するファイル名") { readOnly(state.chart.bxFileName) }
                     labeled("曲のファイル") { readOnly(state.oggFileName) }
                 }

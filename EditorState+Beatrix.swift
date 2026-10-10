@@ -21,6 +21,18 @@ extension BeatrixDifficulty {
     var color: Color { Color(uiColor) }
 }
 
+/// BPM・offset の自動検出の状態
+enum TempoDetectPhase {
+    case running
+    case done(BeatrixTempoAnalysis)
+    case failed(String)
+}
+
+/// 解析を途中でやめるための旗 (裏のスレッドから読む)
+final class TempoDetectCancelFlag: @unchecked Sendable {
+    var cancelled = false
+}
+
 extension EditorState {
     func toggleSlideHead() {
         if isPlaying {
@@ -129,6 +141,72 @@ extension EditorState {
         } else {
             showToast("ノーツの速さを解除しました (全体のソフランだけで流れます)")
         }
+    }
+
+    // MARK: BPM・offset の自動検出
+
+    /// 曲を解析して、結果のダイアログを出す (解析は裏で。解析中もダイアログに「解析中」と出す)
+    func startTempoDetect() {
+        if isPlaying { pause() }
+        guard let od = oggData else {
+            showToast("曲が読み込まれていないので、解析できません")
+            return
+        }
+        tempoDetectCancel?.cancelled = true
+        let flag = TempoDetectCancelFlag()
+        tempoDetectCancel = flag
+        tempoDetect = .running
+        let ext0 = (oggFileName as NSString).pathExtension
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result: TempoDetectPhase
+            do {
+                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tempodetect", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let url = dir.appendingPathComponent("audio.\(ext0.isEmpty ? "ogg" : ext0)")
+                try od.write(to: url, options: .atomic)
+                let a = try BeatrixTempoDetector.analyze(url: url) { flag.cancelled }
+                result = .done(a)
+            } catch let e as BeatrixTempoDetector.Failure {
+                result = .failed(e.text)
+            } catch {
+                result = .failed("曲を読み込めませんでした (\(error.localizedDescription))")
+            }
+            DispatchQueue.main.async {
+                guard let self = self, !flag.cancelled, self.tempoDetectCancel === flag else { return }
+                self.tempoDetect = result
+            }
+        }
+    }
+
+    func cancelTempoDetect() {
+        tempoDetectCancel?.cancelled = true
+        tempoDetectCancel = nil
+        tempoDetect = nil
+    }
+
+    /// 検出結果を入れる。bpm / offset のどちらかだけでもよい
+    func applyTempoDetect(bpm: Double?, offsetRaw: Int?) {
+        tempoDetectCancel = nil
+        tempoDetect = nil
+        if bpm == nil && offsetRaw == nil { return }
+        if isPlaying { pause() }
+        pushUndo()
+        var parts: [String] = []
+        if let b = bpm {
+            if chart.notes.isEmpty || chart.times.count <= 1 {
+                chart.times = [TimePoint(beat: .zero, bpm: b)]
+            } else {
+                chart.times.sort { $0.beat < $1.beat }
+                chart.times[0].bpm = b
+            }
+            chartChanged()
+            parts.append("BPM \(Beatrix.speedLabel(b))")
+        }
+        if let raw = offsetRaw {
+            setBeatrixOffset(raw)
+            parts.append("offset \(raw)")
+        }
+        showToast(parts.joined(separator: " / ") + " を入れました")
     }
 
     // MARK: part
@@ -379,5 +457,151 @@ struct DifficultyBadge: View {
         } else {
             pending = item
         }
+    }
+}
+
+// MARK: - BPM・offset の自動検出のダイアログ (画面の真ん中)
+
+struct TempoDetectDialog: View {
+    @ObservedObject var state: EditorState
+    @State private var pick = 0
+    @State private var useBPM = true
+    @State private var useOffset = true
+    @State private var halfBeat = false
+    @State private var initialized = false
+
+    var body: some View {
+        if let phase = state.tempoDetect {
+            ZStack {
+                Color.black.opacity(0.55).ignoresSafeArea()
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("BPM・offset の自動検出")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                    content(phase)
+                }
+                .padding(22)
+                .frame(width: 460)
+                .background(Color(white: 0.1).opacity(0.97))
+                .overlay(Rectangle().stroke(Color.white.opacity(0.5), lineWidth: 1))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ phase: TempoDetectPhase) -> some View {
+        switch phase {
+        case .running:
+            HStack(spacing: 12) {
+                ProgressView().tint(.white)
+                Text("曲を解析しています…")
+                    .foregroundColor(.white)
+            }
+            HStack {
+                Spacer()
+                button("やめる", primary: false) { state.cancelTempoDetect() }
+            }
+        case .failed(let msg):
+            Text(msg)
+                .foregroundColor(.white)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                button("閉じる", primary: false) { state.cancelTempoDetect() }
+            }
+        case .done(let a):
+            resultView(a)
+        }
+    }
+
+    @ViewBuilder
+    private func resultView(_ a: BeatrixTempoAnalysis) -> some View {
+        let idx = min(pick, max(0, a.candidates.count - 1))
+        let bpm = a.candidates.isEmpty ? a.rawBPM : a.candidates[idx]
+        let raw = a.offsetRaw(bpm: bpm, halfBeat: halfBeat)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BPM (左がおすすめ。倍・半分の取り違えがあるので、曲に合うほうを選んでください)")
+                .font(.system(size: 12))
+                .foregroundColor(Color.white.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ForEach(Array(a.candidates.enumerated()), id: \.offset) { e in
+                    Button {
+                        pick = e.offset
+                    } label: {
+                        Text(Beatrix.speedLabel(e.element))
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(e.offset == idx ? .black : .white)
+                            .padding(.horizontal, 14)
+                            .frame(height: 40)
+                            .background(e.offset == idx ? Color(red: 0.4, green: 0.85, blue: 1) : Color.clear)
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1.2))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(String(format: "解析の値: %.3f", a.rawBPM))
+                .font(.system(size: 11))
+                .foregroundColor(Color.white.opacity(0.5))
+        }
+        VStack(alignment: .leading, spacing: 4) {
+            Text("offset: \(raw)")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+            Text(String(format: "0 拍目 = 曲の %.3f 秒 (+ 再生の補正 %d サンプル = 今の基準)",
+                        Double(raw - Beatrix.playbackCorrectionSamples) / a.sampleRate, Beatrix.playbackCorrectionSamples))
+                .font(.system(size: 12))
+                .foregroundColor(Color.white.opacity(0.7))
+            Toggle("半拍ずらす (裏拍が拍になっていたとき)", isOn: $halfBeat)
+                .font(.system(size: 13))
+                .foregroundColor(.white)
+        }
+        if let hint = a.changeHint {
+            Text("⚠︎ " + hint)
+                .font(.system(size: 12))
+                .foregroundColor(Color(red: 1, green: 0.8, blue: 0.4))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Toggle("BPM を入れる", isOn: $useBPM).foregroundColor(.white)
+        Toggle("offset を入れる", isOn: $useOffset).foregroundColor(.white)
+        if !state.chart.notes.isEmpty && useBPM {
+            Text("ノーツがある譜面です。BPM を変えると、ノーツの時刻 (秒) もずれます")
+                .font(.system(size: 12))
+                .foregroundColor(Color(red: 1, green: 0.5, blue: 0.5))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Text("検出は目安です。入れたあと、再生してノーツ音と曲が合っているか確かめてください (Information の ±10ms で微調整できます)")
+            .font(.system(size: 11))
+            .foregroundColor(Color.white.opacity(0.5))
+            .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 10) {
+            Spacer()
+            button("キャンセル", primary: false) { state.cancelTempoDetect() }
+            button("入れる", primary: true) {
+                state.applyTempoDetect(bpm: useBPM ? bpm : nil, offsetRaw: useOffset ? raw : nil)
+            }
+        }
+        .onAppear {
+            if !initialized {
+                initialized = true
+                pick = 0
+                useBPM = true
+                useOffset = true
+                halfBeat = false
+            }
+        }
+    }
+
+    private func button(_ title: String, primary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(primary ? .black : .white)
+                .padding(.horizontal, 18)
+                .frame(height: 40)
+                .background(primary ? Color.white : Color.clear)
+                .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
     }
 }

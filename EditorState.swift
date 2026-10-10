@@ -149,6 +149,9 @@ final class EditorState: ObservableObject {
     @Published var rangeEnd: Beat? = nil
     @Published var clip: [Note] = []
     @Published var partStart: Beat? = nil            // Part ツールで、始点だけ置いた状態 (終点のタップ待ち)
+    /// BPM・offset の自動検出 (BeatrixTempoDetect.swift)。nil = ダイアログを出していない
+    @Published var tempoDetect: TempoDetectPhase? = nil
+    var tempoDetectCancel: TempoDetectCancelFlag? = nil
     @Published var holdDraft: HoldDraft? = nil       // Hold ツールで、始点だけ置いた状態 (終点のタップ待ち)
     @Published var holdWithHead = true               // Hold ツールで置くホールドに始点を付けるか (Hold ボタンで切り替え)
     @Published var playbackCorrection = 1800        // 再生の補正 (サンプル数)。変えるときは setPlaybackCorrection

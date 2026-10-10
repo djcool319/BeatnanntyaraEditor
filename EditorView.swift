@@ -879,6 +879,7 @@ struct EditorView: View {
                 .padding(.top, 8)
         }
         .overlay(SidePanelLayer(state: state))           // BPM list / Effect list / Information / SETTING: 右からスライドして出る (トーストより下の層)
+        .overlay(TempoDetectDialog(state: state))        // BPM・offset の自動検出
         .overlay(toastLayer, alignment: .bottom)
         .alert("分割 (1/n)", isPresented: $showInput) {
             TextField("2〜1024", text: $inputText)
@@ -896,6 +897,12 @@ struct EditorView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("選んだノーツだけ、この倍率で流れてきます (例: 2 = 2 倍速 / 0.5 = 半分)。\n保存すると \"speeds_each\" に、拍・block が同じノーツの速さとして入ります。全体のソフランは Effect list の scroll (\"speeds\")")
+        }
+        // ノーツが 1 つも無い譜面を開いたときは、BPM・offset を自動で解析する (結果のダイアログで入れるか選ぶ)
+        .onAppear {
+            if state.chart.notes.isEmpty && state.oggData != nil && state.tempoDetect == nil {
+                state.startTempoDetect()
+            }
         }
         // TEST: びーとり式のテストプレイ (BeatrixPlayView.swift)
         .fullScreenCover(item: $state.bxLaunch) { launch in
