@@ -3120,7 +3120,7 @@ struct PauseOverlay: View {
                     }
 
                     if session.chartOffsetRaw != nil {
-                        // びーとり式テストプレイ: エディタの Information と同じ offset (44100 = 1 秒あとにずらす)
+                        // びーとり式テストプレイ: offset (44100 = 1 秒あとにずらす)。はじめは譜面の値。ここで変えても譜面には入らない
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text("offset (44100 = 1 秒あとにずらす)")
@@ -3141,7 +3141,7 @@ struct PauseOverlay: View {
                                     .monospacedDigit()
                                     .foregroundColor(.gray)
                             }
-                            Text("エディタの Information の offset と同じ値です。エディタに戻ると、ここで変えた値が譜面に入ります")
+                            Text("はじめは譜面 (Information) の offset と同じ値です。ここで変えた値は、このテストプレイの間だけ使われ、譜面には反映されません")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }

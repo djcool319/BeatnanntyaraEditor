@@ -105,7 +105,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         self.audio = launch.audio
         self.session = session
         self.startAt = launch.startSec
-        session.chartOffsetRaw = launch.offsetRaw          // PAUSE で変えられる (エディタに戻ると譜面に入る)
+        session.chartOffsetRaw = launch.offsetRaw          // PAUSE で変えられる (テストプレイの間だけ。譜面には入らない)
         self.songTitle = launch.title
         self.difficulty = launch.difficulty
         self.level = launch.level

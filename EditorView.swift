@@ -887,11 +887,8 @@ struct EditorView: View {
         }
         // TEST: びーとり式のテストプレイ (BeatrixPlayView.swift)
         .fullScreenCover(item: $state.bxLaunch) { launch in
-            BeatrixPlayScreen(launch: launch) { raw in
-                // PAUSE で offset を変えていたら、譜面に入れる (Information の offset と同じ値)
-                if let r = raw, r != state.chart.bxOffsetRaw { state.setBeatrixOffset(r) }
-                state.bxLaunch = nil
-            }
+            // PAUSE で変えた offset は、テストプレイの間だけのもの (譜面には入れない)
+            BeatrixPlayScreen(launch: launch) { _ in state.bxLaunch = nil }
         }
     }
 
