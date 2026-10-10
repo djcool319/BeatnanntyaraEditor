@@ -59,6 +59,9 @@ final class BeatrixGameView: UIView, GameSessionView {
     private var viewTime = 0.0
     /// ワイプの音は、本家と同じく「ノーツが判定ラインに来て消える瞬間」に鳴らす (早めに押したときは、その時刻まで待つ)
     private var pendingWipeSounds: [Double] = []
+    /// ワイプのエフェクトも、音と同じく判定ラインに来た瞬間に出す (時刻, レーン, 判定)
+    private var pendingWipeEffects: [(t: Double, lane: Int, judge: BxJudge)] = []
+    private let effectHost = CALayer()
 
     // 描画用のレイヤー (下から順に重なる)
     private let floorLayer = CAShapeLayer()
@@ -146,6 +149,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         add(redLayer, fill: UIColor(red: 1.0, green: 0.22, blue: 0.22, alpha: 1))
         add(wipeLayer, fill: UIColor(red: 0.97, green: 0.96, blue: 0.27, alpha: 1))
         add(judgeLayer, fill: UIColor(red: 0.95, green: 0.1, blue: 0.95, alpha: 1))
+        effectHost.actions = ["sublayers": NSNull()]
+        layer.addSublayer(effectHost)          // タッチエフェクト (判定ラインより上に重ねる)
     }
 
     private func setupLabels() {
@@ -196,6 +201,140 @@ final class BeatrixGameView: UIView, GameSessionView {
             default: BeatrixSounds.shared.playNow(.tap)
             }
         }
+        // タッチエフェクト (本家の message_tap と同じく、判定ごとに出す)
+        game.onJudge = { [weak self] type, lane, judge, early, t in
+            guard let self = self else { return }
+            if type == 4 && judge != .miss {
+                self.pendingWipeEffects.append((t: t, lane: lane, judge: judge))     // ワイプは判定ラインに来たときに出す
+                return
+            }
+            self.spawnEffect(type: type, lane: lane, judge: judge, early: early)
+        }
+    }
+
+    // MARK: タッチエフェクト
+    //   PERFECT (+): ノーツの色の光の玉 + 広がる輪 + 細かい粒 (白タップ・始点・判定点 = 水色 / 赤タップ = 赤 / ワイプ = 黄色)
+    //   GREAT     : ピンクの光の玉 + 細い輪 (少し控えめ)
+    //   早い MISS : 灰色の光の玉だけ (控えめ)。遅い MISS・見逃しは出さない
+
+    private func spawnEffect(type: Int, lane: Int, judge: BxJudge, early: Bool?) {
+        guard bounds.width > 0 else { return }
+        let color: UIColor
+        var scale: CGFloat = 1
+        var ring = true
+        var particles = true
+        switch judge {
+        case .perfectPlus, .perfect:
+            switch type {
+            case 3: color = UIColor(red: 1.0, green: 0.35, blue: 0.55, alpha: 1)
+            case 4: color = UIColor(red: 1.0, green: 0.96, blue: 0.55, alpha: 1)
+            case 5:
+                color = UIColor(red: 0.25, green: 1.0, blue: 0.95, alpha: 1)
+                scale = 0.75
+                ring = false
+            default: color = UIColor(red: 0.25, green: 1.0, blue: 0.95, alpha: 1)
+            }
+        case .great:
+            color = UIColor(red: 1.0, green: 0.55, blue: 0.85, alpha: 1)
+            scale = 0.85
+            particles = false
+        case .miss:
+            guard early == true else { return }
+            color = UIColor(white: 0.62, alpha: 1)
+            scale = 0.7
+            ring = false
+            particles = false
+        }
+        let g = geo()
+        let center = CGPoint(x: g.x(Self.laneFrac(lane), 0), y: g.judgeY)
+        let r = g.halfJ / 3 * 0.85 * scale              // 光の玉の半径 (1 鍵の幅の半分くらい)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        var made: [CALayer] = []
+
+        // 光の玉 (真ん中が白く、外へ向かってノーツの色が透けていく)
+        let glow = CAGradientLayer()
+        glow.type = .radial
+        glow.colors = [UIColor.white.cgColor, color.cgColor, color.withAlphaComponent(0.35).cgColor, color.withAlphaComponent(0).cgColor]
+        glow.locations = [0, 0.25, 0.55, 1]
+        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+        glow.endPoint = CGPoint(x: 1, y: 1)
+        glow.bounds = CGRect(x: 0, y: 0, width: r * 2.6, height: r * 2.6)
+        glow.position = center
+        effectHost.addSublayer(glow)
+        fade(glow, scaleFrom: 0.7, to: 1.15, duration: 0.30)
+        made.append(glow)
+
+        // 広がる輪
+        if ring {
+            let ringLayer = CAShapeLayer()
+            ringLayer.bounds = CGRect(x: 0, y: 0, width: r * 2, height: r * 2)
+            ringLayer.position = center
+            ringLayer.path = UIBezierPath(ovalIn: ringLayer.bounds).cgPath
+            ringLayer.fillColor = nil
+            ringLayer.strokeColor = color.withAlphaComponent(0.9).cgColor
+            ringLayer.lineWidth = judge == .great ? 1.5 : 2.5
+            effectHost.addSublayer(ringLayer)
+            fade(ringLayer, scaleFrom: 0.5, to: 1.6, duration: 0.38)
+            made.append(ringLayer)
+        }
+
+        // 細かい粒 (外へ飛んで消える)
+        if particles {
+            for k in 0..<7 {
+                let p = CALayer()
+                let size: CGFloat = 3 + CGFloat(k % 3)
+                p.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+                p.cornerRadius = size / 2
+                p.backgroundColor = color.cgColor
+                p.position = center
+                effectHost.addSublayer(p)
+                let ang = Double(k) / 7.0 * 2 * Double.pi + Double.random(in: -0.3...0.3)
+                let dist = r * CGFloat.random(in: 1.0...1.7)
+                let to = CGPoint(x: center.x + CGFloat(cos(ang)) * dist, y: center.y + CGFloat(sin(ang)) * dist * 0.6)
+                let mv = CABasicAnimation(keyPath: "position")
+                mv.fromValue = NSValue(cgPoint: center)
+                mv.toValue = NSValue(cgPoint: to)
+                let op = CABasicAnimation(keyPath: "opacity")
+                op.fromValue = 1
+                op.toValue = 0
+                let gr = CAAnimationGroup()
+                gr.animations = [mv, op]
+                gr.duration = 0.42
+                gr.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                p.position = to
+                p.opacity = 0
+                p.add(gr, forKey: "fx")
+                made.append(p)
+            }
+        }
+        CATransaction.commit()
+
+        // 終わったら消す (アニメーションより少しあと)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for l in made { l.removeFromSuperlayer() }
+            CATransaction.commit()
+        }
+    }
+
+    /// 大きくなりながら消える
+    private func fade(_ l: CALayer, scaleFrom s0: CGFloat, to s1: CGFloat, duration: CFTimeInterval) {
+        let sc = CABasicAnimation(keyPath: "transform.scale")
+        sc.fromValue = s0
+        sc.toValue = s1
+        let op = CABasicAnimation(keyPath: "opacity")
+        op.fromValue = 1
+        op.toValue = 0
+        let gr = CAAnimationGroup()
+        gr.animations = [sc, op]
+        gr.duration = duration
+        gr.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        l.opacity = 0
+        l.transform = CATransform3DMakeScale(s1, s1, 1)
+        l.add(gr, forKey: "fx")
     }
 
     override func layoutSubviews() {
@@ -207,6 +346,7 @@ final class BeatrixGameView: UIView, GameSessionView {
                   tapLayer, headLayer, redLayer, wipeLayer, judgeLayer] {
             l.frame = bounds
         }
+        effectHost.frame = bounds
         scoreBox.frame = CGRect(x: 0, y: 18, width: 300, height: 34)
         scoreLabel.frame = CGRect(x: 10, y: 0, width: 290, height: 34)
         titleBox.frame = CGRect(x: 0, y: 52, width: 300, height: 50)
@@ -291,6 +431,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         link?.isPaused = true
         touchZones.removeAll()
         pendingWipeSounds.removeAll()
+        pendingWipeEffects.removeAll()
         BeatrixSounds.shared.setHold(false)
         audio?.halt()
         session.pauseInfo = ""
@@ -308,6 +449,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         attachSounds()
         touchZones.removeAll()
         pendingWipeSounds.removeAll()
+        pendingWipeEffects.removeAll()
         begin(at: firstTime)
     }
 
@@ -323,6 +465,13 @@ final class BeatrixGameView: UIView, GameSessionView {
             let before = pendingWipeSounds.count
             pendingWipeSounds.removeAll { $0 <= t }
             if pendingWipeSounds.count < before && session.seOn { BeatrixSounds.shared.playNow(.wipe) }
+        }
+        if !pendingWipeEffects.isEmpty {
+            let due = pendingWipeEffects.filter { $0.t <= t }
+            if !due.isEmpty {
+                pendingWipeEffects.removeAll { $0.t <= t }
+                for e in due { spawnEffect(type: 4, lane: e.lane, judge: e.judge, early: nil) }
+            }
         }
         viewTime = chartTime(at: l.targetTimestamp)          // 画面に出る時刻で描く
         renderFrame()

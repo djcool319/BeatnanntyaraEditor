@@ -6,7 +6,7 @@ import QuartzCore
 ///   ・白タップ / ホールド・スライドの始点 (タップ) = tap
 ///   ・ワイプ / 始点がワイプ                     = yellow
 ///   ・赤タップ                                  = red_note (本家と同じく tap も一緒に鳴らす)
-///   ・ホールド / スライドを押さえている間          = キラキラした高い持続音 (コードで作った音。押さえている間だけ鳴り続ける)
+///   ・ホールド / スライドを押さえている間          = 小さな鈴がきらきら鳴る音 (コードで作った音。押さえている間だけ鳴り続ける)
 /// 音量は SETTING の「ノーツサウンドの音量」(KeySound.shared.volume) に従う。
 /// 音のデータは BeatrixSoundData.swift (wav を変換して埋め込んだもの)。
 ///
@@ -31,7 +31,7 @@ final class BeatrixSounds {
     private static let sampleRate = 44100.0
 
     /// 「しゅ〜」の大きさ (ノーツ音の音量に対する比。1.0 でタップ音と同じくらいの大きさ)
-    var holdLevel: Float = 0.45
+    var holdLevel: Float = 0.5
 
     private init() {}
 
@@ -168,40 +168,57 @@ final class BeatrixSounds {
         return buf
     }
 
-    /// ホールド / スライドを押さえている間の音: キラキラした高い持続音 (音ゲーのホールド音っぽいもの。自作)。
-    /// ・G6 / D7 / G7 / D8 の和音 (5 度の重ね) を、少しだけずらした高さの音と重ねて「揺らぎ」を出す (左右でずらし方を変えて広がりも)
-    /// ・1 秒に 10 回、軽く音量を揺らしてキラキラ感を出す
-    /// 2 秒をくり返す。どの音も 2 秒でちょうど元に戻る高さ (0.5Hz 刻み) にしてあるので、継ぎ目でプツッとならない
+    /// ホールド / スライドを押さえている間の音: 小さな鈴がランダムにきらきら鳴る音 + ごく薄い高音の響き (自作)。
+    /// ・C7 / G7 の柔らかい響きを小さく鳴らし続ける (少しずらした高さを重ねて、ゆっくり揺らぐ)
+    /// ・その上に、E7〜E8 あたりの短い「チリン」を 2 秒に 28 回、ランダムな時刻・高さ・左右で重ねる
+    /// 2 秒をくり返す。響きは 2 秒でちょうど元に戻る高さ (0.5Hz 刻み)、「チリン」は 2 秒の終わりからはみ出した分を頭に回してあるので、継ぎ目が分からない
     private static func makeHoldNoise(format: AVAudioFormat) -> AVAudioPCMBuffer? {
         let sr = format.sampleRate
         let count = Int(sr * 2.0)
         guard let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
               let ch = buf.floatChannelData else { return nil }
         buf.frameLength = AVAudioFrameCount(count)
-        // (高さ Hz, 大きさ)
-        let tones: [(Double, Double)] = [(1568, 0.5), (2349, 0.3), (3136, 0.15), (4698, 0.06)]
         var raw: [[Double]] = [Array(repeating: 0, count: count), Array(repeating: 0, count: count)]
-        var sum = 0.0
+        // 柔らかい響き
         for c in 0..<2 {
-            let detune = 1.5 + 0.5 * Double(c)          // 左は +1.5Hz、右は +2Hz ずらした音を重ねる
+            let ph = Double(c)
             for i in 0..<count {
                 let t = Double(i) / sr
-                var v = 0.0
-                for (f, a) in tones {
-                    v += a * sin(2.0 * Double.pi * f * t)
-                    v += a * sin(2.0 * Double.pi * (f + detune) * t + Double(c))
-                }
-                v *= 0.8 + 0.2 * sin(2.0 * Double.pi * 10.0 * t)     // キラキラの揺れ
-                raw[c][i] = v
-                sum += v * v
+                var v = 0.5 * sin(2.0 * Double.pi * 2093 * t + ph) + 0.5 * sin(2.0 * Double.pi * 2094 * t)
+                v += 0.3 * sin(2.0 * Double.pi * 3136 * t) + 0.3 * sin(2.0 * Double.pi * 3137.5 * t + ph)
+                raw[c][i] = v * 0.18
             }
         }
-        // 大きさは平均の音量 (RMS) でそろえる。最終的な大きさは holdLevel で調整
+        // きらきら (短い鈴の音をランダムに)
+        var seed: UInt32 = 24680
+        func rnd() -> Double {
+            seed = seed &* 1664525 &+ 1013904223
+            return Double(seed) / 4294967295.0
+        }
+        let bells: [Double] = [2637, 3136, 3520, 3951, 4186, 4699, 5274]
+        let len = Int(sr * 0.18)
+        for _ in 0..<28 {
+            let start = Int(rnd() * Double(count))
+            let f = bells[min(bells.count - 1, Int(rnd() * Double(bells.count)))]
+            let amp = 0.5 + 0.5 * rnd()
+            let pan = rnd()
+            for k in 0..<len {
+                let tt = Double(k) / sr
+                let env = exp(-tt / 0.045) * min(1.0, tt / 0.002)
+                let v = amp * env * (sin(2.0 * Double.pi * f * tt) + 0.3 * sin(2.0 * Double.pi * f * 2.01 * tt))
+                let idx = (start + k) % count
+                raw[0][idx] += v * (1.0 - pan * 0.6)
+                raw[1][idx] += v * (0.4 + pan * 0.6)
+            }
+        }
+        // 大きさは平均の音量 (RMS) でそろえる (控えめ)。最終的な大きさは holdLevel で調整
+        var sum = 0.0
+        for c in 0..<2 { for v in raw[c] { sum += v * v } }
         let rms = (sum / Double(2 * count)).squareRoot()
-        let gain = rms > 0 ? 0.18 / rms : 0
+        let gain = rms > 0 ? 0.10 / rms : 0
         for c in 0..<2 {
             for i in 0..<count {
-                ch[c][i] = Float(raw[c][i] * gain)
+                ch[c][i] = Float(max(-1.0, min(1.0, raw[c][i] * gain)))
             }
         }
         return buf

@@ -193,6 +193,8 @@ final class BxGame {
     private(set) var lastEarly: Bool? = nil          // PERFECT / GREAT のとき、早い (true) か遅い (false) か
     /// 音を鳴らすとき (ノーツの type: 1 / 2 = タップ、3 = 赤タップ、4 = ワイプ と、そのノーツの時刻)
     var onSound: ((Int, Double) -> Void)? = nil
+    /// 判定が出たとき (タッチエフェクト用): ノーツの type / レーン / 判定 / 早い (true)・遅い (false)・見逃し (nil) / ノーツの時刻
+    var onJudge: ((Int, Int, BxJudge, Bool?, Double) -> Void)? = nil
 
     /// 押した瞬間に取れるレーン (本家の CheckJudgement の引数)。0 = 左 / 1 = 中央左 / 2 = 中央右 / 3 = 右
     static let tapZones: [[Int]] = [[0, 1, 2], [3, 2, 1, 4], [3, 2, 4, 5], [6, 5, 4]]
@@ -284,7 +286,7 @@ final class BxGame {
                 onSound?(n.type, n.t)
                 record(i, .great, early: lag < 0)
             } else if !n.suppressed && a <= 0.13 {
-                record(i, .miss, early: nil)
+                record(i, .miss, early: lag < 0)          // 押したときの MISS (早い / 遅い)
             } else {
                 return false
             }
@@ -296,7 +298,7 @@ final class BxGame {
                 onSound?(n.type, n.t)
                 record(i, .great, early: lag < 0)
             } else if a <= 0.13 {
-                record(i, .miss, early: nil)
+                record(i, .miss, early: lag < 0)          // 押したときの MISS (早い / 遅い)
             } else {
                 return false
             }
@@ -315,6 +317,7 @@ final class BxGame {
 
     private func record(_ i: Int, _ j: BxJudge, early: Bool?) {
         notes[i].done = true
+        onJudge?(notes[i].type, notes[i].lane, j, early, notes[i].t)
         switch j {
         case .perfectPlus: perfectPlus += 1
         case .perfect: perfect += 1
