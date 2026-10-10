@@ -365,7 +365,7 @@ final class EditorState: ObservableObject {
         // offset (サンプル数) は、曲のファイルのサンプリング周波数で秒にする (NoteEditor と同じ。48kHz の曲なら 48000 = 1 秒)
         if let r = engineAudio?.sampleRate, r > 0 {
             Beatrix.offsetSampleRate = r
-            chart.applyBeatrixOffset()
+            self.chart.applyBeatrixOffset()
         } else {
             Beatrix.offsetSampleRate = 44100
         }
