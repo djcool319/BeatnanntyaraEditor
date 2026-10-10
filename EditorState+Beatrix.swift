@@ -468,7 +468,6 @@ struct TempoDetectDialog: View {
     @State private var useBPM = true
     @State private var useOffset = true
     @State private var halfBeat = false
-    @State private var initialized = false
 
     var body: some View {
         if let phase = state.tempoDetect {
@@ -582,13 +581,11 @@ struct TempoDetectDialog: View {
             }
         }
         .onAppear {
-            if !initialized {
-                initialized = true
-                pick = 0
-                useBPM = true
-                useOffset = true
-                halfBeat = false
-            }
+            // 結果が出るたびに、選択を初期値に戻す
+            pick = 0
+            useBPM = true
+            useOffset = true
+            halfBeat = false
         }
     }
 
