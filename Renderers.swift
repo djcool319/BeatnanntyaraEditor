@@ -91,6 +91,7 @@ enum LaneRenderer {
         drawSims(&c, g, state.chart.notes)
         drawNotes(&c, g, state.chart.notes, selected: state.selectedIDs)
         drawNoteSpeeds(&c, g, state.chart.notes)
+        drawDummyMarks(&c, g, state.chart.notes)
         drawOrder(&c, g, state)
         drawSprites(&c, g, state)
         drawSlideModify(&c, g, state)
@@ -435,6 +436,24 @@ enum LaneRenderer {
         }
     }
 
+    /// ダミー (dummy) のノーツの左上に「D」を出す (同じ位置は 1 回だけ)
+    static func drawDummyMarks(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note]) {
+        var done = Set<BeatrixKey>()
+        for n in notes where Beatrix.isDummy(n) {
+            let y = g.py(n.beat.value) - barLift
+            if y < -24 || y > g.H + 24 { continue }
+            let k = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
+            if done.contains(k) { continue }
+            done.insert(k)
+            let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
+            let p = CGPoint(x: g.px(Double(n.x)) - hw + 2, y: y - 7)
+            let t = Text("D")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundColor(Color(white: 0.85))
+            c.draw(t, at: p, anchor: .bottomLeading)
+        }
+    }
+
     static func drawNotes(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note], selected: Set<UUID> = []) {
         let lo = g.beatOf(g.H) - 0.05
         let hi = g.beatOf(0) + 0.05
@@ -478,7 +497,9 @@ enum LaneRenderer {
                         q.addLine(to: CGPoint(x: pb.x + hw, y: pb.y))
                         q.addLine(to: CGPoint(x: pb.x - hw, y: pb.y))
                         q.closeSubpath()
-                        c.fill(q, with: .color(isSel ? Color.selRibbon : Color.ribbonFill))
+                        // ダミーは薄く
+                        c.fill(q, with: .color(isSel ? Color.selRibbon : Color.ribbonFill)
+                            .opacity(Beatrix.isDummy(n) ? 0.35 : 1))
                     }
                 }
                 let cy = g.py(curB)
@@ -507,12 +528,15 @@ enum LaneRenderer {
             if kind == 0 { continue }                 // 始点なしのホールド / スライド
             // 始点に赤タップが重なっているときは、赤タップが始点になる (保存でもタップの始点は出さない) ので、水色の棒は描かない
             if n.isSlide && kind == 1 && redKeys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) { continue }
+            // ダミーは薄く描く (同じキャンバスに、不透明度だけ下げて描く)
+            var cc = c
+            if Beatrix.isDummy(n) { cc.opacity = 0.4 }
             if kind == 4 {
-                drawWipe(&c, xL: cx - hw, xR: cx + hw, yMid: y, selected: isSel)
+                drawWipe(&cc, xL: cx - hw, xR: cx + hw, yMid: y, selected: isSel)
             } else {
                 let rect = CGRect(x: cx - hw, y: y - tapH / 2, width: hw * 2, height: tapH)
                 let tint: TapTint = n.isSlide ? .slideHead : (kind == 3 ? .red : .normal)
-                drawTap(&c, rect: rect, selected: isSel, tint: tint)
+                drawTap(&cc, rect: rect, selected: isSel, tint: tint)
             }
         }
         // 3) スライドの点 (白 → 水色の輪 → 白)。選択中のスライドで赤くなるのは、始点の点だけ (seg の点は通常の色)

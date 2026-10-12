@@ -8,6 +8,8 @@ import Foundation
 //     "bpms":   [ {"LPB": 4, "num": 240, "bpm": 306}, ... ],       // 途中の BPM 変化
 //     "speeds": [ {"LPB": 4, "num": 240, "speed": 1.1}, ... ],     // ソフラン (ノーツ全体の流れる速さの倍率。その拍から先ずっと)
 //     "speeds_each": [ {"LPB": 4, "num": 240, "block": 3, "speed": 2.0}, ... ],
+//     "dummy": [ {"LPB": 4, "num": 240, "block": 3}, ... ],         // ダミーノーツ。LPB・num・block が完全に一致するノーツ
+//                                                                  // (ホールド・スライドは始点の位置) は、流れてくるけど判定が無い
 //                                                                  // ノーツ個別の速さ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) だけ、その倍率で流れてくる
 //     "notes":  [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []}, ... ] }
@@ -54,6 +56,12 @@ enum Beatrix {
     static let rawTypeKey = "bxType"
     /// ノーツ個別の速さ ("speeds_each")。無ければ 1 倍 (全体のソフランだけ)
     static let speedKey = "bxSpeed"
+    /// ダミーノーツ ("dummy")。true なら判定が無い
+    static let dummyKey = "bxDummy"
+
+    static func isDummy(_ n: Note) -> Bool {
+        (n.extra[dummyKey] as? Bool) == true
+    }
 
     static func noteSpeed(_ n: Note) -> Double? {
         doubleValue(n.extra[speedKey])
@@ -383,7 +391,7 @@ extension ChartData {
         }
 
         var b = obj
-        for k in ["notes", "bpms", "speeds", "speeds_each"] { b.removeValue(forKey: k) }
+        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy"] { b.removeValue(forKey: k) }
         let nameInfo = Beatrix.splitName((obj["name"] as? String) ?? "")
         b["name"] = nameInfo.title
         var diff = nameInfo.diff ?? .extreme
@@ -472,6 +480,19 @@ extension ChartData {
             }
         }
 
+        // ダミー: LPB・num・block が完全に一致するノーツ (スライド / ホールドは始点) をダミーにする
+        var dummyKeys = Set<BeatrixKey>()
+        for e in (obj["dummy"] as? [[String: Any]]) ?? [] {
+            let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
+            dummyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: blk))
+        }
+        if !dummyKeys.isEmpty {
+            for i in notes.indices
+            where dummyKeys.contains(BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))) {
+                notes[i].extra[Beatrix.dummyKey] = true
+            }
+        }
+
         var c = ChartData(root: ["beatrix": b], times: times, notes: notes, soundEntries: [],
                           effects: effects, otherEffects: [], hadEffectKey: !effects.isEmpty)
         c.setMetaString(["song", "title"], nameInfo.title)
@@ -505,9 +526,26 @@ extension ChartData {
         }
         out["speeds"] = speeds
         out["speeds_each"] = beatrixSpeedsEach()
+        out["dummy"] = beatrixDummies()
 
         out["notes"] = beatrixNotes()
         return BeatrixJSONWriter.data(out)
+    }
+
+    /// ダミーを JSON の "dummy" の形にする (同じ位置に複数あるときは 1 つにまとめる)
+    func beatrixDummies() -> [[String: Any]] {
+        var done = Set<BeatrixKey>()
+        var out: [[String: Any]] = []
+        let sorted = notes.sorted { a, b in a.beat == b.beat ? a.x < b.x : a.beat < b.beat }
+        for n in sorted where Beatrix.isDummy(n) {
+            let blk = Beatrix.block(ofX: Double(n.x))
+            let k = BeatrixKey(beat: n.beat, block: blk)
+            if done.contains(k) { continue }
+            done.insert(k)
+            let p = Beatrix.lpbNum(n.beat)
+            out.append(["LPB": p.lpb, "num": p.num, "block": blk])
+        }
+        return out
     }
 
     /// ノーツ個別の速さを JSON の "speeds_each" の形にする (同じ位置に複数あるときは 1 つにまとめる)
@@ -652,13 +690,13 @@ struct BeatrixKey: Hashable {
 
 // MARK: - JSON の書き出し (NoteEditor と同じ見た目)
 //   ・キーの順番を固定する (上: name → maxBlock → BPM → LEVEL → difficulty → artist → offset → preview → ver
-//     → bpms → speeds → speeds_each → part → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
+//     → bpms → speeds → speeds_each → dummy → part → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
 //   ・字下げは 2 つ、"キー": 値 (コロンの前に空白を入れない)、中身が空の配列は []
 //   ・数は、整数なら小数点を付けない (149)、小数は短い表記 (4.7)
 
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
-                           "bpms", "speeds", "speeds_each", "part", "notes"]
+                           "bpms", "speeds", "speeds_each", "dummy", "part", "notes"]
     static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {

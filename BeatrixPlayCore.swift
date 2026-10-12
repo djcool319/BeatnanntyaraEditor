@@ -29,6 +29,7 @@ struct BxNote {
     let lane: Int
     let type: Int
     var sp: Double = 1                     // ノーツ個別の速さ (speeds_each)
+    var dummy = false                      // ダミー (判定なし。取れば消えるだけ)
     var suppressed = false
     var done = false
 }
@@ -38,6 +39,7 @@ struct BxHold {
     let t1: Double
     let lane: Int
     var sp: Double = 1
+    var dummy = false
 }
 
 struct BxSlidePoint {
@@ -48,6 +50,7 @@ struct BxSlidePoint {
 struct BxSlide {
     let pts: [BxSlidePoint]
     var sp: Double = 1
+    var dummy = false
 }
 
 /// 同時押しの線 (2 つのレーンが 2 以上離れているとき)
@@ -110,6 +113,11 @@ struct BxPlayChart {
         }
         func spOf(_ d: [String: Any]) -> Double { each[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? 1 }
 
+        // ダミー (保存する JSON の dummy と同じ。LPB・num・block が完全に一致するノーツだけ)
+        var dummyKeys = Set<BeatrixKey>()
+        for e in chart.beatrixDummies() { dummyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))) }
+        func isDummy(_ d: [String: Any]) -> Bool { dummyKeys.contains(BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))) }
+
         // ソフラン (speeds): 0 拍目より前は 1 倍
         var sps: [(t: Double, speed: Double)] = []
         for e in chart.effects.sorted(by: { $0.beat < $1.beat }) where e.kind == .scroll {
@@ -141,30 +149,31 @@ struct BxPlayChart {
             var tp = type
             if type == 1 && holdStarts.contains(BeatrixKey(beat: Beatrix.beat(of: n), block: blk)) { tp = 2 }
             if tp < 1 || tp > 4 { tp = 1 }
-            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n)))
+            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n)))
         }
 
         for n in raw where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
             let ks = kids(n)
             let blk = block(n)
             let isSlide = ks.contains { block($0) != blk }
+            let dm = isDummy(n)
             if !isSlide {
                 // ホールド: 半拍ごとに判定点
                 let startBeat = Beatrix.beat(of: n).value
                 guard let last = ks.last else { continue }
                 let endBeat = Beatrix.beat(of: last).value
                 if endBeat <= startBeat { continue }
-                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n)))
+                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm))
                 var curLane = blk
                 var curBeat = startBeat
                 for k in ks {
                     let eb = Beatrix.beat(of: k).value
-                    out.notes.append(BxNote(t: tm.sec(atBeat: curBeat) + 0.02, lane: curLane, type: 5))
+                    out.notes.append(BxNote(t: tm.sec(atBeat: curBeat) + 0.02, lane: curLane, type: 5, dummy: dm))
                     var j = 1
                     while j < 100_000 {
                         let b = curBeat + Double(j) * 0.5
                         if b >= eb - 0.0001 { break }
-                        out.notes.append(BxNote(t: tm.sec(atBeat: b) + 0.02, lane: curLane, type: 5))
+                        out.notes.append(BxNote(t: tm.sec(atBeat: b) + 0.02, lane: curLane, type: 5, dummy: dm))
                         j += 1
                     }
                     curLane = block(k)
@@ -174,20 +183,21 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts, sp: spOf(n)))
-                for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5)) }
+                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm))
+                for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }
             }
         }
 
         out.notes.sort { $0.t < $1.t }
 
         // 黄色 (ワイプ / 判定点) の直後 0.16 秒以内のタップは、GREAT / MISS を出さない
-        for i in out.notes.indices where out.notes[i].type == 1 {
+        //   (ダミーは判定が無いので、抑える側にも抑えられる側にもならない)
+        for i in out.notes.indices where out.notes[i].type == 1 && !out.notes[i].dummy {
             var j = i - 1
             while j >= 0 && out.notes[i].t - out.notes[j].t <= 0.16 {
                 let o = out.notes[j]
                 let gap = out.notes[i].t - o.t
-                if (o.type == 4 || o.type == 5) && gap > 0 && sameZone(out.notes[i].lane, o.lane) {
+                if (o.type == 4 || o.type == 5) && !o.dummy && gap > 0 && sameZone(out.notes[i].lane, o.lane) {
                     out.notes[i].suppressed = true
                     break
                 }
@@ -256,7 +266,8 @@ final class BxGame {
     /// 押している間に取れるレーン (本家の CheckSlideJudgement の引数)
     static let holdZones: [[Int]] = [[0, 1, 2], [1, 2, 3, 4], [2, 3, 4, 5], [4, 5, 6]]
 
-    var total: Int { notes.count }
+    /// 判定のあるノーツの数 (ダミーは数えない)
+    private(set) var total = 0
     var judged: Int { perfectPlus + perfect + great + miss }
 
     /// スコア (仮: 本家の計算式が分からないので、PERFECT+ = 100% / PERFECT = 99% / GREAT = 50% で 1,000,000 点満点)
@@ -270,6 +281,7 @@ final class BxGame {
         var ns = chart.notes
         for i in ns.indices where ns[i].t < startTime { ns[i].done = true }      // 途中から始めるとき、前のノーツは処理済み
         notes = ns
+        total = ns.filter { !$0.dummy }.count
         advance()
     }
 
@@ -277,7 +289,8 @@ final class BxGame {
         while first < notes.count && notes[first].done { first += 1 }
     }
 
-    /// ボタンを押した瞬間
+    /// ボタンを押した瞬間。判定のあるノーツを先に見て、取れなかったときだけダミーを消す
+    /// (ダミーが本物のノーツの入力を横取りしないように)
     func press(zone: Int, at now: Double) {
         guard zone >= 0 && zone < Self.tapZones.count else { return }
         let lanes = Self.tapZones[zone]
@@ -285,8 +298,24 @@ final class BxGame {
         while i < notes.count {
             let n = notes[i]
             if n.t - now > 0.2 { break }
-            if !n.done && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
+            if !n.done && !n.dummy && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
                 if judgeTap(i, lag: now - n.t) { return }
+            }
+            i += 1
+        }
+        // ダミー: 本物と同じ幅 (白タップ・始点は ±0.13 秒、赤タップは ±0.06 秒) の中なら、消えるだけ (判定・エフェクト・数えなし)
+        i = first
+        while i < notes.count {
+            let n = notes[i]
+            if n.t - now > 0.2 { break }
+            if !n.done && n.dummy && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
+                let a = abs(now - n.t)
+                if a <= (n.type == 3 ? 0.06 : 0.13) {
+                    onSound?(n.type, n.t)
+                    notes[i].done = true
+                    advance()
+                    return
+                }
             }
             i += 1
         }
@@ -300,7 +329,14 @@ final class BxGame {
         while i < notes.count {
             let n = notes[i]
             if n.t - now > 0.12 { break }
-            if !n.done && (n.type == 4 || n.type == 5) && lanes.contains(n.lane) && abs(now - n.t) <= 0.12 {
+            if !n.done && n.dummy && (n.type == 4 || n.type == 5) && lanes.contains(n.lane) && abs(now - n.t) <= 0.12 {
+                // ダミー: 消えるだけ (ワイプは音だけ鳴らす)。本物の判定は続けて探す
+                if n.type == 4 { onSound?(4, n.t) }
+                notes[i].done = true
+                i += 1
+                continue
+            }
+            if !n.done && !n.dummy && (n.type == 4 || n.type == 5) && lanes.contains(n.lane) && abs(now - n.t) <= 0.12 {
                 if n.type == 4 { onSound?(4, n.t) }
                 record(i, .perfectPlus, early: nil)
                 return
@@ -318,7 +354,11 @@ final class BxGame {
             if !n.done {
                 let late = now - n.t
                 if (n.type <= 3 && late > 0.09) || (n.type >= 4 && late > 0.12) {
-                    record(i, .miss, early: nil)
+                    if n.dummy {
+                        notes[i].done = true          // ダミーは見逃しても MISS にしない (消えるだけ)
+                    } else {
+                        record(i, .miss, early: nil)
+                    }
                 }
             }
             i += 1

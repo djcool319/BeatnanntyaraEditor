@@ -209,6 +209,41 @@ extension EditorState {
         showToast(parts.joined(separator: " / ") + " を入れました")
     }
 
+    // MARK: ダミー (dummy)
+
+    /// 選択中のノーツを ダミー ⇔ 普通 で切り替える (選択の中に普通のノーツが 1 つでもあれば、全部ダミーにする)。
+    /// 同じ位置 (拍・block が完全に一致) のノーツ (スライドの始点のタップなど) もまとめて切り替える
+    /// (保存する JSON では、位置ごとに 1 つの値になるため)
+    func toggleDummy() {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        let ids = selectedIDs
+        let sel = chart.notes.filter { ids.contains($0.id) }
+        if sel.isEmpty {
+            showToast("先にノーツを選択してください")
+            return
+        }
+        let toDummy = sel.contains { !Beatrix.isDummy($0) }
+        var keys = Set<BeatrixKey>()
+        for n in sel { keys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
+        pushUndo()
+        var count = 0
+        for i in chart.notes.indices {
+            let n = chart.notes[i]
+            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+            if toDummy {
+                chart.notes[i].extra[Beatrix.dummyKey] = true
+            } else {
+                chart.notes[i].extra.removeValue(forKey: Beatrix.dummyKey)
+            }
+            count += 1
+        }
+        chartChanged()
+        showToast(toDummy ? "ダミーにしました (\(count) 個。判定なし)" : "ダミーを解除しました (\(count) 個)")
+    }
+
     // MARK: part
 
     /// Part ツールでレーンをタップしたとき。

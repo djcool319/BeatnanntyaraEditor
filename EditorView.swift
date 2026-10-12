@@ -1030,7 +1030,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 12
+    private static let moreRowCount = 13
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1073,6 +1073,11 @@ struct EditorView: View {
             moreItem("Tap / Red", icon: .flip, dim: state.selectedIDs.isEmpty) {
                 state.popup = .none
                 state.toggleRedTap()
+            }
+            // ダミー (判定の無いノーツ。JSON の dummy)
+            moreItem("Dummy", icon: .flip, dim: state.selectedIDs.isEmpty) {
+                state.popup = .none
+                state.toggleDummy()
             }
             // ノーツ個別の速さ (speeds_each)
             moreItem("Note speed", icon: .speed, dim: state.selectedIDs.isEmpty) {
