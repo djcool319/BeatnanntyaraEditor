@@ -498,8 +498,8 @@ enum LaneRenderer {
                         q.addLine(to: CGPoint(x: pb.x - hw, y: pb.y))
                         q.closeSubpath()
                         // ダミーは薄く
-                        c.fill(q, with: .color(isSel ? Color.selRibbon : Color.ribbonFill)
-                            .opacity(Beatrix.isDummy(n) ? 0.35 : 1))
+                        c.fill(q, with: .color((isSel ? Color.selRibbon : Color.ribbonFill)
+                            .opacity(Beatrix.isDummy(n) ? 0.35 : 1)))
                     }
                 }
                 let cy = g.py(curB)
