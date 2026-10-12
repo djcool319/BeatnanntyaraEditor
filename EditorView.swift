@@ -933,7 +933,10 @@ struct EditorView: View {
         // TEST: びーとり式のテストプレイ (BeatrixPlayView.swift)
         .fullScreenCover(item: $state.bxLaunch) { launch in
             // PAUSE で変えた offset は、テストプレイの間だけのもの (譜面には入れない)
-            BeatrixPlayScreen(launch: launch) { _ in state.bxLaunch = nil }
+            // iPhone では、エディタと同じく iPad くらいの大きさで作って縮めて表示する (文字・判定の表示・ボタンの比率を iPad と同じにする)
+            PhoneScaled {
+                BeatrixPlayScreen(launch: launch) { _ in state.bxLaunch = nil }
+            }
         }
     }
 

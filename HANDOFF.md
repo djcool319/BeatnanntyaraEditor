@@ -644,5 +644,5 @@
 - PhoneLayout.swift: iPhone のときだけ、エディタ（と起動画面）を「短い辺 640pt の仮の画面」で作って、画面に合わせて全体を縮めて表示する（`PhoneScaled`）。ノッチ・ホームバーの safe area の中に収める。iPad は今までどおり
 - 画面の向き: iPhone だけ横画面 / 縦画面を切り替えられる（SETTING の一番上と起動画面。`AppOrientation`、UserDefaults の `phone.portrait`）。AppDelegate の supportedInterfaceOrientationsFor で向きを決めて、requestGeometryUpdate で回す。iPad は横だけ
 - Info.plist（CI）の iPhone 用の向きに Portrait を足した
-- テストプレイは縮めずに全画面（縦画面でもそのまま動く作り）
+- テストプレイも iPhone ではエディタと同じく `PhoneScaled` で縮めて表示する（スコア・コンボ・判定の文字・PAUSE の比率が iPad と同じになる）
 - 実機（iPhone）での見え方は未確認。崩れていたらスクショをもらって直す
