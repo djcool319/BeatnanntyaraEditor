@@ -25,6 +25,8 @@ struct RootView: View {
     @State private var message = ""
 
     var body: some View {
+        // iPhone のときは、iPad くらいの大きさで作って縮めて表示する (PhoneLayout.swift)。iPad はそのまま
+        PhoneScaled {
         ZStack {
             if let st = editor {
                 EditorView(state: st)
@@ -38,6 +40,7 @@ struct RootView: View {
             } else {
                 importView
             }
+        }
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
             handle(result)
@@ -89,6 +92,8 @@ struct RootView: View {
                 .buttonStyle(.bordered)
                 .disabled(busy)
             }
+
+            PhoneOrientationPicker()      // iPhone のときだけ出る
 
             if busy { ProgressView() }
             if !message.isEmpty {

@@ -715,6 +715,10 @@ private struct SettingWindowContent: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
+                    if PhoneLayout.isPhone {
+                        PhoneOrientationPicker()          // iPhone のときだけ: 横画面 / 縦画面
+                        SideDivider()
+                    }
                     volumeRows
                     SideDivider()
                     backgroundRows
