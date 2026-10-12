@@ -42,7 +42,10 @@ struct PhoneScaled<Content: View>: View {
                 let s = min(1, min(w, h) / PhoneLayout.virtualShortSide)
                 ZStack(alignment: .topLeading) {
                     Color.black
-                    content
+                    // 中身は safe area を持たない入れ物 (ZeroSafeAreaHost) に入れる。
+                    // SwiftUI のままだと、仮の画面がノッチ・ホームバーの位置にかかっている分だけ中身が勝手に広がって、
+                    // 右のボタン列や下の帯が、見えない位置 (縮めた範囲の外) にはみ出してしまうため
+                    ZeroSafeAreaHost(content: AnyView(content))
                         .frame(width: w / s, height: h / s)
                         .scaleEffect(s, anchor: .topLeading)
                         .frame(width: w, height: h, alignment: .topLeading)
@@ -55,6 +58,46 @@ struct PhoneScaled<Content: View>: View {
         } else {
             content
         }
+    }
+}
+
+/// safe area (ノッチ・ホームバーの分の余白) を一切持たない入れ物。中身はいつも、もらった大きさぴったりで並ぶ
+struct ZeroSafeAreaHost: UIViewControllerRepresentable {
+    let content: AnyView
+
+    func makeUIViewController(context: Context) -> ZeroSafeAreaHostingController {
+        let hc = ZeroSafeAreaHostingController(rootView: content)
+        hc.view.backgroundColor = .black
+        return hc
+    }
+
+    func updateUIViewController(_ hc: ZeroSafeAreaHostingController, context: Context) {
+        hc.rootView = content
+    }
+}
+
+final class ZeroSafeAreaHostingController: UIHostingController<AnyView> {
+    override init(rootView: AnyView) {
+        super.init(rootView: rootView)
+        if #available(iOS 16.4, *) {
+            safeAreaRegions = []
+        }
+    }
+
+    @MainActor required dynamic init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    /// iOS 16.0〜16.3 (safeAreaRegions が無い) では、受け取った余白と同じだけマイナスの余白を足して打ち消す
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        if #available(iOS 16.4, *) { return }
+        let parent = view.safeAreaInsets
+        let add = additionalSafeAreaInsets
+        let base = UIEdgeInsets(top: parent.top - add.top, left: parent.left - add.left,
+                                bottom: parent.bottom - add.bottom, right: parent.right - add.right)
+        let want = UIEdgeInsets(top: -base.top, left: -base.left, bottom: -base.bottom, right: -base.right)
+        if want != add { additionalSafeAreaInsets = want }
     }
 }
 
