@@ -30,6 +30,8 @@ struct BxNote {
     let type: Int
     var sp: Double = 1                     // ノーツ個別の速さ (speeds_each)
     var dummy = false                      // ダミー (判定なし。取れば消えるだけ)
+    var showFrom = -Double.infinity        // この時刻になるまで見えない (appear)
+    var hideFrom = Double.infinity         // この時刻から見えない (disappear)
     var suppressed = false
     var done = false
 }
@@ -40,6 +42,8 @@ struct BxHold {
     let lane: Int
     var sp: Double = 1
     var dummy = false
+    var showFrom = -Double.infinity
+    var hideFrom = Double.infinity
 }
 
 struct BxSlidePoint {
@@ -51,6 +55,8 @@ struct BxSlide {
     let pts: [BxSlidePoint]
     var sp: Double = 1
     var dummy = false
+    var showFrom = -Double.infinity
+    var hideFrom = Double.infinity
 }
 
 /// 同時押しの線 (2 つのレーンが 2 以上離れているとき)
@@ -59,6 +65,8 @@ struct BxSim {
     let a: Int
     let b: Int
     var sp: Double = 1
+    var ia = 0                    // つないでいるノーツ (BxPlayChart.notes / BxGame.notes の番号)
+    var ib = 0
 }
 
 /// ソフラン (speeds) の 1 区間: 時刻 t から速さ speed。pos = その時刻までに流れた量 (速さ 1 なら秒と同じ)
@@ -118,6 +126,20 @@ struct BxPlayChart {
         for e in chart.beatrixDummies() { dummyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))) }
         func isDummy(_ d: [String: Any]) -> Bool { dummyKeys.contains(BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))) }
 
+        // 出現 / 消える (保存する JSON の appear / disappear と同じ)
+        func atMap(_ key: String) -> [BeatrixKey: Double] {
+            var m: [BeatrixKey: Double] = [:]
+            for e in chart.beatrixAtList(key) {
+                let at = Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
+                m[BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))] = tm.sec(atBeat: at.value)
+            }
+            return m
+        }
+        let appearAt = atMap(Beatrix.appearKey)
+        let vanishAt = atMap(Beatrix.vanishKey)
+        func showOf(_ d: [String: Any]) -> Double { appearAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? -Double.infinity }
+        func hideOf(_ d: [String: Any]) -> Double { vanishAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? Double.infinity }
+
         // ソフラン (speeds): 0 拍目より前は 1 倍
         var sps: [(t: Double, speed: Double)] = []
         for e in chart.effects.sorted(by: { $0.beat < $1.beat }) where e.kind == .scroll {
@@ -149,7 +171,8 @@ struct BxPlayChart {
             var tp = type
             if type == 1 && holdStarts.contains(BeatrixKey(beat: Beatrix.beat(of: n), block: blk)) { tp = 2 }
             if tp < 1 || tp > 4 { tp = 1 }
-            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n)))
+            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n),
+                                    showFrom: showOf(n), hideFrom: hideOf(n)))
         }
 
         for n in raw where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
@@ -163,7 +186,8 @@ struct BxPlayChart {
                 guard let last = ks.last else { continue }
                 let endBeat = Beatrix.beat(of: last).value
                 if endBeat <= startBeat { continue }
-                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm))
+                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm,
+                                        showFrom: showOf(n), hideFrom: hideOf(n)))
                 var curLane = blk
                 var curBeat = startBeat
                 for k in ks {
@@ -183,7 +207,7 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm))
+                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm, showFrom: showOf(n), hideFrom: hideOf(n)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }
             }
         }
@@ -207,15 +231,20 @@ struct BxPlayChart {
 
         // 同時押しの線 (判定点は除く)
         //   (ノーツ個別の速さが違うノーツどうしは、流れてくる位置が違うので線を引かない)
+        //   線の時刻は、丸めた値ではなくノーツの時刻そのものを使う (ソフランが強いと、丸めの差でも線がずれて見えるため)。
+        //   線は、つないでいるノーツのどちらかが見えなくなったら (取った / 出現前 / 消えたあと) 消す
         struct SimKey: Hashable { let ms: Int; let sp: Double }
         var groups: [SimKey: [Int]] = [:]
-        for n in out.notes where n.type != 5 {
-            groups[SimKey(ms: Int((n.t * 1000).rounded()), sp: n.sp), default: []].append(n.lane)
+        for (i, n) in out.notes.enumerated() where n.type != 5 {
+            groups[SimKey(ms: Int((n.t * 1000).rounded()), sp: n.sp), default: []].append(i)
         }
-        for (k, lanes) in groups where lanes.count >= 2 {
-            for a in 0..<lanes.count {
-                for b in (a + 1)..<lanes.count where abs(lanes[a] - lanes[b]) > 1 {
-                    out.sims.append(BxSim(t: Double(k.ms) / 1000, a: lanes[a], b: lanes[b], sp: k.sp))
+        for (k, idx) in groups where idx.count >= 2 {
+            for a in 0..<idx.count {
+                for b in (a + 1)..<idx.count {
+                    let na = out.notes[idx[a]]
+                    let nb = out.notes[idx[b]]
+                    if abs(na.lane - nb.lane) <= 1 { continue }
+                    out.sims.append(BxSim(t: na.t, a: na.lane, b: nb.lane, sp: k.sp, ia: idx[a], ib: idx[b]))
                 }
             }
         }
@@ -294,6 +323,34 @@ final class BxGame {
     func press(zone: Int, at now: Double) {
         guard zone >= 0 && zone < Self.tapZones.count else { return }
         let lanes = Self.tapZones[zone]
+        // ダミーを PERFECT のタイミング (±0.06 秒) で押したときは、本物よりダミーのほうが近ければ、ダミーを消すだけにする
+        // (縦連の中のダミーを押したとき、後ろの本物が巻き込まれて早い GREAT / MISS にならないように)
+        var bestDummy: Int? = nil
+        var bestDummyLag = Double.infinity
+        var nearestReal = Double.infinity
+        var j = first
+        while j < notes.count {
+            let n = notes[j]
+            if n.t - now > 0.2 { break }
+            if !n.done && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
+                let a = abs(now - n.t)
+                if n.dummy {
+                    if a <= 0.06 && a < bestDummyLag {
+                        bestDummyLag = a
+                        bestDummy = j
+                    }
+                } else {
+                    nearestReal = min(nearestReal, a)
+                }
+            }
+            j += 1
+        }
+        if let d = bestDummy, bestDummyLag <= nearestReal {
+            onSound?(notes[d].type, notes[d].t)
+            notes[d].done = true
+            advance()
+            return
+        }
         var i = first
         while i < notes.count {
             let n = notes[i]

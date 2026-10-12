@@ -92,6 +92,7 @@ enum LaneRenderer {
         drawNotes(&c, g, state.chart.notes, selected: state.selectedIDs)
         drawNoteSpeeds(&c, g, state.chart.notes)
         drawDummyMarks(&c, g, state.chart.notes)
+        drawAppearMarks(&c, g, state.chart.notes)
         drawOrder(&c, g, state)
         drawSprites(&c, g, state)
         drawSlideModify(&c, g, state)
@@ -433,6 +434,30 @@ enum LaneRenderer {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(sp > 1 ? Color(red: 1, green: 0.45, blue: 0.75) : Color(red: 0.45, green: 0.85, blue: 1))
             c.draw(t, at: p, anchor: .bottomTrailing)
+        }
+    }
+
+    /// 出現 / 消えるが付いているノーツの右下に「出 4:1/2」「消 5:0/1」を出す (同じ位置は 1 回だけ)
+    static func drawAppearMarks(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note]) {
+        var done = Set<BeatrixKey>()
+        for n in notes {
+            let ap = Beatrix.atBeat(n, Beatrix.appearKey)
+            let va = Beatrix.atBeat(n, Beatrix.vanishKey)
+            if ap == nil && va == nil { continue }
+            let y = g.py(n.beat.value) - barLift
+            if y < -24 || y > g.H + 24 { continue }
+            let k = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
+            if done.contains(k) { continue }
+            done.insert(k)
+            var parts: [String] = []
+            if let a = ap { parts.append("出 " + a.label) }
+            if let v = va { parts.append("消 " + v.label) }
+            let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
+            let p = CGPoint(x: g.px(Double(n.x)) + hw - 2, y: y + 7)
+            let t = Text(parts.joined(separator: " "))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(Color(red: 0.75, green: 1, blue: 0.55))
+            c.draw(t, at: p, anchor: .topTrailing)
         }
     }
 

@@ -10,6 +10,10 @@ import Foundation
 //     "speeds_each": [ {"LPB": 4, "num": 240, "block": 3, "speed": 2.0}, ... ],
 //     "dummy": [ {"LPB": 4, "num": 240, "block": 3}, ... ],         // ダミーノーツ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) は、流れてくるけど判定が無い
+//     "appear":    [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 248}, ... ],
+//     "disappear": [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 248}, ... ],
+//                  // 出現 / 消える。LPB・num・block が完全に一致するノーツ (ホールド・スライドは始点の位置) が、
+//                  // atLPB・atNum の拍になるまで見えない (appear) / その拍から見えなくなる (disappear)。判定はそのまま
 //                                                                  // ノーツ個別の速さ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) だけ、その倍率で流れてくる
 //     "notes":  [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []}, ... ] }
@@ -61,6 +65,24 @@ enum Beatrix {
 
     static func isDummy(_ n: Note) -> Bool {
         (n.extra[dummyKey] as? Bool) == true
+    }
+
+    /// 出現 ("appear") / 消える ("disappear") の拍。extra には [LPB, num] で持つ
+    static let appearKey = "bxAppear"
+    static let vanishKey = "bxVanish"
+
+    static func atBeat(_ n: Note, _ key: String) -> Beat? {
+        guard let a = n.extra[key] as? [Any], a.count == 2, let l = intValue(a[0]), let m = intValue(a[1]) else { return nil }
+        return beat(lpb: l, num: m)
+    }
+
+    static func setAtBeat(_ n: inout Note, _ key: String, _ b: Beat?) {
+        if let b = b {
+            let p = lpbNum(b)
+            n.extra[key] = [p.lpb, p.num]
+        } else {
+            n.extra.removeValue(forKey: key)
+        }
     }
 
     static func noteSpeed(_ n: Note) -> Double? {
@@ -391,7 +413,7 @@ extension ChartData {
         }
 
         var b = obj
-        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy"] { b.removeValue(forKey: k) }
+        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear"] { b.removeValue(forKey: k) }
         let nameInfo = Beatrix.splitName((obj["name"] as? String) ?? "")
         b["name"] = nameInfo.title
         var diff = nameInfo.diff ?? .extreme
@@ -493,6 +515,22 @@ extension ChartData {
             }
         }
 
+        // 出現 / 消える
+        for (jsonKey, key) in [("appear", Beatrix.appearKey), ("disappear", Beatrix.vanishKey)] {
+            var at: [BeatrixKey: Beat] = [:]
+            for e in (obj[jsonKey] as? [[String: Any]]) ?? [] {
+                let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
+                at[BeatrixKey(beat: Beatrix.beat(of: e), block: blk)] =
+                    Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
+            }
+            if at.isEmpty { continue }
+            for i in notes.indices {
+                if let b = at[BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))] {
+                    Beatrix.setAtBeat(&notes[i], key, b)
+                }
+            }
+        }
+
         var c = ChartData(root: ["beatrix": b], times: times, notes: notes, soundEntries: [],
                           effects: effects, otherEffects: [], hadEffectKey: !effects.isEmpty)
         c.setMetaString(["song", "title"], nameInfo.title)
@@ -527,9 +565,29 @@ extension ChartData {
         out["speeds"] = speeds
         out["speeds_each"] = beatrixSpeedsEach()
         out["dummy"] = beatrixDummies()
+        out["appear"] = beatrixAtList(Beatrix.appearKey)
+        out["disappear"] = beatrixAtList(Beatrix.vanishKey)
 
         out["notes"] = beatrixNotes()
         return BeatrixJSONWriter.data(out)
+    }
+
+    /// 出現 / 消えるを JSON の "appear" / "disappear" の形にする (同じ位置に複数あるときは 1 つにまとめる)
+    func beatrixAtList(_ key: String) -> [[String: Any]] {
+        var done = Set<BeatrixKey>()
+        var out: [[String: Any]] = []
+        let sorted = notes.sorted { a, b in a.beat == b.beat ? a.x < b.x : a.beat < b.beat }
+        for n in sorted {
+            guard let at = Beatrix.atBeat(n, key) else { continue }
+            let blk = Beatrix.block(ofX: Double(n.x))
+            let k = BeatrixKey(beat: n.beat, block: blk)
+            if done.contains(k) { continue }
+            done.insert(k)
+            let p = Beatrix.lpbNum(n.beat)
+            let q = Beatrix.lpbNum(at)
+            out.append(["LPB": p.lpb, "num": p.num, "block": blk, "atLPB": q.lpb, "atNum": q.num])
+        }
+        return out
     }
 
     /// ダミーを JSON の "dummy" の形にする (同じ位置に複数あるときは 1 つにまとめる)
@@ -690,14 +748,14 @@ struct BeatrixKey: Hashable {
 
 // MARK: - JSON の書き出し (NoteEditor と同じ見た目)
 //   ・キーの順番を固定する (上: name → maxBlock → BPM → LEVEL → difficulty → artist → offset → preview → ver
-//     → bpms → speeds → speeds_each → dummy → part → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
+//     → bpms → speeds → speeds_each → dummy → appear → disappear → part → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
 //   ・字下げは 2 つ、"キー": 値 (コロンの前に空白を入れない)、中身が空の配列は []
 //   ・数は、整数なら小数点を付けない (149)、小数は短い表記 (4.7)
 
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
-                           "bpms", "speeds", "speeds_each", "dummy", "part", "notes"]
-    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "notes", "parts"]
+                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "part", "notes"]
+    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "atLPB", "atNum", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {
         var out = ""

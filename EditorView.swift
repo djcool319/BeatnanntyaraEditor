@@ -848,6 +848,8 @@ struct EditorView: View {
     /// 右下の分割の「入力…」で開く数値入力
     @State private var showInput = false
     @State private var inputText = ""
+    /// More → Appear / Vanish の選択
+    @State private var showAppearMenu = false
     /// More → Note speed の数値入力
     @State private var showSpeedInput = false
     @State private var speedText = ""
@@ -888,6 +890,15 @@ struct EditorView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("n を 2〜1024 の整数で (例: 48 → 1/48)")
+        }
+        .confirmationDialog("出現 / 消える (再生ラインの拍 \(Beat.nearest(state.viewBeat, den: state.snapDen).label))",
+                            isPresented: $showAppearMenu, titleVisibility: .visible) {
+            Button("この拍から出現する (それまで見えない)") { state.setAppear(.appear) }
+            Button("この拍で消える (そこから見えない)") { state.setAppear(.vanish) }
+            Button("出現 / 消えるを解除", role: .destructive) { state.setAppear(.clear) }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍を境に、見えない状態から急に出てくる / 急に消えます。判定はそのまま (見えなくても判定はある) なので、消すほうはダミーと組み合わせるのがおすすめです")
         }
         .alert("ノーツの速さ", isPresented: $showSpeedInput) {
             TextField("1", text: $speedText)
@@ -1030,7 +1041,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 13
+    private static let moreRowCount = 14
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1073,6 +1084,15 @@ struct EditorView: View {
             moreItem("Tap / Red", icon: .flip, dim: state.selectedIDs.isEmpty) {
                 state.popup = .none
                 state.toggleRedTap()
+            }
+            // 出現 / 消える (JSON の appear / disappear)。再生ラインの拍で付ける
+            moreItem("Appear / Vanish", icon: .timeRange, dim: state.selectedIDs.isEmpty) {
+                state.popup = .none
+                if state.selectedIDs.isEmpty {
+                    state.showToast("先にノーツを選択してください")
+                } else {
+                    showAppearMenu = true
+                }
             }
             // ダミー (判定の無いノーツ。JSON の dummy)
             moreItem("Dummy", icon: .flip, dim: state.selectedIDs.isEmpty) {

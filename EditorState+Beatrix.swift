@@ -209,6 +209,52 @@ extension EditorState {
         showToast(parts.joined(separator: " / ") + " を入れました")
     }
 
+    // MARK: 出現 / 消える (appear / disappear)
+
+    enum AppearAction {
+        case appear, vanish, clear
+    }
+
+    /// 選択中のノーツに、再生ライン (シアンの横棒) の拍で「出現」/「消える」を付ける (clear で両方外す)。
+    /// 同じ位置 (拍・block が完全に一致) のノーツにもまとめて付ける
+    func setAppear(_ action: AppearAction) {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        let ids = selectedIDs
+        let sel = chart.notes.filter { ids.contains($0.id) }
+        if sel.isEmpty {
+            showToast("先にノーツを選択してください")
+            return
+        }
+        var keys = Set<BeatrixKey>()
+        for n in sel { keys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
+        let at = Beat.nearest(viewBeat, den: snapDen)
+        pushUndo()
+        var count = 0
+        for i in chart.notes.indices {
+            let n = chart.notes[i]
+            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+            switch action {
+            case .appear:
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.appearKey, at)
+            case .vanish:
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.vanishKey, at)
+            case .clear:
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.appearKey, nil)
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.vanishKey, nil)
+            }
+            count += 1
+        }
+        chartChanged()
+        switch action {
+        case .appear: showToast("\(at.label) から出現するようにしました (\(count) 個)")
+        case .vanish: showToast("\(at.label) で消えるようにしました (\(count) 個)")
+        case .clear: showToast("出現 / 消えるを解除しました (\(count) 個)")
+        }
+    }
+
     // MARK: ダミー (dummy)
 
     /// 選択中のノーツを ダミー ⇔ 普通 で切り替える (選択の中に普通のノーツが 1 つでもあれば、全部ダミーにする)。
