@@ -8,6 +8,8 @@ import Foundation
 //     "bpms":   [ {"LPB": 4, "num": 240, "bpm": 306}, ... ],       // 途中の BPM 変化
 //     "speeds": [ {"LPB": 4, "num": 240, "speed": 1.1}, ... ],     // ソフラン (ノーツ全体の流れる速さの倍率。その拍から先ずっと)
 //     "speeds_each": [ {"LPB": 4, "num": 240, "block": 3, "speed": 2.0}, ... ],
+//     "lyrics": [ {"LPB": 4, "num": 560, "text": "歌詞", "parts": [ {"LPB": 4, "num": 576, "parts": []} ]}, ... ],
+//                                                                  // 歌詞 (part と同じ形 + text。始まり〜終わりの間だけ表示)
 //     "dummy": [ {"LPB": 4, "num": 240, "block": 3}, ... ],         // ダミーノーツ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) は、流れてくるけど判定が無い
 //     "appear":    [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 248}, ... ],
@@ -568,6 +570,7 @@ extension ChartData {
         out["appear"] = beatrixAtList(Beatrix.appearKey)
         out["disappear"] = beatrixAtList(Beatrix.vanishKey)
 
+        if out["lyrics"] == nil { out["lyrics"] = [Any]() }
         out["notes"] = beatrixNotes()
         return BeatrixJSONWriter.data(out)
     }
@@ -739,6 +742,43 @@ extension ChartData {
     }
 }
 
+// MARK: - lyrics (歌詞。part の文字付き版)
+//   JSON: "lyrics": [ {"LPB": 4, "num": 560, "text": "〜〜", "parts": [ {"LPB": 4, "num": 576, "parts": []} ]} ]
+//   外側の LPB / num が表示の始まり、parts[0] が終わり (part と同じ形に text を足したもの)。始まり <= 今 < 終わり の間だけ text を出す
+
+struct BeatrixLyric {
+    var start: Beat
+    var end: Beat
+    var text: String
+}
+
+extension ChartData {
+    var bxLyrics: [BeatrixLyric] {
+        get {
+            var out: [BeatrixLyric] = []
+            for p in (bx["lyrics"] as? [[String: Any]]) ?? [] {
+                guard let e = (p["parts"] as? [[String: Any]])?.first else { continue }
+                let s = Beatrix.beat(of: p)
+                let en = Beatrix.beat(of: e)
+                if s < en { out.append(BeatrixLyric(start: s, end: en, text: (p["text"] as? String) ?? "")) }
+            }
+            return out.sorted { $0.start < $1.start }
+        }
+        set {
+            var list: [[String: Any]] = []
+            for l in newValue.sorted(by: { $0.start < $1.start }) {
+                let s = Beatrix.lpbNum(l.start)
+                let e = Beatrix.lpbNum(l.end)
+                let endDict: [String: Any] = ["LPB": e.lpb, "num": e.num, "parts": [Any]()]
+                list.append(["LPB": s.lpb, "num": s.num, "text": l.text, "parts": [endDict]])
+            }
+            var b = bx
+            b["lyrics"] = list
+            bx = b
+        }
+    }
+}
+
 /// 「拍 + block」の組 (スライドの始点を探すのに使う)
 struct BeatrixKey: Hashable {
     let beat: Beat
@@ -748,14 +788,14 @@ struct BeatrixKey: Hashable {
 
 // MARK: - JSON の書き出し (NoteEditor と同じ見た目)
 //   ・キーの順番を固定する (上: name → maxBlock → BPM → LEVEL → difficulty → artist → offset → preview → ver
-//     → bpms → speeds → speeds_each → dummy → appear → disappear → part → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
+//     → bpms → speeds → speeds_each → dummy → appear → disappear → part → lyrics → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
 //   ・字下げは 2 つ、"キー": 値 (コロンの前に空白を入れない)、中身が空の配列は []
 //   ・数は、整数なら小数点を付けない (149)、小数は短い表記 (4.7)
 
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
-                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "part", "notes"]
-    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "atLPB", "atNum", "notes", "parts"]
+                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "part", "lyrics", "notes"]
+    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "atLPB", "atNum", "text", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {
         var out = ""

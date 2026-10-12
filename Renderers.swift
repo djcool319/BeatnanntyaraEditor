@@ -87,6 +87,7 @@ enum LaneRenderer {
         drawBPM(&c, g, state)
         drawRange(&c, g, state)
         drawParts(&c, g, state)
+        drawLyrics(&c, g, state)
         drawHoldDraft(&c, g, state)
         drawSims(&c, g, state.chart.notes)
         drawNotes(&c, g, state.chart.notes, selected: state.selectedIDs)
@@ -107,6 +108,43 @@ enum LaneRenderer {
     /// (Grid settings の本数は使わない)
     /// part の区間: レーンの両端に太い白線、区間の中を薄い白、始まりと終わりに白い横線。
     /// Part ツールで始点だけ置いているときは、その拍に白い点線
+    /// 歌詞の区間: レーンの右端の内側に細い黄緑の線、始まりに「♪ 歌詞」。Lyrics ツールで始点だけ置いているときは、その拍に黄緑の点線
+    static func drawLyrics(_ c: inout GraphicsContext, _ g: LaneGeo, _ state: EditorState) {
+        let lo = g.beatOf(g.H)
+        let hi = g.beatOf(0)
+        let left = g.trackL
+        let right = g.trackL + g.trackW
+        let col = Color(red: 0.7, green: 1, blue: 0.45)
+        for l in state.chart.bxLyrics {
+            let sb = l.start.value
+            let eb = l.end.value
+            if eb < lo || sb > hi { continue }
+            let y0 = min(g.H + 4, g.py(sb))
+            let y1 = max(-4, g.py(eb))
+            var v = Path()
+            v.move(to: CGPoint(x: right - 8, y: y0))
+            v.addLine(to: CGPoint(x: right - 8, y: y1))
+            c.stroke(v, with: .color(col.opacity(0.9)), lineWidth: 3)
+            for b in [sb, eb] where b >= lo && b <= hi {
+                var h = Path()
+                h.move(to: CGPoint(x: right - 40, y: g.py(b)))
+                h.addLine(to: CGPoint(x: right - 8, y: g.py(b)))
+                c.stroke(h, with: .color(col), lineWidth: 2)
+            }
+            if sb >= lo && sb <= hi {
+                let t = Text("♪ " + l.text).font(.system(size: 13, weight: .bold)).foregroundColor(col)
+                c.draw(t, at: CGPoint(x: right - 12, y: g.py(sb) - 10), anchor: .trailing)
+            }
+        }
+        if let s = state.lyricsStart {
+            let y = g.py(s.value)
+            var h = Path()
+            h.move(to: CGPoint(x: left, y: y))
+            h.addLine(to: CGPoint(x: right, y: y))
+            c.stroke(h, with: .color(col), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+        }
+    }
+
     static func drawParts(_ c: inout GraphicsContext, _ g: LaneGeo, _ state: EditorState) {
         let lo = g.beatOf(g.H)
         let hi = g.beatOf(0)

@@ -8,6 +8,7 @@ enum EditTool: Equatable {
     case note, wipe, slide, remove, lasso, order, plugin, selectRange, slideModify
     case red, hold                       // びーとり: 赤タップ (3 鍵) / ホールド (7 鍵。始点から上へドラッグ)
     case part                            // びーとり: part の区間 (始点 → 終点をタップ。区間の中をタップで削除)
+    case lyrics                          // びーとり: 歌詞の区間 (始点 → 終点をタップして文字を入れる。区間の中をタップで編集・削除)
 
     /// Note / Red / Hold / Wipe / Slide (配置 + 既存ノーツの選択・移動ができるツール)
     var isPlacement: Bool { self == .note || self == .red || self == .hold || self == .wipe || self == .slide }
@@ -120,6 +121,7 @@ final class EditorState: ObservableObject {
             // Time range の始点・終点の表示は、Time range を抜けたら消す
             if oldValue == .selectRange { rangeStart = nil; rangeEnd = nil }
             if oldValue == .part { partStart = nil }
+            if oldValue == .lyrics { lyricsStart = nil }
             if oldValue == .hold { holdDraft = nil }
             // LASSO を抜けたら、なぞっている途中の線は消す (選択は残る)
             if oldValue == .lasso { lassoPoints = [] }
@@ -149,6 +151,8 @@ final class EditorState: ObservableObject {
     @Published var rangeEnd: Beat? = nil
     @Published var clip: [Note] = []
     @Published var partStart: Beat? = nil            // Part ツールで、始点だけ置いた状態 (終点のタップ待ち)
+    @Published var lyricsStart: Beat? = nil          // Lyrics ツールで、始点だけ置いた状態 (終点のタップ待ち)
+    @Published var lyricEdit: LyricEdit? = nil       // 歌詞の入力ダイアログ (nil = 出していない)
     /// BPM・offset の自動検出 (BeatrixTempoDetect.swift)。nil = ダイアログを出していない
     @Published var tempoDetect: TempoDetectPhase? = nil
     var tempoDetectCancel: TempoDetectCancelFlag? = nil

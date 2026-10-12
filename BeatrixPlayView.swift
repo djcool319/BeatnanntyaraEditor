@@ -91,6 +91,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let countsLabel = UILabel()
     private let comboLabel = UILabel()
     private let judgeLabel = UILabel()
+    private let lyricLabel = UILabel()          // 歌詞 (判定ラインの少し上に、小さく)
+    private var shownLyric = ""
     private let earlyLabel = UILabel()
     private let countLabel = UILabel()
     private let resultLabel = UILabel()
@@ -183,6 +185,16 @@ final class BeatrixGameView: UIView, GameSessionView {
         resultLabel.numberOfLines = 0
         resultLabel.backgroundColor = UIColor(white: 0, alpha: 0.6)
         resultLabel.isHidden = true
+        lyricLabel.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
+        lyricLabel.textColor = UIColor(white: 1, alpha: 0.92)
+        lyricLabel.textAlignment = .center
+        lyricLabel.adjustsFontSizeToFitWidth = true
+        lyricLabel.minimumScaleFactor = 0.6
+        lyricLabel.layer.shadowColor = UIColor.black.cgColor
+        lyricLabel.layer.shadowOpacity = 0.9
+        lyricLabel.layer.shadowRadius = 3
+        lyricLabel.layer.shadowOffset = .zero
+        addSubview(lyricLabel)
         for v in [scoreBox, titleBox, diffLabel, countsLabel, comboLabel, judgeLabel, earlyLabel, countLabel, resultLabel] {
             v.isUserInteractionEnabled = false
             addSubview(v)
@@ -361,6 +373,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         judgeLabel.frame = CGRect(x: 0, y: midY + 96, width: w, height: 70)
         earlyLabel.frame = CGRect(x: 0, y: midY + 166, width: w, height: 28)
         countLabel.frame = CGRect(x: 0, y: h * 0.22, width: w, height: 70)
+        // 歌詞: 判定ラインのすぐ上 (レーンの幅の中)
+        lyricLabel.frame = CGRect(x: g.midX - g.halfJ, y: g.judgeY - 38, width: g.halfJ * 2, height: 24)
         resultLabel.frame = CGRect(x: w / 2 - 260, y: h * 0.28, width: 520, height: 200)
         updateStaticLayers()
         renderFrame()
@@ -809,6 +823,13 @@ final class BeatrixGameView: UIView, GameSessionView {
 
     /// 文字は、値が変わったときだけ書き換える (毎フレーム文字を作り直すと重い)
     private func renderHUD() {
+        // 歌詞 (重なっているときは、あとから始まるほう)
+        var lyric = ""
+        for l in source.lyrics where l.start <= viewTime && viewTime < l.end { lyric = l.text }
+        if lyric != shownLyric {
+            shownLyric = lyric
+            lyricLabel.text = lyric
+        }
         let score = game.score
         if score != shownScore {
             shownScore = score

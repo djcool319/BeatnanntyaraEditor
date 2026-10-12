@@ -821,7 +821,7 @@ struct RightPanel: View {
             }
             .frame(height: pitch)
             PanelButton(glyph: "•••",      // More
-                        active: state.popup == .more || state.tool == .selectRange || state.tool == .lasso || state.tool == .slideModify || state.tool == .part,
+                        active: state.popup == .more || state.tool == .selectRange || state.tool == .lasso || state.tool == .slideModify || state.tool == .part || state.tool == .lyrics,
                         icon: { AnyView(PanelIconView(kind: .more, color: $0)) }) {
                 state.popup = state.popup == .more ? .none : .more
             }
@@ -848,6 +848,8 @@ struct EditorView: View {
     /// 右下の分割の「入力…」で開く数値入力
     @State private var showInput = false
     @State private var inputText = ""
+    /// 歌詞の入力欄
+    @State private var lyricText = ""
     /// More → Appear / Vanish の選択
     @State private var showAppearMenu = false
     /// More → Note speed の数値入力
@@ -900,6 +902,19 @@ struct EditorView: View {
         } message: {
             Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍を境に、見えない状態から急に出てくる / 急に消えます。判定はそのまま (見えなくても判定はある) なので、消すほうはダミーと組み合わせるのがおすすめです")
         }
+        .alert("歌詞", isPresented: Binding(get: { state.lyricEdit != nil }, set: { if !$0 { state.lyricEdit = nil } })) {
+            TextField("歌詞", text: $lyricText)
+            Button("OK") { state.commitLyric(lyricText) }
+            if state.lyricEdit?.index != nil {
+                Button("削除", role: .destructive) { state.deleteLyric() }
+            }
+            Button("キャンセル", role: .cancel) { state.lyricEdit = nil }
+        } message: {
+            if let e = state.lyricEdit {
+                Text("\(e.start.label) 〜 \(e.end.label) の間、プレイ画面の判定ラインの上に出ます")
+            }
+        }
+        .onReceive(state.$lyricEdit) { e in lyricText = e?.text ?? "" }
         .alert("ノーツの速さ", isPresented: $showSpeedInput) {
             TextField("1", text: $speedText)
                 .keyboardType(.numbersAndPunctuation)
@@ -1041,7 +1056,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 14
+    private static let moreRowCount = 15
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1109,12 +1124,20 @@ struct EditorView: View {
                     showSpeedInput = true
                 }
             }
+          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 4 つも Group にまとめる
+          Group {
+            // 歌詞 (始点 → 終点をタップして文字を入れる。区間の中をタップで編集・削除)
+            moreItem("Lyrics", icon: .timeRange, active: state.tool == .lyrics) {
+                state.popup = .none
+                state.toggleLyricsTool()
+            }
             moreItem("Slide modify", icon: .slideModify, active: state.tool == .slideModify) {
                 state.popup = .none
                 state.tool = .slideModify
             }
             moreItem("Slide to Wipe", icon: .slideToWipe) { state.popup = .none; state.slideToWipe() }
             moreItem("Wipe to Slide", icon: .wipeToSlide) { state.popup = .none; state.wipeToSlide() }
+          }
         }
         .padding(.vertical, Self.morePad)
         .frame(width: Self.moreWidth, alignment: .leading)

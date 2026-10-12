@@ -21,6 +21,15 @@ extension BeatrixDifficulty {
     var color: Color { Color(uiColor) }
 }
 
+/// 歌詞の入力ダイアログの中身 (index: 既にある歌詞の番号。nil なら新しく置く)
+struct LyricEdit: Identifiable {
+    let id = UUID()
+    let index: Int?
+    let start: Beat
+    let end: Beat
+    var text: String
+}
+
 /// BPM・offset の自動検出の状態
 enum TempoDetectPhase {
     case running
@@ -383,6 +392,84 @@ extension EditorState {
         addNote(Note(beat: b, x: q.x, w: q.w, type: tool == .wipe ? 4 : (tool == .red ? 3 : nil)))
     }
 
+    // MARK: 歌詞 (lyrics)
+
+    /// Lyrics ツールでレーンをタップしたとき。
+    /// 既にある歌詞の区間の中をタップ → その歌詞の編集 (文字の変更・削除) / それ以外 → 1 回目が始点、2 回目が終点 (文字を入れる)
+    func lyricsTap(beat b: Beat) {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        if let s = lyricsStart {
+            lyricsStart = nil
+            if s == b {
+                showToast("始点と同じ位置です。もう一度、始点からタップしてください")
+                return
+            }
+            lyricEdit = LyricEdit(index: nil, start: min(s, b), end: max(s, b), text: "")
+            return
+        }
+        let list = chart.bxLyrics
+        // 中をタップした歌詞 (重なっているときは、あとから始まるほう)
+        if let i = list.indices.last(where: { list[$0].start <= b && b < list[$0].end }) {
+            lyricEdit = LyricEdit(index: i, start: list[i].start, end: list[i].end, text: list[i].text)
+            return
+        }
+        lyricsStart = b
+        showToast("歌詞の始点を置きました。終点をタップしてください")
+    }
+
+    /// ダイアログの OK
+    func commitLyric(_ text: String) {
+        guard let e = lyricEdit else { return }
+        lyricEdit = nil
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var list = chart.bxLyrics
+        if t.isEmpty {
+            if let i = e.index, i < list.count {
+                pushUndo()
+                list.remove(at: i)
+                chart.bxLyrics = list
+                chartChanged()
+                showToast("歌詞を消しました")
+            } else {
+                showToast("歌詞が空なので、置きませんでした")
+            }
+            return
+        }
+        pushUndo()
+        if let i = e.index, i < list.count {
+            list[i].text = t
+        } else {
+            list.append(BeatrixLyric(start: e.start, end: e.end, text: t))
+        }
+        chart.bxLyrics = list
+        chartChanged()
+        showToast("歌詞「\(t)」(\(e.start.label) 〜 \(e.end.label))")
+    }
+
+    /// ダイアログの 削除
+    func deleteLyric() {
+        guard let e = lyricEdit, let i = e.index else { lyricEdit = nil; return }
+        lyricEdit = nil
+        var list = chart.bxLyrics
+        guard i < list.count else { return }
+        pushUndo()
+        list.remove(at: i)
+        chart.bxLyrics = list
+        chartChanged()
+        showToast("歌詞を消しました")
+    }
+
+    func toggleLyricsTool() {
+        editing = true
+        toggleTool(.lyrics)
+        if tool == .lyrics {
+            showToast("始点 → 終点の順にレーンをタップすると、その間に出す歌詞を入れられます (歌詞の区間の中をタップで編集・削除)")
+        }
+    }
+
     func togglePartTool() {
         editing = true
         toggleTool(.part)
@@ -441,6 +528,7 @@ extension EditorState {
         orderIDs = []
         slideDraft = nil
         partStart = nil
+        lyricsStart = nil
         ghost = nil
         chart = c
         mcURL = url

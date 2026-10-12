@@ -83,6 +83,8 @@ struct BxPlayChart {
     var sims: [BxSim] = []
     var beats: [Double] = []
     var parts: [(start: Double, end: Double)] = []
+    /// 歌詞 (始まりの時刻順)。start <= 今 < end の間だけ text を出す
+    var lyrics: [(start: Double, end: Double, text: String)] = []
     var endTime: Double = 0
     /// ソフラン。時刻順。空なら全部 1 倍
     var scroll: [BxScroll] = []
@@ -264,6 +266,7 @@ struct BxPlayChart {
         }
 
         out.parts = chart.bxParts.map { (start: tm.sec(atBeat: $0.start.value), end: tm.sec(atBeat: $0.end.value)) }
+        out.lyrics = chart.bxLyrics.map { (start: tm.sec(atBeat: $0.start.value), end: tm.sec(atBeat: $0.end.value), text: $0.text) }
         return out
     }
 
