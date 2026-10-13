@@ -362,9 +362,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
     }
 
-    // MARK: タッチエフェクト (本家の見た目に寄せたもの)
-    //   白タップ・始点 (PERFECT): 水色の光の玉 + 光る輪 + 星の粒 / 赤タップ: 同じ形で赤
-    //   ワイプ: 横に長い、白〜黄色の光 / ホールド・スライドの判定点: 小さな白い光
+    // MARK: タッチエフェクト (シンプル)
+    //   白タップ・始点: やわらかい水色の光の玉 / 赤タップ: 赤 / ワイプ: 横に長いやわらかい光 / 判定点: 小さな白い光
     //   GREAT: ピンク (控えめ) / 早い MISS: 灰色の光の玉だけ。遅い MISS・見逃しは出さない
 
     private func spawnEffect(type: Int, lane: Int, judge: BxJudge, early: Bool?) {
@@ -407,68 +406,22 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
 
         if type == 4 && judge != .miss {
-            // ワイプ: 横に長い白〜黄色の光
-            let l = radial(third * 2.1, third * 0.6,
-                           [.white, UIColor(white: 1, alpha: 0.95), color.withAlphaComponent(0.75), color.withAlphaComponent(0)],
-                           [0, 0.35, 0.65, 1])
-            fade(l, scaleFrom: 0.8, to: 1.2, duration: 0.35)
+            // ワイプ: 横に長い、やわらかい光
+            let l = radial(third * 1.4, third * 0.4,
+                           [UIColor(white: 1, alpha: 0.85), color.withAlphaComponent(0.5), color.withAlphaComponent(0)],
+                           [0, 0.45, 1])
+            fade(l, scaleFrom: 0.9, to: 1.1, duration: 0.25)
         } else if type == 5 {
-            let r = third * 0.2
-            let l = radial(r * 2, r * 2, [.white, UIColor(white: 1, alpha: 0.6), UIColor(white: 1, alpha: 0)], [0, 0.4, 1])
-            fade(l, scaleFrom: 0.8, to: 1.1, duration: 0.25)
+            let r = third * 0.15
+            let l = radial(r * 2, r * 2, [UIColor(white: 1, alpha: 0.7), UIColor(white: 1, alpha: 0)], [0, 1])
+            fade(l, scaleFrom: 0.9, to: 1.05, duration: 0.2)
         } else {
-            let R = third * 0.31                         // 輪の半径 (本家: 1 鍵の幅の 3 割くらい)
-            // 光の玉 (真ん中が白く、外へ向かって色が透けていく)
-            let glow = radial(R * 2.0, R * 2.0,
-                              [UIColor(white: 1, alpha: 0.95), color, color.withAlphaComponent(0.45), color.withAlphaComponent(0)],
-                              [0, 0.3, 0.62, 1])
-            fade(glow, scaleFrom: 0.85, to: 1.05, duration: judge == .miss ? 0.2 : 0.32)
-            if judge != .miss {
-                // 光る輪
-                let ring = CAShapeLayer()
-                ring.bounds = CGRect(x: 0, y: 0, width: R * 2, height: R * 2)
-                ring.position = center
-                ring.path = UIBezierPath(ovalIn: ring.bounds).cgPath
-                ring.fillColor = nil
-                ring.strokeColor = color.cgColor
-                ring.lineWidth = max(2, R * (judge == .great ? 0.04 : 0.065))
-                ring.shadowColor = color.cgColor
-                ring.shadowRadius = R * 0.12
-                ring.shadowOpacity = 1
-                ring.shadowOffset = .zero
-                effectHost.addSublayer(ring)
-                fade(ring, scaleFrom: 0.88, to: 1.12, duration: 0.42)
-                made.append(ring)
-                // 星の粒 (ふわっと外へ広がって消える)
-                if judge != .great {
-                    for k in 0..<9 {
-                        let s = R * CGFloat.random(in: 0.1...0.19)
-                        let star = CAShapeLayer()
-                        star.bounds = CGRect(x: 0, y: 0, width: s * 2, height: s * 2)
-                        star.path = Self.starPath(radius: s)
-                        star.fillColor = color.withAlphaComponent(0.7).cgColor
-                        star.position = center
-                        effectHost.addSublayer(star)
-                        let ang = Double(k) / 9.0 * 2 * Double.pi + Double.random(in: -0.35...0.35)
-                        let dist = R * CGFloat.random(in: 0.9...1.6)
-                        let to = CGPoint(x: center.x + CGFloat(cos(ang)) * dist, y: center.y + CGFloat(sin(ang)) * dist * 0.75)
-                        let mv = CABasicAnimation(keyPath: "position")
-                        mv.fromValue = NSValue(cgPoint: center)
-                        mv.toValue = NSValue(cgPoint: to)
-                        let op = CABasicAnimation(keyPath: "opacity")
-                        op.fromValue = 1
-                        op.toValue = 0
-                        let gr = CAAnimationGroup()
-                        gr.animations = [mv, op]
-                        gr.duration = 0.6
-                        gr.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                        star.position = to
-                        star.opacity = 0
-                        star.add(gr, forKey: "fx")
-                        made.append(star)
-                    }
-                }
-            }
+            // タップ: やわらかい光の玉だけ (シンプルに)
+            let R = third * 0.3
+            let glow = radial(R * 2, R * 2,
+                              [UIColor(white: 1, alpha: 0.8), color.withAlphaComponent(0.55), color.withAlphaComponent(0)],
+                              [0, 0.4, 1])
+            fade(glow, scaleFrom: 0.85, to: 1.1, duration: judge == .miss ? 0.18 : 0.25)
         }
         CATransaction.commit()
 
@@ -479,19 +432,6 @@ final class BeatrixGameView: UIView, GameSessionView {
             for l in made { l.removeFromSuperlayer() }
             CATransaction.commit()
         }
-    }
-
-    /// 5 つ角の星 (bounds の真ん中が中心)
-    private static func starPath(radius r: CGFloat) -> CGPath {
-        let p = CGMutablePath()
-        for i in 0..<10 {
-            let rr = i % 2 == 0 ? r : r * 0.45
-            let a = Double(i) * Double.pi / 5 - Double.pi / 2
-            let pt = CGPoint(x: r + rr * CGFloat(cos(a)), y: r + rr * CGFloat(sin(a)))
-            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-        }
-        p.closeSubpath()
-        return p
     }
 
     /// 大きくなりながら消える
@@ -1100,8 +1040,7 @@ final class BeatrixGameView: UIView, GameSessionView {
                                                       color: UIColor(white: 0.45, alpha: 1), stroke: .white, width: 4)
         }
         // 左のゲージ (到達可能なスコア。減った分は上から灰色になる) と、到達可能なランク
-        let ach = game.achievableScore
-        let frac = max(0, min(1, Double(ach - 700_000) / 300_000))
+        let frac = game.clearGauge
         if Int(frac * 1000) != shownGauge {
             shownGauge = Int(frac * 1000)
             CATransaction.begin()
@@ -1115,12 +1054,12 @@ final class BeatrixGameView: UIView, GameSessionView {
             shownRank = rank
             let color: UIColor
             switch rank {
-            case "AP": color = UIColor(red: 0.5, green: 1, blue: 1, alpha: 1)
-            case "FC": color = UIColor(red: 0.6, green: 1, blue: 0.6, alpha: 1)
+            case "AP+", "AP": color = UIColor(red: 0.5, green: 1, blue: 1, alpha: 1)
             case "SS", "S": color = UIColor(red: 1, green: 0.85, blue: 0.35, alpha: 1)
+            case "AA", "A": color = UIColor(red: 1, green: 0.6, blue: 0.75, alpha: 1)
             default: color = UIColor(white: 0.92, alpha: 1)
             }
-            rankLabel.attributedText = Self.outlined(rank, font: Self.roundedFont(66 * u, .heavy),
+            rankLabel.attributedText = Self.outlined(rank, font: Self.roundedFont((rank.count >= 3 ? 50 : 66) * u, .heavy),
                                                      color: color, stroke: UIColor(white: 0.08, alpha: 1), width: 3)
             let gold = rank == "SS" || rank == "S"
             rankDiamond.strokeColor = gold ? UIColor(red: 1, green: 0.82, blue: 0.3, alpha: 1).cgColor : nil
@@ -1163,7 +1102,8 @@ final class BeatrixGameView: UIView, GameSessionView {
             shownResult = finished
             resultLabel.isHidden = !finished
             if finished {
-                resultLabel.text = "RESULT\n\n" + String(format: "SCORE %07ld", game.score)
+                let sc = game.score
+                resultLabel.text = "RESULT\n\n" + "SCORE \(sc)  \(BxGame.rank(of: sc))" + (sc >= 900_000 ? "  CLEAR" : "  FAILED")
                     + "\n\nPERFECT+ \(game.perfectPlus)  PERFECT \(game.perfect)  GREAT \(game.great)  MISS \(game.miss)"
                     + "\nMAX COMBO \(game.maxCombo) / \(game.total)"
             }

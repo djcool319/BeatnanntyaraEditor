@@ -303,30 +303,48 @@ final class BxGame {
     private(set) var total = 0
     var judged: Int { perfectPlus + perfect + great + miss }
 
-    /// 到達可能なスコア (今からすべて PERFECT+ を取ったときのスコア)。左のゲージと「到達可能」の表示に使う
-    var achievableScore: Int {
-        guard total > 0 else { return 1_000_000 }
-        let lost = Double(perfect) * 0.01 + Double(great) * 0.5 + Double(miss)
-        return Int(((Double(total) - lost) / Double(total) * 1_000_000).rounded())
-    }
+    // MARK: スコア (本家と同じ減点方式)
+    //   ・1 ノーツの持ち点は 2。PERFECT+ / PERFECT = 2、GREAT = 1 (−1)、MISS = 0 (−2)
+    //   ・スコア = 1,000,000 × 持ち点の合計 ÷ (2 × ノーツ数)
+    //   ・AP (GREAT・MISS なし) で、PERFECT (+ じゃない方 = 内部) も 0 なら 1,111,111 (AP+)
+    //   ・ランク: 1,111,111 AP+ / 1,000,000 AP / 990,000〜 SS / 980,000〜 S / 940,000〜 AA / 900,000〜 A / 820,000〜 B / 750,000〜 C / それ未満 D
+    //   ・クリアは 900,000 以上。左のゲージは「到達可能なスコア」で、1,000,000 以上で満タン、900,000 で 0
 
-    /// 到達可能なランク (仮: AP = GREAT・MISS なし / FC = MISS なし / それ以外は到達可能スコアで SS・S・A・B・C)
-    var achievableRank: String {
-        if great == 0 && miss == 0 { return "AP" }
-        if miss == 0 { return "FC" }
-        let a = achievableScore
-        if a >= 950_000 { return "SS" }
-        if a >= 900_000 { return "S" }
-        if a >= 800_000 { return "A" }
-        if a >= 700_000 { return "B" }
-        return "C"
-    }
-
-    /// スコア (仮: 本家の計算式が分からないので、PERFECT+ = 100% / PERFECT = 99% / GREAT = 50% で 1,000,000 点満点)
+    /// 今まで取った分のスコア (途中経過。内部 0 の AP+ のままなら 1,111,111 満点の割合で数える)
     var score: Int {
         guard total > 0 else { return 0 }
-        let v = Double(perfectPlus) + Double(perfect) * 0.99 + Double(great) * 0.5
-        return Int((v / Double(total) * 1_000_000).rounded())
+        let got = Double(2 * (perfectPlus + perfect) + great)
+        let full = (perfect == 0 && great == 0 && miss == 0) ? 1_111_111.0 : 1_000_000.0
+        return Int((got / Double(2 * total) * full).rounded(.down))
+    }
+
+    /// 到達可能なスコア (今からすべて PERFECT+ を取ったときの最終スコア)
+    var achievableScore: Int {
+        guard total > 0 else { return 1_111_111 }
+        if great == 0 && miss == 0 { return perfect == 0 ? 1_111_111 : 1_000_000 }
+        let lost = Double(great + 2 * miss)
+        return Int(((Double(2 * total) - lost) / Double(2 * total) * 1_000_000).rounded(.down))
+    }
+
+    /// スコアのランク
+    static func rank(of score: Int) -> String {
+        if score >= 1_111_111 { return "AP+" }
+        if score >= 1_000_000 { return "AP" }
+        if score >= 990_000 { return "SS" }
+        if score >= 980_000 { return "S" }
+        if score >= 940_000 { return "AA" }
+        if score >= 900_000 { return "A" }
+        if score >= 820_000 { return "B" }
+        if score >= 750_000 { return "C" }
+        return "D"
+    }
+
+    /// 到達可能なランク
+    var achievableRank: String { Self.rank(of: achievableScore) }
+
+    /// クリアゲージ (0〜1)。到達可能なスコアが 1,000,000 以上で 1、900,000 で 0
+    var clearGauge: Double {
+        max(0, min(1, Double(achievableScore - 900_000) / 100_000))
     }
 
     init(chart: BxPlayChart, startTime: Double) {
