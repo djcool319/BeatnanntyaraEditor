@@ -708,7 +708,7 @@ final class EditorState: ObservableObject {
         bxLaunch = BeatrixPlayLaunch(chart: played, audio: game, startSec: start,
                                      offsetRaw: chart.bxOffsetRaw,
                                      title: chart.bxTitle, difficulty: chart.bxDifficulty,
-                                     level: chart.bxLevel)
+                                     level: chart.bxLevel, artist: chart.bxArtist)
     }
 
     func zoomIn() { zoomLevel = min(Double(Self.zoomCount - 1), zoomLevel.rounded(.down) + 1) }

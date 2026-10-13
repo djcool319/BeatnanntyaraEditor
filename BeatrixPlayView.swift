@@ -26,6 +26,7 @@ struct BeatrixPlayLaunch: Identifiable {
     let title: String
     let difficulty: BeatrixDifficulty
     let level: Double             // LEVEL (Lv の表示用)
+    var artist: String = ""       // 作曲者 (曲名の下に小さく)
 }
 
 final class BeatrixGameView: UIView, GameSessionView {
@@ -37,8 +38,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let tapWidth = 0.3027
     private let sideWidth = 0.2825
     /// ノーツの厚み (奥行き)。本家のプレハブ: タップ 0.02 / ワイプ 0.015
-    private let tapDepth = 0.032
-    private let wipeDepth = 0.024
+    private let tapDepth = 0.04             // 本家の画面収録で測った厚み (棒の下の暗い縁を含む)
+    private let wipeDepth = 0.034
     // ------------------------
 
     private let source: BxPlayChart
@@ -49,6 +50,7 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let songTitle: String
     private let difficulty: BeatrixDifficulty
     private let level: Double
+    private let artist: String
     private var link: CADisplayLink?
     private var running = false
     private var pausedT = 0.0
@@ -81,16 +83,33 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let redLayer = CAShapeLayer()
     private let wipeLayer = CAShapeLayer()
     private let judgeLayer = CAShapeLayer()
+    // ノーツの下側の暗い縁 (厚み)
+    private let tapShadow = CAShapeLayer()
+    private let headShadow = CAShapeLayer()
+    private let redShadow = CAShapeLayer()
+    private let wipeShadow = CAShapeLayer()
+    // 背景
+    private let bgGradient = CAGradientLayer()
+    private let bgLines = CAShapeLayer()
+    private let bgRing = CAShapeLayer()
+    // 左上の帯とゲージ
+    private let scoreBar = CAShapeLayer()
+    private let titlePanel = CAShapeLayer()
+    private let diffTag = CAShapeLayer()
+    private let rankDiamond = CAShapeLayer()
+    private let gaugeBack = CALayer()
+    private let gaugeFill = CALayer()
+    private var gaugeRect = CGRect.zero
 
     // 文字
-    private let scoreBox = UIView()
     private let scoreLabel = UILabel()
-    private let titleBox = UIView()
     private let titleLabel = UILabel()
+    private let artistLabel = UILabel()
     private let diffLabel = UILabel()
-    private let countsLabel = UILabel()
+    private let reachLabel = UILabel()          // 「到達可能」
+    private let rankLabel = UILabel()           // AP / FC / SS ...
     private let comboLabel = UILabel()
-    private let judgeLabel = UILabel()
+    private let judgeView = UIImageView()       // PERFECT!! などの文字 (画像)
     private let lyricLabel = UILabel()          // 歌詞 (判定ラインの少し上に、小さく)
     private var shownLyric = ""
     private let earlyLabel = UILabel()
@@ -98,7 +117,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let resultLabel = UILabel()
     private var shownScore = -1
     private var shownCombo = -1
-    private var shownCounts = ""
+    private var shownRank = ""
+    private var shownGauge = -1
     private var shownJudgeKey = ""
     private var shownCount = -1
     private var shownResult = false
@@ -114,6 +134,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         self.songTitle = launch.title
         self.difficulty = launch.difficulty
         self.level = launch.level
+        self.artist = launch.artist
         self.game = BxGame(chart: launch.chart, startTime: launch.startSec - Self.countIn)
         super.init(frame: .zero)
         backgroundColor = .black
@@ -131,50 +152,83 @@ final class BeatrixGameView: UIView, GameSessionView {
             l.fillColor = fill?.cgColor
             l.strokeColor = stroke?.cgColor
             l.lineWidth = width
-            l.actions = ["path": NSNull(), "lineWidth": NSNull(), "strokeColor": NSNull()]   // アニメーションさせない
+            l.actions = ["path": NSNull(), "lineWidth": NSNull(), "strokeColor": NSNull(), "fillColor": NSNull()]   // アニメーションさせない
             layer.addSublayer(l)
         }
-        add(floorLayer, fill: UIColor(white: 0.04, alpha: 1))
-        add(partFillLayer, fill: UIColor(white: 1, alpha: 0.06))
-        add(partEdgeLayer, fill: UIColor(white: 1, alpha: 0.9))
-        add(beatLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.18), width: 1)
-        add(edgeLayer, fill: nil, stroke: UIColor(white: 0.85, alpha: 1), width: 2)
-        add(dividerLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.35), width: 1.2)
-        add(zoneLayer, fill: UIColor(white: 1, alpha: 0.10))
-        add(holdIdleLayer, fill: UIColor(red: 0.501, green: 0.592, blue: 1, alpha: 0.7))          // 押していないときはスライドと同じ色
-        add(holdActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))           // 押さえている間は明るく
-        add(slideIdleLayer, fill: UIColor(red: 0.501, green: 0.592, blue: 1, alpha: 0.7))
-        add(slideActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))         // 押さえている間はホールドと同じ色
-        add(simLayer, fill: nil, stroke: UIColor(white: 0.8, alpha: 0.7), width: 2)
+        // 背景 (本家: 紺がかった暗い灰色に、細い三角形の網目と、レーンの後ろの大きな輪)
+        bgGradient.colors = [UIColor(red: 0.125, green: 0.13, blue: 0.165, alpha: 1).cgColor,
+                             UIColor(red: 0.075, green: 0.08, blue: 0.105, alpha: 1).cgColor]
+        bgGradient.startPoint = CGPoint(x: 0.5, y: 0)
+        bgGradient.endPoint = CGPoint(x: 0.5, y: 1)
+        bgGradient.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
+        layer.addSublayer(bgGradient)
+        add(bgLines, fill: nil, stroke: UIColor(white: 1, alpha: 0.075), width: 1.2)
+        add(bgRing, fill: nil, stroke: UIColor(white: 1, alpha: 0.045), width: 20)
+        // レーン
+        add(floorLayer, fill: UIColor(red: 0.055, green: 0.055, blue: 0.065, alpha: 0.93))
+        add(partFillLayer, fill: UIColor(white: 1, alpha: 0.05))
+        add(partEdgeLayer, fill: UIColor(white: 0.93, alpha: 1))
+        add(beatLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.13), width: 1.4)
+        add(edgeLayer, fill: nil, stroke: UIColor(white: 0.88, alpha: 1), width: 2.5)
+        add(dividerLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.3), width: 1.4)
+        add(zoneLayer, fill: UIColor(white: 1, alpha: 0.06))                                         // 押しているレーンは少し明るい灰色
+        // ホールド / スライドの帯 (本家: くすんだ青紫。押さえている間は明るく)
+        add(holdIdleLayer, fill: UIColor(red: 0.36, green: 0.42, blue: 0.74, alpha: 0.9))
+        add(holdActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))
+        add(slideIdleLayer, fill: UIColor(red: 0.36, green: 0.42, blue: 0.74, alpha: 0.9))
+        add(slideActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))
+        add(simLayer, fill: nil, stroke: UIColor(white: 0.85, alpha: 0.75), width: 2)
+        // ノーツ (本家: 角の丸い棒。下側に少し暗い縁があって、厚みがあるように見える)
+        add(tapShadow, fill: UIColor(red: 0.72, green: 0.73, blue: 0.78, alpha: 1))
         add(tapLayer, fill: .white)
-        add(headLayer, fill: UIColor(red: 0.62, green: 0.85, blue: 1.0, alpha: 1))
-        add(redLayer, fill: UIColor(red: 1.0, green: 0.22, blue: 0.22, alpha: 1))
-        add(wipeLayer, fill: UIColor(red: 0.97, green: 0.96, blue: 0.27, alpha: 1))
-        add(judgeLayer, fill: UIColor(red: 0.95, green: 0.1, blue: 0.95, alpha: 1))
+        add(headShadow, fill: UIColor(red: 0.35, green: 0.6, blue: 0.85, alpha: 1))
+        add(headLayer, fill: UIColor(red: 0.55, green: 0.8, blue: 1.0, alpha: 1))
+        add(redShadow, fill: UIColor(red: 0.6, green: 0.08, blue: 0.14, alpha: 1))
+        add(redLayer, fill: UIColor(red: 0.93, green: 0.2, blue: 0.27, alpha: 1))
+        add(wipeShadow, fill: UIColor(red: 0.72, green: 0.68, blue: 0.12, alpha: 1))
+        add(wipeLayer, fill: UIColor(red: 0.95, green: 0.93, blue: 0.24, alpha: 1))
+        add(judgeLayer, fill: UIColor(red: 0.93, green: 0.07, blue: 0.93, alpha: 1))
         effectHost.actions = ["sublayers": NSNull()]
         layer.addSublayer(effectHost)          // タッチエフェクト (判定ラインより上に重ねる)
+        // 左上の帯 (SCORE / 曲名 / 難易度) と、到達可能のゲージ
+        for l in [scoreBar, titlePanel, diffTag, rankDiamond] {
+            l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull()]
+            layer.addSublayer(l)
+        }
+        scoreBar.fillColor = UIColor(white: 0.91, alpha: 1).cgColor
+        titlePanel.fillColor = UIColor(white: 0.155, alpha: 0.94).cgColor
+        diffTag.fillColor = difficulty.uiColor.cgColor
+        rankDiamond.fillColor = UIColor(white: 0.12, alpha: 0.85).cgColor
+        gaugeBack.backgroundColor = UIColor(white: 0.3, alpha: 1).cgColor
+        gaugeFill.backgroundColor = UIColor(red: 0.62, green: 0.92, blue: 0.6, alpha: 1).cgColor
+        for l in [gaugeBack, gaugeFill] {
+            l.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
+            layer.addSublayer(l)
+        }
+    }
+
+    /// 角の丸い太字 (本家の UI の文字に近い)
+    static func roundedFont(_ size: CGFloat, _ weight: UIFont.Weight) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        if let d = base.fontDescriptor.withDesign(.rounded) { return UIFont(descriptor: d, size: size) }
+        return base
     }
 
     private func setupLabels() {
-        scoreBox.backgroundColor = UIColor(white: 0.92, alpha: 1)
-        titleBox.backgroundColor = UIColor(white: 0.15, alpha: 0.9)
-        scoreLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 24, weight: .heavy)
-        scoreLabel.textColor = .black
-        titleLabel.font = UIFont.systemFont(ofSize: 22, weight: .bold)
         titleLabel.textColor = .white
         titleLabel.text = songTitle
-        diffLabel.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+        titleLabel.adjustsFontSizeToFitWidth = true
+        titleLabel.minimumScaleFactor = 0.5
+        artistLabel.textColor = UIColor(white: 1, alpha: 0.9)
+        artistLabel.text = artist
         diffLabel.textColor = .white
-        diffLabel.backgroundColor = difficulty.uiColor
-        diffLabel.text = "  " + difficulty.label + " Lv." + Beatrix.lvRank(level)
-        countsLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-        countsLabel.textColor = UIColor(white: 0.75, alpha: 1)
-        comboLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 84, weight: .heavy)
-        comboLabel.textColor = UIColor(white: 0.75, alpha: 0.75)
+        diffLabel.text = difficulty.label + " Lv." + Beatrix.lvRank(level)
+        reachLabel.text = "到達可能"
+        reachLabel.textAlignment = .center
+        rankLabel.textAlignment = .center
+        comboLabel.textColor = UIColor(white: 0.47, alpha: 0.92)
         comboLabel.textAlignment = .center
-        judgeLabel.font = UIFont.systemFont(ofSize: 60, weight: .heavy)
-        judgeLabel.textAlignment = .center
-        earlyLabel.font = UIFont.systemFont(ofSize: 22, weight: .bold)
+        judgeView.contentMode = .center
         earlyLabel.textAlignment = .center
         countLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 56, weight: .bold)
         countLabel.textColor = .white
@@ -194,13 +248,97 @@ final class BeatrixGameView: UIView, GameSessionView {
         lyricLabel.layer.shadowOpacity = 0.9
         lyricLabel.layer.shadowRadius = 3
         lyricLabel.layer.shadowOffset = .zero
-        addSubview(lyricLabel)
-        for v in [scoreBox, titleBox, diffLabel, countsLabel, comboLabel, judgeLabel, earlyLabel, countLabel, resultLabel] {
+        for v in [lyricLabel, scoreLabel, titleLabel, artistLabel, diffLabel, reachLabel, rankLabel,
+                  comboLabel, judgeView, earlyLabel, countLabel, resultLabel] as [UIView] {
             v.isUserInteractionEnabled = false
             addSubview(v)
         }
-        scoreBox.addSubview(scoreLabel)
-        titleBox.addSubview(titleLabel)
+    }
+
+    /// 縁取りの付いた文字
+    private static func outlined(_ text: String, font: UIFont, color: UIColor, stroke: UIColor, width: CGFloat) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: color, .strokeColor: stroke, .strokeWidth: -width
+        ])
+    }
+
+    /// 判定の文字 (本家: 丸い太字に、横向きのグラデーションと、右下へ伸びる厚み)。画面の大きさごとに作って取っておく
+    private var judgeImages: [String: UIImage] = [:]
+    private var judgeImagesHeight: CGFloat = 0
+
+    private func judgeImage(_ j: BxJudge) -> UIImage? {
+        let h = bounds.height
+        if h <= 0 { return nil }
+        if judgeImagesHeight != h {
+            judgeImages = [:]
+            judgeImagesHeight = h
+        }
+        let key: String
+        switch j {
+        case .perfectPlus: key = "pp"
+        case .perfect: key = "p"
+        case .great: key = "g"
+        case .miss: key = "m"
+        }
+        if let img = judgeImages[key] { return img }
+        let text: String
+        let colors: [UIColor]
+        let depthColor: UIColor
+        switch j {
+        case .perfectPlus:
+            text = "PERFECT!!"
+            colors = [UIColor(red: 0.6, green: 0.94, blue: 1, alpha: 1), UIColor(red: 0.95, green: 0.97, blue: 1, alpha: 1),
+                      UIColor(red: 0.93, green: 0.68, blue: 0.95, alpha: 1)]
+            depthColor = UIColor(red: 0.42, green: 0.46, blue: 0.56, alpha: 1)
+        case .perfect:
+            text = "PERFECT!"
+            colors = [UIColor(red: 0.75, green: 0.9, blue: 1, alpha: 1), UIColor(red: 0.95, green: 0.95, blue: 0.98, alpha: 1),
+                      UIColor(red: 0.88, green: 0.78, blue: 0.95, alpha: 1)]
+            depthColor = UIColor(red: 0.42, green: 0.46, blue: 0.56, alpha: 1)
+        case .great:
+            text = "GREAT"
+            colors = [UIColor(red: 1, green: 0.85, blue: 0.45, alpha: 1), UIColor(red: 1, green: 0.95, blue: 0.85, alpha: 1),
+                      UIColor(red: 1, green: 0.62, blue: 0.82, alpha: 1)]
+            depthColor = UIColor(red: 0.55, green: 0.42, blue: 0.4, alpha: 1)
+        case .miss:
+            text = "MISS"
+            colors = [UIColor(white: 0.72, alpha: 1), UIColor(white: 0.72, alpha: 1)]
+            depthColor = UIColor(white: 0.36, alpha: 1)
+        }
+        let font = Self.roundedFont(h * 0.105, .heavy)
+        let attr: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .kern: h * 0.003]
+        let ts = (text as NSString).size(withAttributes: attr)
+        let depth = max(2, (h * 0.006).rounded())
+        let size = CGSize(width: ceil(ts.width + depth + 4), height: ceil(ts.height + depth + 4))
+        // 文字の形 (白) を先に作って、グラデーションの型抜きに使う
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = UIScreen.main.scale
+        let mask = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
+            (text as NSString).draw(at: CGPoint(x: 2, y: 2), withAttributes: attr)
+        }
+        let img = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
+            let c = ctx.cgContext
+            // 厚み: 右下へ少しずつずらして、暗い色で重ねる
+            var dattr = attr
+            dattr[.foregroundColor] = depthColor
+            var k = depth
+            while k >= 1 {
+                (text as NSString).draw(at: CGPoint(x: 2 + k * 0.5, y: 2 + k), withAttributes: dattr)
+                k -= 1
+            }
+            // 表: 横向きのグラデーション
+            guard let cg = mask.cgImage,
+                  let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors.map { $0.cgColor } as CFArray,
+                                        locations: colors.count == 3 ? [0, 0.5, 1] : [0, 1]) else { return }
+            c.saveGState()
+            c.translateBy(x: 0, y: size.height)
+            c.scaleBy(x: 1, y: -1)
+            c.clip(to: CGRect(origin: .zero, size: size), mask: cg)
+            c.drawLinearGradient(grad, start: CGPoint(x: 0, y: 0), end: CGPoint(x: size.width, y: 0), options: [])
+            c.restoreGState()
+        }
+        judgeImages[key] = img
+        return img
     }
 
     private func attachSounds() {
@@ -224,112 +362,136 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
     }
 
-    // MARK: タッチエフェクト
-    //   PERFECT (+): ノーツの色の光の玉 + 広がる輪 + 細かい粒 (白タップ・始点・判定点 = 水色 / 赤タップ = 赤 / ワイプ = 黄色)
-    //   GREAT     : ピンクの光の玉 + 細い輪 (少し控えめ)
-    //   早い MISS : 灰色の光の玉だけ (控えめ)。遅い MISS・見逃しは出さない
+    // MARK: タッチエフェクト (本家の見た目に寄せたもの)
+    //   白タップ・始点 (PERFECT): 水色の光の玉 + 光る輪 + 星の粒 / 赤タップ: 同じ形で赤
+    //   ワイプ: 横に長い、白〜黄色の光 / ホールド・スライドの判定点: 小さな白い光
+    //   GREAT: ピンク (控えめ) / 早い MISS: 灰色の光の玉だけ。遅い MISS・見逃しは出さない
 
     private func spawnEffect(type: Int, lane: Int, judge: BxJudge, early: Bool?) {
         guard bounds.width > 0 else { return }
-        let color: UIColor
-        var scale: CGFloat = 1
-        var ring = true
-        var particles = true
+        let cyan = UIColor(red: 0.12, green: 0.96, blue: 0.96, alpha: 1)
+        var color: UIColor
         switch judge {
         case .perfectPlus, .perfect:
             switch type {
-            case 3: color = UIColor(red: 1.0, green: 0.35, blue: 0.55, alpha: 1)
-            case 4: color = UIColor(red: 1.0, green: 0.96, blue: 0.55, alpha: 1)
-            case 5:
-                color = UIColor(red: 0.25, green: 1.0, blue: 0.95, alpha: 1)
-                scale = 0.75
-                ring = false
-            default: color = UIColor(red: 0.25, green: 1.0, blue: 0.95, alpha: 1)
+            case 3: color = UIColor(red: 1.0, green: 0.25, blue: 0.35, alpha: 1)
+            case 4: color = UIColor(red: 1.0, green: 0.96, blue: 0.5, alpha: 1)
+            default: color = cyan
             }
         case .great:
             color = UIColor(red: 1.0, green: 0.55, blue: 0.85, alpha: 1)
-            scale = 0.85
-            particles = false
         case .miss:
             guard early == true else { return }
-            color = UIColor(white: 0.62, alpha: 1)
-            scale = 0.7
-            ring = false
-            particles = false
+            color = UIColor(white: 0.6, alpha: 1)
         }
         let g = geo()
+        let third = g.halfJ * 2 / 3
         let center = CGPoint(x: g.x(Self.laneFrac(lane), 0), y: g.judgeY)
-        let r = g.halfJ / 3 * 0.85 * scale              // 光の玉の半径 (1 鍵の幅の半分くらい)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         var made: [CALayer] = []
 
-        // 光の玉 (真ん中が白く、外へ向かってノーツの色が透けていく)
-        let glow = CAGradientLayer()
-        glow.type = .radial
-        glow.colors = [UIColor.white.cgColor, color.cgColor, color.withAlphaComponent(0.35).cgColor, color.withAlphaComponent(0).cgColor]
-        glow.locations = [0, 0.25, 0.55, 1]
-        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
-        glow.endPoint = CGPoint(x: 1, y: 1)
-        glow.bounds = CGRect(x: 0, y: 0, width: r * 2.6, height: r * 2.6)
-        glow.position = center
-        effectHost.addSublayer(glow)
-        fade(glow, scaleFrom: 0.7, to: 1.15, duration: 0.30)
-        made.append(glow)
-
-        // 広がる輪
-        if ring {
-            let ringLayer = CAShapeLayer()
-            ringLayer.bounds = CGRect(x: 0, y: 0, width: r * 2, height: r * 2)
-            ringLayer.position = center
-            ringLayer.path = UIBezierPath(ovalIn: ringLayer.bounds).cgPath
-            ringLayer.fillColor = nil
-            ringLayer.strokeColor = color.withAlphaComponent(0.9).cgColor
-            ringLayer.lineWidth = judge == .great ? 1.5 : 2.5
-            effectHost.addSublayer(ringLayer)
-            fade(ringLayer, scaleFrom: 0.5, to: 1.6, duration: 0.38)
-            made.append(ringLayer)
+        func radial(_ w: CGFloat, _ h: CGFloat, _ colors: [UIColor], _ locs: [NSNumber]) -> CAGradientLayer {
+            let l = CAGradientLayer()
+            l.type = .radial
+            l.colors = colors.map { $0.cgColor }
+            l.locations = locs
+            l.startPoint = CGPoint(x: 0.5, y: 0.5)
+            l.endPoint = CGPoint(x: 1, y: 1)
+            l.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+            l.position = center
+            effectHost.addSublayer(l)
+            made.append(l)
+            return l
         }
 
-        // 細かい粒 (外へ飛んで消える)
-        if particles {
-            for k in 0..<7 {
-                let p = CALayer()
-                let size: CGFloat = 3 + CGFloat(k % 3)
-                p.bounds = CGRect(x: 0, y: 0, width: size, height: size)
-                p.cornerRadius = size / 2
-                p.backgroundColor = color.cgColor
-                p.position = center
-                effectHost.addSublayer(p)
-                let ang = Double(k) / 7.0 * 2 * Double.pi + Double.random(in: -0.3...0.3)
-                let dist = r * CGFloat.random(in: 1.0...1.7)
-                let to = CGPoint(x: center.x + CGFloat(cos(ang)) * dist, y: center.y + CGFloat(sin(ang)) * dist * 0.6)
-                let mv = CABasicAnimation(keyPath: "position")
-                mv.fromValue = NSValue(cgPoint: center)
-                mv.toValue = NSValue(cgPoint: to)
-                let op = CABasicAnimation(keyPath: "opacity")
-                op.fromValue = 1
-                op.toValue = 0
-                let gr = CAAnimationGroup()
-                gr.animations = [mv, op]
-                gr.duration = 0.42
-                gr.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                p.position = to
-                p.opacity = 0
-                p.add(gr, forKey: "fx")
-                made.append(p)
+        if type == 4 && judge != .miss {
+            // ワイプ: 横に長い白〜黄色の光
+            let l = radial(third * 2.1, third * 0.6,
+                           [.white, UIColor(white: 1, alpha: 0.95), color.withAlphaComponent(0.75), color.withAlphaComponent(0)],
+                           [0, 0.35, 0.65, 1])
+            fade(l, scaleFrom: 0.8, to: 1.2, duration: 0.35)
+        } else if type == 5 {
+            let r = third * 0.2
+            let l = radial(r * 2, r * 2, [.white, UIColor(white: 1, alpha: 0.6), UIColor(white: 1, alpha: 0)], [0, 0.4, 1])
+            fade(l, scaleFrom: 0.8, to: 1.1, duration: 0.25)
+        } else {
+            let R = third * 0.31                         // 輪の半径 (本家: 1 鍵の幅の 3 割くらい)
+            // 光の玉 (真ん中が白く、外へ向かって色が透けていく)
+            let glow = radial(R * 2.0, R * 2.0,
+                              [UIColor(white: 1, alpha: 0.95), color, color.withAlphaComponent(0.45), color.withAlphaComponent(0)],
+                              [0, 0.3, 0.62, 1])
+            fade(glow, scaleFrom: 0.85, to: 1.05, duration: judge == .miss ? 0.2 : 0.32)
+            if judge != .miss {
+                // 光る輪
+                let ring = CAShapeLayer()
+                ring.bounds = CGRect(x: 0, y: 0, width: R * 2, height: R * 2)
+                ring.position = center
+                ring.path = UIBezierPath(ovalIn: ring.bounds).cgPath
+                ring.fillColor = nil
+                ring.strokeColor = color.cgColor
+                ring.lineWidth = max(2, R * (judge == .great ? 0.04 : 0.065))
+                ring.shadowColor = color.cgColor
+                ring.shadowRadius = R * 0.12
+                ring.shadowOpacity = 1
+                ring.shadowOffset = .zero
+                effectHost.addSublayer(ring)
+                fade(ring, scaleFrom: 0.88, to: 1.12, duration: 0.42)
+                made.append(ring)
+                // 星の粒 (ふわっと外へ広がって消える)
+                if judge != .great {
+                    for k in 0..<9 {
+                        let s = R * CGFloat.random(in: 0.1...0.19)
+                        let star = CAShapeLayer()
+                        star.bounds = CGRect(x: 0, y: 0, width: s * 2, height: s * 2)
+                        star.path = Self.starPath(radius: s)
+                        star.fillColor = color.withAlphaComponent(0.7).cgColor
+                        star.position = center
+                        effectHost.addSublayer(star)
+                        let ang = Double(k) / 9.0 * 2 * Double.pi + Double.random(in: -0.35...0.35)
+                        let dist = R * CGFloat.random(in: 0.9...1.6)
+                        let to = CGPoint(x: center.x + CGFloat(cos(ang)) * dist, y: center.y + CGFloat(sin(ang)) * dist * 0.75)
+                        let mv = CABasicAnimation(keyPath: "position")
+                        mv.fromValue = NSValue(cgPoint: center)
+                        mv.toValue = NSValue(cgPoint: to)
+                        let op = CABasicAnimation(keyPath: "opacity")
+                        op.fromValue = 1
+                        op.toValue = 0
+                        let gr = CAAnimationGroup()
+                        gr.animations = [mv, op]
+                        gr.duration = 0.6
+                        gr.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                        star.position = to
+                        star.opacity = 0
+                        star.add(gr, forKey: "fx")
+                        made.append(star)
+                    }
+                }
             }
         }
         CATransaction.commit()
 
         // 終わったら消す (アニメーションより少しあと)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             for l in made { l.removeFromSuperlayer() }
             CATransaction.commit()
         }
+    }
+
+    /// 5 つ角の星 (bounds の真ん中が中心)
+    private static func starPath(radius r: CGFloat) -> CGPath {
+        let p = CGMutablePath()
+        for i in 0..<10 {
+            let rr = i % 2 == 0 ? r : r * 0.45
+            let a = Double(i) * Double.pi / 5 - Double.pi / 2
+            let pt = CGPoint(x: r + rr * CGFloat(cos(a)), y: r + rr * CGFloat(sin(a)))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        p.closeSubpath()
+        return p
     }
 
     /// 大きくなりながら消える
@@ -353,25 +515,60 @@ final class BeatrixGameView: UIView, GameSessionView {
         super.layoutSubviews()
         let w = bounds.width
         let h = bounds.height
-        for l in [floorLayer, partFillLayer, partEdgeLayer, beatLayer, edgeLayer, dividerLayer, zoneLayer,
+        for l in [bgLines, bgRing, floorLayer, partFillLayer, partEdgeLayer, beatLayer, edgeLayer, dividerLayer, zoneLayer,
                   holdIdleLayer, holdActiveLayer, slideIdleLayer, slideActiveLayer, simLayer,
-                  tapLayer, headLayer, redLayer, wipeLayer, judgeLayer] {
+                  tapShadow, tapLayer, headShadow, headLayer, redShadow, redLayer, wipeShadow, wipeLayer, judgeLayer,
+                  scoreBar, titlePanel, diffTag, rankDiamond] {
             l.frame = bounds
         }
+        bgGradient.frame = bounds
         effectHost.frame = bounds
-        scoreBox.frame = CGRect(x: 0, y: 18, width: 300, height: 34)
-        scoreLabel.frame = CGRect(x: 10, y: 0, width: 290, height: 34)
-        titleBox.frame = CGRect(x: 0, y: 52, width: 300, height: 50)
-        titleLabel.frame = CGRect(x: 10, y: 0, width: 286, height: 50)
-        // 文字の長さに合わせて帯を伸ばす (INSANE Lv.Oops! などで「...」にならないように)
-        let diffW = ceil(diffLabel.sizeThatFits(CGSize(width: 1000, height: 24)).width) + 16
-        diffLabel.frame = CGRect(x: 0, y: 102, width: max(170, diffW), height: 24)
-        countsLabel.frame = CGRect(x: 10, y: 130, width: 400, height: 18)
+
+        // 左上の帯。大きさは本家の画面収録 (1920 × 1440) から測った値を、画面の高さに合わせて縮めたもの
+        let u = h / 1440
+        func poly(_ pts: [CGPoint]) -> CGPath {
+            let p = CGMutablePath()
+            p.addLines(between: pts)
+            p.closeSubpath()
+            return p
+        }
+        scoreBar.path = poly([CGPoint(x: 0, y: 40 * u), CGPoint(x: 615 * u, y: 40 * u),
+                              CGPoint(x: 560 * u, y: 90 * u), CGPoint(x: 0, y: 90 * u)])
+        scoreLabel.frame = CGRect(x: 12 * u, y: 40 * u, width: 560 * u, height: 50 * u)
+        titlePanel.path = poly([CGPoint(x: 0, y: 90 * u), CGPoint(x: 560 * u, y: 90 * u),
+                                CGPoint(x: 425 * u, y: 225 * u), CGPoint(x: 0, y: 225 * u)])
+        titleLabel.font = Self.roundedFont(50 * u, .heavy)
+        titleLabel.frame = CGRect(x: 16 * u, y: 100 * u, width: 470 * u, height: 66 * u)
+        artistLabel.font = UIFont.systemFont(ofSize: 25 * u, weight: .medium)
+        artistLabel.frame = CGRect(x: 16 * u, y: 170 * u, width: 400 * u, height: 36 * u)
+        diffLabel.font = Self.roundedFont(31 * u, .heavy)
+        let diffW = ceil(diffLabel.sizeThatFits(CGSize(width: 2000, height: 100)).width)
+        let tagR = max(330 * u, 16 * u + diffW + 50 * u)
+        diffTag.path = poly([CGPoint(x: 0, y: 225 * u), CGPoint(x: tagR, y: 225 * u),
+                             CGPoint(x: tagR - 65 * u, y: 272 * u), CGPoint(x: 0, y: 272 * u)])
+        diffLabel.frame = CGRect(x: 16 * u, y: 225 * u, width: diffW + 4, height: 47 * u)
+        gaugeRect = CGRect(x: 20 * u, y: 276 * u, width: 46 * u, height: 634 * u)
+        gaugeBack.frame = gaugeRect
+        reachLabel.attributedText = Self.outlined("到達可能", font: UIFont.systemFont(ofSize: 24 * u, weight: .heavy),
+                                                  color: .white, stroke: UIColor(white: 0.1, alpha: 1), width: 3)
+        reachLabel.frame = CGRect(x: 103 * u, y: 286 * u, width: 160 * u, height: 36 * u)
+        let rc = CGPoint(x: 183 * u, y: 368 * u)
+        let rh = 72 * u
+        rankDiamond.path = poly([CGPoint(x: rc.x, y: rc.y - rh), CGPoint(x: rc.x + rh, y: rc.y),
+                                 CGPoint(x: rc.x, y: rc.y + rh), CGPoint(x: rc.x - rh, y: rc.y)])
+        rankLabel.frame = CGRect(x: rc.x - rh, y: rc.y - rh * 0.6, width: rh * 2, height: rh * 1.2)
+        shownRank = ""
+        shownScore = -1
+        shownGauge = -1
+
         let g = geo()
-        let midY = g.judgeY - h * 0.33
-        comboLabel.frame = CGRect(x: 0, y: midY, width: w, height: 96)
-        judgeLabel.frame = CGRect(x: 0, y: midY + 96, width: w, height: 70)
-        earlyLabel.frame = CGRect(x: 0, y: midY + 166, width: w, height: 28)
+        // コンボ (本家: 大きな灰色の数字) と判定の文字 (本家: PERFECT!! など)
+        comboLabel.font = Self.roundedFont(h * 0.14, .heavy)
+        comboLabel.frame = CGRect(x: 0, y: h * 0.57 - h * 0.09, width: w, height: h * 0.18)
+        judgeView.frame = CGRect(x: 0, y: h * 0.71 - h * 0.08, width: w, height: h * 0.16)
+        shownJudgeKey = ""
+        earlyLabel.font = Self.roundedFont(h * 0.026, .heavy)
+        earlyLabel.frame = CGRect(x: 0, y: h * 0.785, width: w, height: h * 0.035)
         countLabel.frame = CGRect(x: 0, y: h * 0.22, width: w, height: 70)
         // 歌詞: 判定ラインのすぐ上 (レーンの幅の中)
         lyricLabel.frame = CGRect(x: g.midX - g.halfJ, y: g.judgeY - 38, width: g.halfJ * 2, height: 24)
@@ -615,6 +812,44 @@ final class BeatrixGameView: UIView, GameSessionView {
         guard bounds.width > 0 else { return }
         let g = geo()
         let r = depthRange
+        let w = bounds.width
+        let h = bounds.height
+        // 背景の網目: 少しずらした格子の点を、横・縦・斜めにつないだ三角形 (毎回同じ形になるよう、決まった乱数で)
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        func rnd() -> CGFloat {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return CGFloat(Double(seed >> 11) / Double(1 << 53))
+        }
+        let cols = 7
+        let rows = 5
+        var pts: [[CGPoint]] = []
+        for j in 0...rows {
+            var row: [CGPoint] = []
+            for i in 0...cols {
+                let x = (CGFloat(i) + (i == 0 || i == cols ? 0 : rnd() * 0.7 - 0.35)) * w / CGFloat(cols)
+                let y = (CGFloat(j) + (j == 0 || j == rows ? 0 : rnd() * 0.7 - 0.35)) * h / CGFloat(rows)
+                row.append(CGPoint(x: x, y: y))
+            }
+            pts.append(row)
+        }
+        let net = CGMutablePath()
+        for j in 0...rows {
+            for i in 0...cols {
+                let p = pts[j][i]
+                if i < cols { net.move(to: p); net.addLine(to: pts[j][i + 1]) }
+                if j < rows { net.move(to: p); net.addLine(to: pts[j + 1][i]) }
+                if i < cols && j < rows {
+                    net.move(to: (i + j) % 2 == 0 ? p : pts[j][i + 1])
+                    net.addLine(to: (i + j) % 2 == 0 ? pts[j + 1][i + 1] : pts[j + 1][i])
+                }
+            }
+        }
+        bgLines.path = net
+        // レーンの後ろの大きな輪
+        let ringR = h * 0.5
+        bgRing.lineWidth = h * 0.025
+        bgRing.path = CGPath(ellipseIn: CGRect(x: w / 2 - ringR, y: h * 0.4 - ringR, width: ringR * 2, height: ringR * 2), transform: nil)
+
         let floor = CGMutablePath()
         addQuad(floor, g, f0: 0, f1: 1, d0: r.bot, d1: r.top)
         floorLayer.path = floor
@@ -631,7 +866,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
         dividerLayer.path = div
         let judge = CGMutablePath()
-        addQuad(judge, g, f0: -0.01, f1: 1.01, d0: -0.006, d1: 0.006)
+        addQuad(judge, g, f0: -0.005, f1: 1.005, d0: -0.007, d1: 0.007)
         judgeLayer.path = judge
     }
 
@@ -776,12 +1011,34 @@ final class BeatrixGameView: UIView, GameSessionView {
         simLayer.path = sims
     }
 
+    /// ノーツ 1 つ (本家: 角の丸い棒)。奥行き d0〜d1 の範囲を画面の四角にして、両端を丸くする。
+    /// 下側の少し暗い縁 (厚み) は shadow に、表は main に入れる
+    private func addPill(_ main: CGMutablePath, _ shadow: CGMutablePath, _ g: Geo, f0: Double, f1: Double, d0: Double, d1: Double) {
+        let yb = g.y(d0)
+        let yt = g.y(d1)
+        let hh = yb - yt
+        if hh < 0.5 { return }
+        let dm = (d0 + d1) / 2
+        let xl = g.x(f0, dm)
+        let xr = g.x(f1, dm)
+        let ww = xr - xl
+        if ww < 1 { return }
+        func pill(_ rect: CGRect) -> CGPath {
+            let ch = min(rect.height / 2, rect.width / 2)
+            let cw = min(rect.height * 0.8, rect.width / 2)
+            return CGPath(roundedRect: rect, cornerWidth: cw, cornerHeight: ch, transform: nil)
+        }
+        shadow.addPath(pill(CGRect(x: xl, y: yt, width: ww, height: hh)))
+        main.addPath(pill(CGRect(x: xl, y: yt, width: ww, height: hh * 0.8)))
+    }
+
     private func renderNotes() {
         let g = geo()
         let r = depthRange
         let notes = game.notes
         // ソフランがあると「画面に入る時刻の範囲」が決まらないので、少し前から最後まで見て、奥行きで画面の外を飛ばす
-        let tLo = viewTime - 1.0
+        // (見逃したノーツは、本家と同じく判定ラインを過ぎても流れ続けるので、少し長めに前から見る)
+        let tLo = viewTime - 2.0
         // 画面に入る最初のノーツを二分探索 (ノーツは時刻順)
         var lo = 0
         var hi = notes.count
@@ -789,36 +1046,41 @@ final class BeatrixGameView: UIView, GameSessionView {
             let mid = (lo + hi) / 2
             if notes[mid].t < tLo { lo = mid + 1 } else { hi = mid }
         }
-        let tapP = CGMutablePath()
-        let headP = CGMutablePath()
-        let redP = CGMutablePath()
-        let wipeP = CGMutablePath()
+        let tapP = CGMutablePath(), tapS = CGMutablePath()
+        let headP = CGMutablePath(), headS = CGMutablePath()
+        let redP = CGMutablePath(), redS = CGMutablePath()
+        let wipeP = CGMutablePath(), wipeS = CGMutablePath()
         var i = lo
         while i < notes.count {
             let n = notes[i]
             i += 1
             if n.type == 5 { continue }
-            // 取ったノーツは消す。ただしワイプは本家と同じく、判定ラインに来るまで流れ続ける (早く押しても、すぐには消えない)
-            if n.done && !(n.type == 4 && viewTime < n.t) { continue }
+            // 取ったノーツは消す。ただしワイプは本家と同じく、判定ラインに来るまで流れ続ける (早く押しても、すぐには消えない)。
+            // 見逃したノーツは、本家と同じく判定ラインを過ぎてもそのまま流れていく
+            if n.done && !n.missed && !(n.type == 4 && viewTime < n.t) { continue }
             if viewTime < n.showFrom || viewTime >= n.hideFrom { continue }      // 出現前 / 消えたあと
             let d = depth(n.t, n.sp)
             if d < r.bot - 0.1 || d > r.top + 0.1 { continue }
             let f = Self.laneFrac(n.lane)
             switch n.type {
             case 2:
-                addQuad(headP, g, f0: f - sideWidth / 2, f1: f + sideWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
+                addPill(headP, headS, g, f0: f - sideWidth / 2, f1: f + sideWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
             case 3:
-                addQuad(redP, g, f0: f - tapWidth / 2, f1: f + tapWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
+                addPill(redP, redS, g, f0: f - tapWidth / 2, f1: f + tapWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
             case 4:
-                addQuad(wipeP, g, f0: f - sideWidth / 2, f1: f + sideWidth / 2, d0: d - wipeDepth / 2, d1: d + wipeDepth / 2)
+                addPill(wipeP, wipeS, g, f0: f - sideWidth / 2, f1: f + sideWidth / 2, d0: d - wipeDepth / 2, d1: d + wipeDepth / 2)
             default:
-                addQuad(tapP, g, f0: f - tapWidth / 2, f1: f + tapWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
+                addPill(tapP, tapS, g, f0: f - tapWidth / 2, f1: f + tapWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
             }
         }
         tapLayer.path = tapP
+        tapShadow.path = tapS
         headLayer.path = headP
+        headShadow.path = headS
         redLayer.path = redP
+        redShadow.path = redS
         wipeLayer.path = wipeP
+        wipeShadow.path = wipeS
     }
 
     /// 文字は、値が変わったときだけ書き換える (毎フレーム文字を作り直すと重い)
@@ -830,15 +1092,39 @@ final class BeatrixGameView: UIView, GameSessionView {
             shownLyric = lyric
             lyricLabel.text = lyric
         }
+        let u = bounds.height / 1440
         let score = game.score
         if score != shownScore {
             shownScore = score
-            scoreLabel.text = String(format: "SCORE %07ld", score)
+            scoreLabel.attributedText = Self.outlined("SCORE \(score)", font: Self.roundedFont(44 * u, .heavy),
+                                                      color: UIColor(white: 0.45, alpha: 1), stroke: .white, width: 4)
         }
-        let counts = "P+ \(game.perfectPlus)  P \(game.perfect)  G \(game.great)  M \(game.miss)"
-        if counts != shownCounts {
-            shownCounts = counts
-            countsLabel.text = counts
+        // 左のゲージ (到達可能なスコア。減った分は上から灰色になる) と、到達可能なランク
+        let ach = game.achievableScore
+        let frac = max(0, min(1, Double(ach - 700_000) / 300_000))
+        if Int(frac * 1000) != shownGauge {
+            shownGauge = Int(frac * 1000)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let fh = gaugeRect.height * CGFloat(frac)
+            gaugeFill.frame = CGRect(x: gaugeRect.minX, y: gaugeRect.maxY - fh, width: gaugeRect.width, height: fh)
+            CATransaction.commit()
+        }
+        let rank = game.achievableRank
+        if rank != shownRank {
+            shownRank = rank
+            let color: UIColor
+            switch rank {
+            case "AP": color = UIColor(red: 0.5, green: 1, blue: 1, alpha: 1)
+            case "FC": color = UIColor(red: 0.6, green: 1, blue: 0.6, alpha: 1)
+            case "SS", "S": color = UIColor(red: 1, green: 0.85, blue: 0.35, alpha: 1)
+            default: color = UIColor(white: 0.92, alpha: 1)
+            }
+            rankLabel.attributedText = Self.outlined(rank, font: Self.roundedFont(66 * u, .heavy),
+                                                     color: color, stroke: UIColor(white: 0.08, alpha: 1), width: 3)
+            let gold = rank == "SS" || rank == "S"
+            rankDiamond.strokeColor = gold ? UIColor(red: 1, green: 0.82, blue: 0.3, alpha: 1).cgColor : nil
+            rankDiamond.lineWidth = gold ? max(1.5, 4 * u) : 0
         }
         if game.combo != shownCombo {
             shownCombo = game.combo
@@ -849,23 +1135,10 @@ final class BeatrixGameView: UIView, GameSessionView {
         if let j = game.lastJudge, viewTime - game.lastJudgeAt < 0.6 {
             key = "\(j)-\(game.lastJudgeAt)-\(game.lastEarly.map { $0 ? "e" : "l" } ?? "")"
             if key != shownJudgeKey {
-                switch j {
-                case .perfectPlus:
-                    judgeLabel.text = "PERFECT"
-                    judgeLabel.textColor = UIColor(red: 0.55, green: 1, blue: 1, alpha: 1)
-                case .perfect:
-                    judgeLabel.text = "PERFECT"
-                    judgeLabel.textColor = UIColor(red: 1, green: 0.9, blue: 0.4, alpha: 1)
-                case .great:
-                    judgeLabel.text = "GREAT"
-                    judgeLabel.textColor = UIColor(red: 0.5, green: 1, blue: 0.5, alpha: 1)
-                case .miss:
-                    judgeLabel.text = "MISS"
-                    judgeLabel.textColor = UIColor(white: 0.7, alpha: 1)
-                }
+                judgeView.image = judgeImage(j)
                 if let e = game.lastEarly, j == .perfect || j == .great {
-                    earlyLabel.text = e ? "EARLY" : "LATE"
-                    earlyLabel.textColor = e ? UIColor(red: 0.4, green: 0.7, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.5, blue: 0.4, alpha: 1)
+                    earlyLabel.text = e ? "FAST" : "SLOW"
+                    earlyLabel.textColor = e ? UIColor(red: 0.45, green: 0.75, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.55, blue: 0.45, alpha: 1)
                 } else {
                     earlyLabel.text = ""
                 }
@@ -874,7 +1147,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         if key != shownJudgeKey {
             shownJudgeKey = key
             if key.isEmpty {
-                judgeLabel.text = ""
+                judgeView.image = nil
                 earlyLabel.text = ""
             }
         }
@@ -922,14 +1195,24 @@ struct BeatrixPlayScreen: View {
             BeatrixPlayRepresentable(launch: launch, session: session)
                 .ignoresSafeArea()
             if !session.paused {
-                Button { session.pause() } label: {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 34, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 72, height: 72)
-                        .background(Color(white: 0.12, opacity: 0.9))
-                        .padding(14)
+                // 右上の II (本家: 暗い四角に白い太い 2 本線。大きさは画面の高さに合わせる)
+                GeometryReader { geo in
+                    let u = geo.size.height / 1440
+                    Button { session.pause() } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10 * u)
+                                .fill(Color(white: 0.13, opacity: 0.85))
+                            HStack(spacing: 26 * u) {
+                                Rectangle().fill(Color.white).frame(width: 32 * u, height: 88 * u)
+                                Rectangle().fill(Color.white).frame(width: 32 * u, height: 88 * u)
+                            }
+                        }
+                        .frame(width: 150 * u, height: 160 * u)
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: geo.size.width - 85 * u, y: 80 * u)
                 }
+                .ignoresSafeArea()
             }
             if session.paused {
                 PauseOverlay(session: session)

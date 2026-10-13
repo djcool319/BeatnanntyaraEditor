@@ -34,6 +34,7 @@ struct BxNote {
     var hideFrom = Double.infinity         // この時刻から見えない (disappear)
     var suppressed = false
     var done = false
+    var missed = false                     // 見逃した (本家と同じく、判定ラインを過ぎても流れ続ける)
 }
 
 struct BxHold {
@@ -302,6 +303,25 @@ final class BxGame {
     private(set) var total = 0
     var judged: Int { perfectPlus + perfect + great + miss }
 
+    /// 到達可能なスコア (今からすべて PERFECT+ を取ったときのスコア)。左のゲージと「到達可能」の表示に使う
+    var achievableScore: Int {
+        guard total > 0 else { return 1_000_000 }
+        let lost = Double(perfect) * 0.01 + Double(great) * 0.5 + Double(miss)
+        return Int(((Double(total) - lost) / Double(total) * 1_000_000).rounded())
+    }
+
+    /// 到達可能なランク (仮: AP = GREAT・MISS なし / FC = MISS なし / それ以外は到達可能スコアで SS・S・A・B・C)
+    var achievableRank: String {
+        if great == 0 && miss == 0 { return "AP" }
+        if miss == 0 { return "FC" }
+        let a = achievableScore
+        if a >= 950_000 { return "SS" }
+        if a >= 900_000 { return "S" }
+        if a >= 800_000 { return "A" }
+        if a >= 700_000 { return "B" }
+        return "C"
+    }
+
     /// スコア (仮: 本家の計算式が分からないので、PERFECT+ = 100% / PERFECT = 99% / GREAT = 50% で 1,000,000 点満点)
     var score: Int {
         guard total > 0 else { return 0 }
@@ -472,6 +492,7 @@ final class BxGame {
 
     private func record(_ i: Int, _ j: BxJudge, early: Bool?) {
         notes[i].done = true
+        if j == .miss && early == nil { notes[i].missed = true }
         onJudge?(notes[i].type, notes[i].lane, j, early, notes[i].t)
         switch j {
         case .perfectPlus: perfectPlus += 1
