@@ -91,7 +91,7 @@ struct LaneGeo {
 
 final class EditorState: ObservableObject {
     static let speeds: [Double] = [1.0, 0.75, 0.5, 0.25, 0.1]
-    static let divides: [Int] = [2, 3, 4, 6, 8, 12, 16, 24, 32]
+    static let divides: [Int] = [2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32]
     static let speedRange = 0.1...1.0            // 再生速度の範囲 (一覧の値だけを使う。数値入力はない)
     static let divideRange = 2...1024            // 分割 1/n の n (入力もこの範囲)
     static let zoomCount = 17          // 0...15 が通常16段階、16 が細部用(1/32拍)

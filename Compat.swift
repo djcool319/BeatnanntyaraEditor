@@ -35,3 +35,42 @@ extension View {
         }
     }
 }
+
+// MARK: - 文字を入れるダイアログ (iOS 15 でも入力欄が出るように、UIKit の UIAlertController で出す)
+//   SwiftUI の .alert に TextField を入れる書き方は iOS 16 から。iOS 15 では入力欄が出ず、キーボードも出ない
+
+enum TextPrompt {
+    struct Action {
+        let title: String
+        var style: UIAlertAction.Style = .default
+        let handler: (String) -> Void
+    }
+
+    static func show(title: String, message: String?, placeholder: String, text: String,
+                     keyboard: UIKeyboardType = .default, actions: [Action]) {
+        let ac = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        ac.addTextField { tf in
+            tf.placeholder = placeholder
+            tf.text = text
+            tf.keyboardType = keyboard
+            tf.autocorrectionType = .no
+            tf.clearButtonMode = .whileEditing
+        }
+        for a in actions {
+            ac.addAction(UIAlertAction(title: a.title, style: a.style) { _ in
+                a.handler(ac.textFields?.first?.text ?? "")
+            })
+        }
+        topViewController()?.present(ac, animated: true)
+    }
+
+    /// いちばん手前に出ている画面
+    static func topViewController() -> UIViewController? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        var vc = (windows.first { $0.isKeyWindow } ?? windows.first)?.rootViewController
+        while let p = vc?.presentedViewController { vc = p }
+        return vc
+    }
+}

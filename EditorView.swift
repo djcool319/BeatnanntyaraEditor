@@ -846,15 +846,10 @@ struct EditorView: View {
     static let rootSpace = "editorRoot"
 
     /// 右下の分割の「入力…」で開く数値入力
-    @State private var showInput = false
-    @State private var inputText = ""
-    /// 歌詞の入力欄
-    @State private var lyricText = ""
+    /// 歌詞の入力ダイアログを出した lyricEdit (同じものを 2 回出さないため)
+    @State private var shownLyricEditID: UUID? = nil
     /// More → Appear / Vanish の選択
     @State private var showAppearMenu = false
-    /// More → Note speed の数値入力
-    @State private var showSpeedInput = false
-    @State private var speedText = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -885,14 +880,6 @@ struct EditorView: View {
         .overlay(SidePanelLayer(state: state))           // BPM list / Effect list / Information / SETTING: 右からスライドして出る (トーストより下の層)
         .overlay(TempoDetectDialog(state: state))        // BPM・offset の自動検出
         .overlay(toastLayer, alignment: .bottom)
-        .alert("分割 (1/n)", isPresented: $showInput) {
-            TextField("2〜1024", text: $inputText)
-                .keyboardType(.numberPad)
-            Button("OK") { commitInput() }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("n を 2〜1024 の整数で (例: 48 → 1/48)")
-        }
         .confirmationDialog("出現 / 消える (再生ラインの拍 \(Beat.nearest(state.viewBeat, den: state.snapDen).label))",
                             isPresented: $showAppearMenu, titleVisibility: .visible) {
             Button("この拍から出現する (それまで見えない)") { state.setAppear(.appear) }
@@ -902,27 +889,17 @@ struct EditorView: View {
         } message: {
             Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍を境に、見えない状態から急に出てくる / 急に消えます。判定はそのまま (見えなくても判定はある) なので、消すほうはダミーと組み合わせるのがおすすめです")
         }
-        .alert("歌詞", isPresented: Binding(get: { state.lyricEdit != nil }, set: { if !$0 { state.lyricEdit = nil } })) {
-            TextField("歌詞", text: $lyricText)
-            Button("OK") { state.commitLyric(lyricText) }
-            if state.lyricEdit?.index != nil {
-                Button("削除", role: .destructive) { state.deleteLyric() }
+        // 歌詞の入力 (EditorState が lyricEdit を入れたら出す。iOS 15 でも入力欄が出るように UIKit のダイアログで)
+        .onReceive(state.$lyricEdit) { e in
+            guard let e = e, e.id != shownLyricEditID else { return }
+            shownLyricEditID = e.id
+            var actions = [TextPrompt.Action(title: "OK") { t in state.commitLyric(t) }]
+            if e.index != nil {
+                actions.append(TextPrompt.Action(title: "削除", style: .destructive) { _ in state.deleteLyric() })
             }
-            Button("キャンセル", role: .cancel) { state.lyricEdit = nil }
-        } message: {
-            if let e = state.lyricEdit {
-                Text("\(e.start.label) 〜 \(e.end.label) の間、プレイ画面の判定ラインの上に出ます")
-            }
-        }
-        .onReceive(state.$lyricEdit) { e in lyricText = e?.text ?? "" }
-        .alert("ノーツの速さ", isPresented: $showSpeedInput) {
-            TextField("1", text: $speedText)
-                .keyboardType(.numbersAndPunctuation)
-            Button("OK") { state.applyNoteSpeedInput(speedText) }
-            Button("解除") { state.applyNoteSpeedInput("") }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("選んだノーツだけ、この倍率で流れてきます (例: 2 = 2 倍速 / 0.5 = 半分)。\n保存すると \"speeds_each\" に、拍・block が同じノーツの速さとして入ります。全体のソフランは Effect list の scroll (\"speeds\")")
+            actions.append(TextPrompt.Action(title: "キャンセル", style: .cancel) { _ in state.lyricEdit = nil })
+            TextPrompt.show(title: "歌詞", message: "\(e.start.label) 〜 \(e.end.label) の間、プレイ画面の判定ラインの上に出ます",
+                            placeholder: "歌詞", text: e.text, actions: actions)
         }
         // ノーツが 1 つも無い譜面を開いたときは、BPM・offset を自動で解析する (結果のダイアログで入れるか選ぶ)
         .onAppear {
@@ -963,7 +940,7 @@ struct EditorView: View {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture { state.popup = .none }
-                    popupBody
+                    popupBody(height: proxy.size.height)
                         .padding(.trailing, RightPanel.width + RightPanel.sideGap)
                         // 本家は、再生速度も分割も、メニューの下端が画面の下端のすぐ上にそろう。
                         // More だけは上から: 上端が、More ボタンの中心より 263pt 上 (自作は More ボタンが本家より下なので、その分メニューも下がる)
@@ -976,12 +953,12 @@ struct EditorView: View {
     }
 
     @ViewBuilder
-    private var popupBody: some View {
+    private func popupBody(height: CGFloat) -> some View {
         switch state.popup {
         case .speed:
-            popupList(speedItems())
+            popupList(speedItems(), maxHeight: height - RightPanel.popupBottomInset - 8)
         case .divide:
-            popupList(divideItems())
+            popupList(divideItems(), maxHeight: height - RightPanel.popupBottomInset - 8)
         case .more:
             moreList
         case .none:
@@ -1015,12 +992,12 @@ struct EditorView: View {
 
     private func openInput() {
         state.popup = .none
-        inputText = ""
-        showInput = true
-    }
-
-    private func commitInput() {
-        state.applyDivideInput(inputText)
+        TextPrompt.show(title: "分割 (1/n)", message: "n を 2〜1024 の整数で (例: 48 → 1/48)",
+                        placeholder: "2〜1024", text: "", keyboard: .numberPad,
+                        actions: [
+                            .init(title: "キャンセル", style: .cancel) { _ in },
+                            .init(title: "OK") { t in state.applyDivideInput(t) }
+                        ])
     }
 
     /// 再生速度 / 分割のメニュー。大きさ・濃さは本家の動画から実測:
@@ -1029,8 +1006,10 @@ struct EditorView: View {
     private static let popupRowHeight: CGFloat = 51.6
     private static let popupPad: CGFloat = 10.4
 
-    private func popupList(_ items: [PopupItem]) -> some View {
-        VStack(spacing: 0) {
+    /// 行が多くて画面に入らないときは、1 行の高さを縮めて収める
+    private func popupList(_ items: [PopupItem], maxHeight: CGFloat) -> some View {
+        let rowH = min(Self.popupRowHeight, max(28, (maxHeight - Self.popupPad * 2) / CGFloat(max(1, items.count))))
+        return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { entry in
                 Button(action: entry.element.action) {
                     Text(entry.element.title)
@@ -1039,7 +1018,7 @@ struct EditorView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                         .padding(.horizontal, 3)
-                        .frame(width: Self.popupWidth, height: Self.popupRowHeight)
+                        .frame(width: Self.popupWidth, height: rowH)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1123,8 +1102,15 @@ struct EditorView: View {
                 if state.selectedIDs.isEmpty {
                     state.showToast("先にノーツを選択してください")
                 } else {
-                    speedText = state.selectedNoteSpeedText
-                    showSpeedInput = true
+                    TextPrompt.show(
+                        title: "ノーツの速さ",
+                        message: "選んだノーツだけ、この倍率で流れてきます (例: 2 = 2 倍速 / 0.5 = 半分)。\n保存すると \"speeds_each\" に、拍・block が同じノーツの速さとして入ります。全体のソフランは Effect list の scroll (\"speeds\")",
+                        placeholder: "1", text: state.selectedNoteSpeedText, keyboard: .numbersAndPunctuation,
+                        actions: [
+                            .init(title: "OK") { t in state.applyNoteSpeedInput(t) },
+                            .init(title: "解除") { _ in state.applyNoteSpeedInput("") },
+                            .init(title: "キャンセル", style: .cancel) { _ in }
+                        ])
                 }
             }
           // ViewBuilder は 1 つのブロックに 10 個までなので、下の 4 つも Group にまとめる
