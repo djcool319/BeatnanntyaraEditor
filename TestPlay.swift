@@ -1856,6 +1856,10 @@ final class GameSession: ObservableObject {
     @Published var seOn: Bool {
         didSet { UserDefaults.standard.set(seOn, forKey: "bx.seOn") }
     }
+    /// びーとり式テストプレイのオート (自動で全部 PERFECT+ を取る。譜面の確認用)
+    @Published var autoPlay: Bool {
+        didSet { UserDefaults.standard.set(autoPlay, forKey: "bx.autoPlay") }
+    }
     /// びーとり式テストプレイの offset (JSON の値。ms)。nil のときは、これまでのテストプレイ
     @Published var chartOffsetRaw: Int? = nil
     /// びーとり式テストプレイの補正 (ms)。譜面の offset に足して使う (譜面には入らない)。− にするとノーツが早くなる。
@@ -1872,6 +1876,7 @@ final class GameSession: ObservableObject {
         offsetMs = min(max(UserDefaults.standard.double(forKey: "slide.offset"), -300), 300)
         judgeAtEdge = (UserDefaults.standard.object(forKey: "bx.judgeAtEdge") as? Bool) ?? true
         seOn = (UserDefaults.standard.object(forKey: "bx.seOn") as? Bool) ?? true
+        autoPlay = UserDefaults.standard.bool(forKey: "bx.autoPlay")
         var adj = (UserDefaults.standard.object(forKey: "bx.playAdjustMs") as? Double) ?? -30
         // 初期値を -20 → -30 に変えた。前の初期値 (-20) のままの人は、1 回だけ -30 にする
         if !UserDefaults.standard.bool(forKey: "bx.playAdjustMs.v30") {
@@ -3151,6 +3156,7 @@ struct PauseOverlay: View {
                     // びーとり式テストプレイ: 効果音のオン / オフ
                     if session.chartOffsetRaw != nil {
                         Toggle("効果音 (SE)", isOn: $session.seOn)
+                        Toggle("オート (自動で全部 PERFECT)", isOn: $session.autoPlay)
                     }
 
                     if session.chartOffsetRaw != nil {

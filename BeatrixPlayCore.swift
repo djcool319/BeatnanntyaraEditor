@@ -443,6 +443,21 @@ final class BxGame {
         }
     }
 
+    /// オート: 時刻が来たノーツを全部 PERFECT+ で取る (ダミーは取らない。見逃しと同じく消えるだけ)
+    func auto(to now: Double) {
+        var i = first
+        while i < notes.count {
+            let n = notes[i]
+            if n.t > now { break }
+            if !n.done && !n.dummy {
+                if n.type <= 4 { onSound?(n.type, n.t) }
+                record(i, .perfectPlus, early: nil)
+            }
+            i += 1
+        }
+        advance()
+    }
+
     /// 毎フレーム: 見逃したノーツを MISS にする
     func update(to now: Double) {
         var i = first

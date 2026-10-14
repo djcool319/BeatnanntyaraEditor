@@ -611,8 +611,13 @@ final class BeatrixGameView: UIView, GameSessionView {
         guard running else { return }
         audio?.refreshAnchor()
         let t = chartTime(at: uptime())
-        let zones = Set(touchZones.values)
-        for z in zones { game.hold(zone: z, at: t) }
+        // オートのときは、全部のボタンを押さえている扱い (ホールド / スライドの帯が光る・「しゅ〜」が鳴る)
+        let zones: Set<Int> = session.autoPlay ? [0, 1, 2, 3] : Set(touchZones.values)
+        if session.autoPlay {
+            game.auto(to: t)
+        } else {
+            for z in zones { game.hold(zone: z, at: t) }
+        }
         game.update(to: t)
         BeatrixSounds.shared.setHold(session.seOn && anyHoldActive(at: t, zones: zones))      // ホールド / スライドを押さえている間の「しゅ〜」
         if !pendingWipeSounds.isEmpty {
@@ -826,7 +831,9 @@ final class BeatrixGameView: UIView, GameSessionView {
     private func renderLane() {
         let g = geo()
         let r = depthRange
-        let zones = Set(touchZones.values)
+        // オートのときは帯を光らせるため全部押さえている扱い。ただしレーンの光は、触っているところだけ
+        let zones: Set<Int> = session.autoPlay ? [0, 1, 2, 3] : Set(touchZones.values)
+        let touchedZones = Set(touchZones.values)
 
         // part の区間: 床を少し明るく、レーンの両端を白く光らせる
         var inPart = false
@@ -858,9 +865,9 @@ final class BeatrixGameView: UIView, GameSessionView {
 
         // 押しているボタンの光 (本家と同じく、そのレーンの奥から手前まで全部。真ん中は 1 と 2 のどちらでも、真ん中 1 つ)
         let zp = CGMutablePath()
-        if zones.contains(0) { addQuad(zp, g, f0: 0, f1: 1.0 / 3.0, d0: r.bot, d1: r.top) }
-        if zones.contains(1) || zones.contains(2) { addQuad(zp, g, f0: 1.0 / 3.0, f1: 2.0 / 3.0, d0: r.bot, d1: r.top) }
-        if zones.contains(3) { addQuad(zp, g, f0: 2.0 / 3.0, f1: 1, d0: r.bot, d1: r.top) }
+        if touchedZones.contains(0) { addQuad(zp, g, f0: 0, f1: 1.0 / 3.0, d0: r.bot, d1: r.top) }
+        if touchedZones.contains(1) || touchedZones.contains(2) { addQuad(zp, g, f0: 1.0 / 3.0, f1: 2.0 / 3.0, d0: r.bot, d1: r.top) }
+        if touchedZones.contains(3) { addQuad(zp, g, f0: 2.0 / 3.0, f1: 1, d0: r.bot, d1: r.top) }
         zoneLayer.path = zp
 
         // ホールドの帯 (判定ラインより手前はいつも隠す)
