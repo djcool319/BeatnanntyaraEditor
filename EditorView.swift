@@ -577,13 +577,13 @@ struct RightPanel: View {
     /// アイコンの中心どうしの間隔。本家の間隔を基本にして、入りきらないとき (EDIT 中のボタンが多いとき・小さい画面) だけ詰める。
     /// 上の並びのボタン数は、EDIT 中は 9 (アイコンが増える。LASSO は More メニューの中)、通常は 6
     static func pitch(forHeight height: CGFloat, editing: Bool) -> CGFloat {
-        let topCount = editing ? 10 : 6
+        let topCount = editing ? 9 : 6
         return min(slotPitch, (height - edgeInset * 2) / CGFloat(topCount + bottomCount))
     }
 
-    /// EDIT 中の More ボタン (上から 9 番目) の中心の高さ。More メニューは、これを基準に置く
+    /// EDIT 中の More ボタン (上から 8 番目) の中心の高さ。More メニューは、これを基準に置く
     static func moreCenterY(forHeight height: CGFloat) -> CGFloat {
-        edgeInset + pitch(forHeight: height, editing: true) * 8.5
+        edgeInset + pitch(forHeight: height, editing: true) * 7.5
     }
 
     var body: some View {
@@ -650,7 +650,7 @@ struct RightPanel: View {
     /// EDIT 中のアイコンの左に出る名前 (上から、editButtons の並びと同じ順)
     private var editLabels: [String] {
         ["Back", "Tap", "Red", "Wipe", state.slideDraft != nil ? "Done" : (state.tool == .slide && !state.slideWithHead ? "Slide (始点なし)" : "Slide"), "Remove",
-         "Order", "Adv.", "More", "Undo / Redo"]
+         "Adv.", "More", "Undo / Redo"]
     }
 
     /// META 中のアイコンの左に出る名前 (上から、metaButtons の並びと同じ順)
@@ -804,16 +804,6 @@ struct RightPanel: View {
             PanelButton(glyph: "✕", active: state.tool == .remove,
                         icon: { AnyView(PanelIconView(kind: .remove, color: $0)) }) { state.removeButtonTapped() }      // Remove
                 .frame(height: pitch)
-            // 「順番に選択」: スライドをタップした順に番号を付ける。結合系プラグイン (折り返し敷など) が、この順番で結合する。
-            // ツールを離れても順番は残る (右上の数字が、選んだ数)。空きをタップするとリセット
-            PanelButton(glyph: "①②", active: state.tool == .order,      // Order
-                        badge: state.orderIDs.isEmpty ? nil : "\(state.orderIDs.count)") {
-                state.toggleTool(.order)
-                if state.tool == .order {
-                    state.showToast("スライドをタップした順に番号を付けます (空きをタップでリセット)")
-                }
-            }
-            .frame(height: pitch)
             // Lua プラグインのメニュー。開くとレーンが細くなり、再生ボタンとレーンの間にプラグインの一覧が出る
             PanelButton(glyph: "λ", active: state.advOpen) {      // Adv.
                 state.popup = .none
