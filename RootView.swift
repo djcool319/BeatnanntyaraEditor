@@ -35,8 +35,8 @@ struct RootView: View {
                     // ホームバー (画面下の白い横棒) を隠し、下端からの1回目の上スワイプではホームに戻らないようにする。
                     // (下端を触る操作 — ノーツ幅スライダーやレーン下側のドラッグ — で、うっかりホーム画面へ戻るのを防ぐ。
                     //  ホームへ戻るときは、下端から2回スワイプする)
-                    .persistentSystemOverlays(.hidden)
-                    .defersSystemGestures(on: .bottom)
+                    .compatHideSystemOverlays()
+                    .compatDeferBottomGestures()
             } else {
                 importView
             }

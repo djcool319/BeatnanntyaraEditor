@@ -579,7 +579,7 @@ private struct InformationWindowContent: View {
             .padding(.top, 14)
             .padding(.bottom, 35)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .compatScrollDismissesKeyboard()
         .frame(maxHeight: .infinity)
         // 打っている途中の "-" や "1." などは数として読めないので、読めたときだけ反映する
         .onChange(of: levelText) { text in

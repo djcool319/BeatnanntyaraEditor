@@ -1159,8 +1159,8 @@ struct BeatrixPlayScreen: View {
             }
         }
         .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
-        .defersSystemGestures(on: .bottom)
+        .compatHideSystemOverlays()
+        .compatDeferBottomGestures()
         .onAppear {
             session.paused = false
             let s = session

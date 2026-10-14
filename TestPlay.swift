@@ -3257,8 +3257,8 @@ struct TestPlayScreen: View {
             }
         }
         .statusBarHidden(true)      // fullScreenCover は別の画面扱いなので、ここにも付ける
-        .persistentSystemOverlays(.hidden)      // ホームバーも同じ (EditorView と同じ設定。RootView を参照)
-        .defersSystemGestures(on: .bottom)
+        .compatHideSystemOverlays()      // ホームバーも同じ (EditorView と同じ設定。RootView を参照)
+        .compatDeferBottomGestures()
         .onAppear {
             session.paused = false
             session.quit = onClose

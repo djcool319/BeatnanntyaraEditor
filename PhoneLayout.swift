@@ -123,12 +123,19 @@ final class AppOrientation {
         guard PhoneLayout.isPhone else { return }
         UserDefaults.standard.set(portrait, forKey: key)
         mask = portrait ? .portrait : .landscape
-        for scene in UIApplication.shared.connectedScenes {
-            guard let ws = scene as? UIWindowScene else { continue }
-            for w in ws.windows {
-                w.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        if #available(iOS 16.0, *) {
+            for scene in UIApplication.shared.connectedScenes {
+                guard let ws = scene as? UIWindowScene else { continue }
+                for w in ws.windows {
+                    w.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+                }
+                ws.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
             }
-            ws.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+        } else {
+            // iOS 15: 向きを直接指定して、回し直してもらう
+            let o: UIInterfaceOrientation = portrait ? .portrait : .landscapeRight
+            UIDevice.current.setValue(o.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
         }
     }
 }
