@@ -78,6 +78,15 @@ enum Beatrix {
         return beat(lpb: l, num: m)
     }
 
+    /// 出現 / 消えるの拍を、ノーツと一緒にずらす (コピー・貼り付け・移動のとき。拍はノーツと同じく絶対の位置で持っているため)
+    static func shiftAtBeats(_ n: inout Note, from orig: Note, by delta: Beat, subtract: Bool = false) {
+        for key in [appearKey, vanishKey] {
+            if let b = atBeat(orig, key) {
+                setAtBeat(&n, key, subtract ? b - delta : b + delta)
+            }
+        }
+    }
+
     static func setAtBeat(_ n: inout Note, _ key: String, _ b: Beat?) {
         if let b = b {
             let p = lpbNum(b)

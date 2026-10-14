@@ -365,6 +365,7 @@ extension EditorState {
         for t in moveTargets {
             chart.notes[t.index].beat = t.orig.beat + delta
             chart.notes[t.index].x = t.orig.x + dx
+            Beatrix.shiftAtBeats(&chart.notes[t.index], from: t.orig, by: delta)   // 出現 / 消えるの拍も一緒に動かす
         }
     }
 
@@ -736,6 +737,7 @@ extension EditorState {
         for i in idx {
             var m = chart.notes[i]
             m.beat = m.beat - base
+            Beatrix.shiftAtBeats(&m, from: chart.notes[i], by: base, subtract: true)   // 出現 / 消えるの拍も、いちばん前のノーツからの相対にする
             list.append(m)
         }
         clip = list
@@ -755,6 +757,7 @@ extension EditorState {
         for n in clip {
             var m = n
             m.beat = base + n.beat
+            Beatrix.shiftAtBeats(&m, from: n, by: base)       // 出現 / 消えるの拍も、貼り付けた位置に合わせてずらす
             m.id = UUID()          // 元のノーツと同じ id にならないように付け直す
             pasted.insert(m.id)
             chart.notes.append(m)
