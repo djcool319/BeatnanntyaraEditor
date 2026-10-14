@@ -109,6 +109,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -configuration Release \
             -derivedDataPath build \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -125,6 +126,9 @@ jobs:
             exit 1
           fi
           file "$BIN"
+          # 対応している iOS の最低バージョン (minos) を表示する (iOS 15 でも入るか確認用)
+          MINOS=$(otool -l "$BIN" | grep -A4 LC_BUILD_VERSION | grep minos | awk '{print $2}' | head -1)
+          echo "::notice::minos = $MINOS"
           rm -rf Payload BeatTriXEditor.ipa
           mkdir -p Payload/MalodySlideEditor.app
           cp "$BIN" Payload/MalodySlideEditor.app/MalodySlideEditor
