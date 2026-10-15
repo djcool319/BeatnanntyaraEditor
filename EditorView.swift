@@ -950,7 +950,10 @@ struct EditorView: View {
         case .divide:
             popupList(divideItems(), maxHeight: height - RightPanel.popupBottomInset - 8)
         case .more:
-            moreList
+            // 項目が多いので、画面に入りきらないときはスクロールできるようにする
+            let full = Self.moreRowHeight * CGFloat(Self.moreRowCount) + Self.morePad * 2
+            ScrollView(.vertical, showsIndicators: false) { moreList }
+                .frame(width: Self.moreWidth, height: min(full, max(100, height - 8)))
         case .none:
             EmptyView()
         }
@@ -1028,7 +1031,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 15
+    private static let moreRowCount = 16
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1103,8 +1106,25 @@ struct EditorView: View {
                         ])
                 }
             }
-          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 4 つも Group にまとめる
+          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 5 つも Group にまとめる
           Group {
+            // 点滅 (JSON の blink)。再生ラインの拍から、ノーツが来るまで、見える ⇔ 消える をくり返す
+            moreItem("Blink", icon: .timeRange, dim: state.selectedIDs.isEmpty) {
+                state.popup = .none
+                if state.selectedIDs.isEmpty {
+                    state.showToast("先にノーツを選択してください")
+                } else {
+                    TextPrompt.show(
+                        title: "点滅 (再生ラインの拍 \(Beat.nearest(state.viewBeat, den: state.snapDen).label) から)",
+                        message: "選んだノーツが、再生ラインの拍からノーツが来るまで、この間隔 (拍) で 見える → 消える → 見える … をくり返します (例: 1/4 = 4 分の 1 拍ごと / 1/2 / 1)。見た目だけで、判定はそのままです",
+                        placeholder: "1/4", text: state.selectedBlinkStepText, keyboard: .numbersAndPunctuation,
+                        actions: [
+                            .init(title: "OK") { t in state.setBlink(stepText: t) },
+                            .init(title: "解除", style: .destructive) { _ in state.setBlink(stepText: nil) },
+                            .init(title: "キャンセル", style: .cancel) { _ in }
+                        ])
+                }
+            }
             // 歌詞 (始点 → 終点をタップして文字を入れる。区間の中をタップで編集・削除)
             moreItem("Lyrics", icon: .timeRange, active: state.tool == .lyrics) {
                 state.popup = .none

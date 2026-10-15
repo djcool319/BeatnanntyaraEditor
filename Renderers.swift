@@ -481,7 +481,9 @@ enum LaneRenderer {
         for n in notes {
             let ap = Beatrix.atBeat(n, Beatrix.appearKey)
             let va = Beatrix.atBeat(n, Beatrix.vanishKey)
-            if ap == nil && va == nil { continue }
+            let bf = Beatrix.atBeat(n, Beatrix.blinkFromKey)
+            let bs = Beatrix.atBeat(n, Beatrix.blinkStepKey)
+            if ap == nil && va == nil && bf == nil { continue }
             let y = g.py(n.beat.value) - barLift
             if y < -24 || y > g.H + 24 { continue }
             let k = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
@@ -490,6 +492,7 @@ enum LaneRenderer {
             var parts: [String] = []
             if let a = ap { parts.append("出 " + a.label) }
             if let v = va { parts.append("消 " + v.label) }
+            if let f = bf, let st = bs { parts.append("点滅 " + f.label + "〜 /" + EditorState.beatFraction(st)) }
             let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
             let p = CGPoint(x: g.px(Double(n.x)) + hw - 2, y: y + 7)
             let t = Text(parts.joined(separator: " "))

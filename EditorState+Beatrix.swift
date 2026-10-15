@@ -264,6 +264,91 @@ extension EditorState {
         }
     }
 
+    // MARK: 点滅 (blink)
+
+    /// 選択中のノーツの点滅の間隔 (入力欄の最初の値)
+    var selectedBlinkStepText: String {
+        let ids = selectedIDs
+        for n in chart.notes where ids.contains(n.id) {
+            if let s = Beatrix.atBeat(n, Beatrix.blinkStepKey) { return Self.beatFraction(s) }
+        }
+        return "1/4"
+    }
+
+    /// 拍の長さを "1/4" "1/2" "1" "3/2" のように
+    static func beatFraction(_ b: Beat) -> String {
+        let num = b.numerator
+        let den = b.d
+        let g = gcdInt(num, den)
+        let n = num / g
+        let d = den / g
+        return d == 1 ? "\(n)" : "\(n)/\(d)"
+    }
+
+    /// "1/4" / "0.5" / "1" → 拍の長さ
+    static func parseBeatLength(_ text: String) -> Beat? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.contains("/") {
+            let ps = t.split(separator: "/").map { String($0).trimmingCharacters(in: .whitespaces) }
+            guard ps.count == 2, let n = Int(ps[0]), let d = Int(ps[1]), n > 0, d > 0, d <= 1024 else { return nil }
+            return Beat.ticks(n, den: d)
+        }
+        guard let v = Double(t), v > 0, v <= 64 else { return nil }
+        return Beat.nearest(v, den: 192)
+    }
+
+    /// 選択中のノーツに点滅を付ける (stepText が nil なら外す)。始める拍は再生ラインの拍。
+    /// 同じ位置 (拍・block が完全に一致) のノーツにもまとめて付ける
+    func setBlink(stepText: String?) {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        let ids = selectedIDs
+        let sel = chart.notes.filter { ids.contains($0.id) }
+        if sel.isEmpty {
+            showToast("先にノーツを選択してください")
+            return
+        }
+        var step: Beat? = nil
+        if let t = stepText {
+            guard let s = Self.parseBeatLength(t), s > Beat.zero else {
+                showToast("間隔は 1/4 や 0.5 のように、0 より大きい拍で入力してください")
+                return
+            }
+            step = s
+        }
+        let from = Beat.nearest(viewBeat, den: snapDen)
+        var keys = Set<BeatrixKey>()
+        for n in sel { keys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
+        pushUndo()
+        var count = 0
+        var late = 0
+        for i in chart.notes.indices {
+            let n = chart.notes[i]
+            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+            if let s = step {
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.blinkFromKey, from)
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.blinkStepKey, s)
+                if !(from < n.beat) { late += 1 }
+            } else {
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.blinkFromKey, nil)
+                Beatrix.setAtBeat(&chart.notes[i], Beatrix.blinkStepKey, nil)
+            }
+            count += 1
+        }
+        chartChanged()
+        if let s = step {
+            if late > 0 {
+                showToast("点滅を付けました。ただし \(late) 個は、再生ラインがノーツより後ろなので点滅しません (再生ラインをノーツより前に合わせてください)")
+            } else {
+                showToast("\(from.label) から \(Self.beatFraction(s)) 拍ごとに点滅します (\(count) 個)")
+            }
+        } else {
+            showToast("点滅を解除しました (\(count) 個)")
+        }
+    }
+
     // MARK: ダミー (dummy)
 
     /// 選択中のノーツを ダミー ⇔ 普通 で切り替える (選択の中に普通のノーツが 1 つでもあれば、全部ダミーにする)。

@@ -875,7 +875,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         let hActive = CGMutablePath()
         let hw = sideWidth / 2 * 1.0              // 帯の太さ (始点の棒と同じ幅)
         for h in source.holds {
-            if viewTime < h.showFrom || viewTime >= h.hideFrom { continue }      // 出現前 / 消えたあと
+            if !bxVisible(at: viewTime, showFrom: h.showFrom, hideFrom: h.hideFrom, blink: h.blink) { continue }      // 出現前 / 消えたあと / 点滅で消えている
             let active = holdActive(h, at: viewTime, zones: zones)
             let d0 = max(depth(h.t0, h.sp), 0)
             let d1 = min(depth(h.t1, h.sp), r.top)
@@ -892,7 +892,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         for s in source.slides {
             guard let firstP = s.pts.first, let lastP = s.pts.last else { continue }
             if lastP.t < viewTime { continue }
-            if viewTime < s.showFrom || viewTime >= s.hideFrom { continue }      // 出現前 / 消えたあと
+            if !bxVisible(at: viewTime, showFrom: s.showFrom, hideFrom: s.hideFrom, blink: s.blink) { continue }      // 出現前 / 消えたあと / 点滅で消えている
             if depth(firstP.t, s.sp) > r.top && depth(lastP.t, s.sp) > r.top { continue }
             let active = slideActive(s, at: viewTime, zones: zones)
             let path = active ? sActive : sIdle
@@ -945,7 +945,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         func noteVisible(_ i: Int) -> Bool {
             guard i < gn.count else { return false }
             let n = gn[i]
-            if viewTime < n.showFrom || viewTime >= n.hideFrom { return false }
+            if !bxVisible(at: viewTime, showFrom: n.showFrom, hideFrom: n.hideFrom, blink: n.blink) { return false }
             return !n.done || (n.type == 4 && viewTime < n.t)
         }
         for sim in source.sims {
@@ -1005,7 +1005,7 @@ final class BeatrixGameView: UIView, GameSessionView {
             // 取ったノーツは消す。ただしワイプは本家と同じく、判定ラインに来るまで流れ続ける (早く押しても、すぐには消えない)。
             // 見逃したノーツは、本家と同じく判定ラインを過ぎてもそのまま流れていく
             if n.done && !n.missed && !(n.type == 4 && viewTime < n.t) { continue }
-            if viewTime < n.showFrom || viewTime >= n.hideFrom { continue }      // 出現前 / 消えたあと
+            if !bxVisible(at: viewTime, showFrom: n.showFrom, hideFrom: n.hideFrom, blink: n.blink) { continue }      // 出現前 / 消えたあと / 点滅で消えている
             let d = depth(n.t, n.sp)
             if d < r.bot - 0.1 || d > r.top + 0.1 { continue }
             let f = Self.laneFrac(n.lane)
