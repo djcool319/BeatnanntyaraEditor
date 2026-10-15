@@ -32,7 +32,6 @@ struct BxNote {
     var dummy = false                      // ダミー (判定なし。取れば消えるだけ)
     var showFrom = -Double.infinity        // この時刻になるまで見えない (appear)
     var hideFrom = Double.infinity         // この時刻から見えない (disappear)
-    var blink: [Double] = []               // 点滅: 見える ⇔ 消える が切り替わる時刻 (はじめは見える)
     var suppressed = false
     var done = false
     var missed = false                     // 見逃した (本家と同じく、判定ラインを過ぎても流れ続ける)
@@ -46,21 +45,6 @@ struct BxHold {
     var dummy = false
     var showFrom = -Double.infinity
     var hideFrom = Double.infinity
-    var blink: [Double] = []
-}
-
-/// 見えるか (出現 / 消える / 点滅)
-func bxVisible(at t: Double, showFrom: Double, hideFrom: Double, blink: [Double]) -> Bool {
-    if t < showFrom || t >= hideFrom { return false }
-    if blink.isEmpty || t < blink[0] { return true }
-    // t までに切り替わった回数 (偶数なら見える)
-    var lo = 0
-    var hi = blink.count
-    while lo < hi {
-        let mid = (lo + hi) / 2
-        if blink[mid] <= t { lo = mid + 1 } else { hi = mid }
-    }
-    return lo % 2 == 0
 }
 
 struct BxSlidePoint {
@@ -74,7 +58,6 @@ struct BxSlide {
     var dummy = false
     var showFrom = -Double.infinity
     var hideFrom = Double.infinity
-    var blink: [Double] = []
 }
 
 /// 同時押しの線 (2 つのレーンが 2 以上離れているとき)
@@ -160,23 +143,6 @@ struct BxPlayChart {
         func showOf(_ d: [String: Any]) -> Double { appearAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? -Double.infinity }
         func hideOf(_ d: [String: Any]) -> Double { vanishAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? Double.infinity }
 
-        // 点滅 (保存する JSON の blink と同じ)。始める拍から、ノーツの拍まで、間隔ごとの切り替わりの時刻を並べる
-        var blinkAt: [BeatrixKey: [Double]] = [:]
-        for e in chart.beatrixBlinkList() {
-            let nb = Beatrix.beat(of: e).value
-            let from = Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0).value
-            let step = Beatrix.beat(lpb: Beatrix.intValue(e["stepLPB"]) ?? 4, num: Beatrix.intValue(e["stepNum"]) ?? 1).value
-            guard step > 0 else { continue }
-            var list: [Double] = []
-            var b = from + step
-            while b < nb - 1e-9 && list.count < 20_000 {
-                list.append(tm.sec(atBeat: b))
-                b += step
-            }
-            if !list.isEmpty { blinkAt[BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))] = list }
-        }
-        func blinkOf(_ d: [String: Any]) -> [Double] { blinkAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? [] }
-
         // ソフラン (speeds): 0 拍目より前は 1 倍
         var sps: [(t: Double, speed: Double)] = []
         for e in chart.effects.sorted(by: { $0.beat < $1.beat }) where e.kind == .scroll {
@@ -209,7 +175,7 @@ struct BxPlayChart {
             if type == 1 && holdStarts.contains(BeatrixKey(beat: Beatrix.beat(of: n), block: blk)) { tp = 2 }
             if tp < 1 || tp > 4 { tp = 1 }
             out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n),
-                                    showFrom: showOf(n), hideFrom: hideOf(n), blink: blinkOf(n)))
+                                    showFrom: showOf(n), hideFrom: hideOf(n)))
         }
 
         for n in raw where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
@@ -224,7 +190,7 @@ struct BxPlayChart {
                 let endBeat = Beatrix.beat(of: last).value
                 if endBeat <= startBeat { continue }
                 out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm,
-                                        showFrom: showOf(n), hideFrom: hideOf(n), blink: blinkOf(n)))
+                                        showFrom: showOf(n), hideFrom: hideOf(n)))
                 var curLane = blk
                 var curBeat = startBeat
                 for k in ks {
@@ -244,7 +210,7 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm, showFrom: showOf(n), hideFrom: hideOf(n), blink: blinkOf(n)))
+                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm, showFrom: showOf(n), hideFrom: hideOf(n)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }
             }
         }

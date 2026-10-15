@@ -16,8 +16,6 @@ import Foundation
 //     "disappear": [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 248}, ... ],
 //                  // 出現 / 消える。LPB・num・block が完全に一致するノーツ (ホールド・スライドは始点の位置) が、
 //                  // atLPB・atNum の拍になるまで見えない (appear) / その拍から見えなくなる (disappear)。判定はそのまま
-//     "blink": [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 240, "stepLPB": 4, "stepNum": 1}, ... ],
-//                  // 点滅。atLPB・atNum の拍から、そのノーツの拍まで、stepLPB・stepNum 拍ごとに 見える → 消える → 見える … をくり返す
 //                                                                  // ノーツ個別の速さ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) だけ、その倍率で流れてくる
 //     "notes":  [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []}, ... ] }
@@ -74,9 +72,6 @@ enum Beatrix {
     /// 出現 ("appear") / 消える ("disappear") の拍。extra には [LPB, num] で持つ
     static let appearKey = "bxAppear"
     static let vanishKey = "bxVanish"
-    /// 点滅 ("blink")。点滅を始める拍と、見える / 消えるを切り替える間隔 (拍)。extra には [LPB, num] で持つ
-    static let blinkFromKey = "bxBlinkFrom"
-    static let blinkStepKey = "bxBlinkStep"
 
     static func atBeat(_ n: Note, _ key: String) -> Beat? {
         guard let a = n.extra[key] as? [Any], a.count == 2, let l = intValue(a[0]), let m = intValue(a[1]) else { return nil }
@@ -85,7 +80,7 @@ enum Beatrix {
 
     /// 出現 / 消えるの拍を、ノーツと一緒にずらす (コピー・貼り付け・移動のとき。拍はノーツと同じく絶対の位置で持っているため)
     static func shiftAtBeats(_ n: inout Note, from orig: Note, by delta: Beat, subtract: Bool = false) {
-        for key in [appearKey, vanishKey, blinkFromKey] {          // 点滅の間隔 (blinkStep) は長さなので、ずらさない
+        for key in [appearKey, vanishKey] {
             if let b = atBeat(orig, key) {
                 setAtBeat(&n, key, subtract ? b - delta : b + delta)
             }
@@ -429,7 +424,7 @@ extension ChartData {
         }
 
         var b = obj
-        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "blink"] { b.removeValue(forKey: k) }
+        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear"] { b.removeValue(forKey: k) }
         let nameInfo = Beatrix.splitName((obj["name"] as? String) ?? "")
         b["name"] = nameInfo.title
         var diff = nameInfo.diff ?? .extreme
@@ -547,23 +542,6 @@ extension ChartData {
             }
         }
 
-        // 点滅
-        var blinkAt: [BeatrixKey: (from: Beat, step: Beat)] = [:]
-        for e in (obj["blink"] as? [[String: Any]]) ?? [] {
-            let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
-            let from = Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
-            let step = Beatrix.beat(lpb: Beatrix.intValue(e["stepLPB"]) ?? 4, num: Beatrix.intValue(e["stepNum"]) ?? 1)
-            if step > Beat.zero { blinkAt[BeatrixKey(beat: Beatrix.beat(of: e), block: blk)] = (from: from, step: step) }
-        }
-        if !blinkAt.isEmpty {
-            for i in notes.indices {
-                if let v = blinkAt[BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))] {
-                    Beatrix.setAtBeat(&notes[i], Beatrix.blinkFromKey, v.from)
-                    Beatrix.setAtBeat(&notes[i], Beatrix.blinkStepKey, v.step)
-                }
-            }
-        }
-
         var c = ChartData(root: ["beatrix": b], times: times, notes: notes, soundEntries: [],
                           effects: effects, otherEffects: [], hadEffectKey: !effects.isEmpty)
         c.setMetaString(["song", "title"], nameInfo.title)
@@ -600,31 +578,10 @@ extension ChartData {
         out["dummy"] = beatrixDummies()
         out["appear"] = beatrixAtList(Beatrix.appearKey)
         out["disappear"] = beatrixAtList(Beatrix.vanishKey)
-        out["blink"] = beatrixBlinkList()
 
         if out["lyrics"] == nil { out["lyrics"] = [Any]() }
         out["notes"] = beatrixNotes()
         return BeatrixJSONWriter.data(out)
-    }
-
-    /// 点滅を JSON の "blink" の形にする (同じ位置に複数あるときは 1 つにまとめる)
-    func beatrixBlinkList() -> [[String: Any]] {
-        var done = Set<BeatrixKey>()
-        var out: [[String: Any]] = []
-        let sorted = notes.sorted { a, b in a.beat == b.beat ? a.x < b.x : a.beat < b.beat }
-        for n in sorted {
-            guard let from = Beatrix.atBeat(n, Beatrix.blinkFromKey), let step = Beatrix.atBeat(n, Beatrix.blinkStepKey),
-                  step > Beat.zero else { continue }
-            let blk = Beatrix.block(ofX: Double(n.x))
-            let k = BeatrixKey(beat: n.beat, block: blk)
-            if done.contains(k) { continue }
-            done.insert(k)
-            let p = Beatrix.lpbNum(n.beat)
-            let q = Beatrix.lpbNum(from)
-            let r = Beatrix.lpbNum(step)
-            out.append(["LPB": p.lpb, "num": p.num, "block": blk, "atLPB": q.lpb, "atNum": q.num, "stepLPB": r.lpb, "stepNum": r.num])
-        }
-        return out
     }
 
     /// 出現 / 消えるを JSON の "appear" / "disappear" の形にする (同じ位置に複数あるときは 1 つにまとめる)
@@ -840,14 +797,14 @@ struct BeatrixKey: Hashable {
 
 // MARK: - JSON の書き出し (NoteEditor と同じ見た目)
 //   ・キーの順番を固定する (上: name → maxBlock → BPM → LEVEL → difficulty → artist → offset → preview → ver
-//     → bpms → speeds → speeds_each → dummy → appear → disappear → blink → part → lyrics → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
+//     → bpms → speeds → speeds_each → dummy → appear → disappear → part → lyrics → notes / ノーツ: LPB → num → block → type → notes)。知らないキーは最後に名前順
 //   ・字下げは 2 つ、"キー": 値 (コロンの前に空白を入れない)、中身が空の配列は []
 //   ・数は、整数なら小数点を付けない (149)、小数は短い表記 (4.7)
 
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
-                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "blink", "part", "lyrics", "notes"]
-    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "atLPB", "atNum", "stepLPB", "stepNum", "text", "notes", "parts"]
+                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "part", "lyrics", "notes"]
+    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "atLPB", "atNum", "text", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {
         var out = ""
