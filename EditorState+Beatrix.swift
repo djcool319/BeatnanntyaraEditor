@@ -106,8 +106,7 @@ extension EditorState {
     }
 
     /// 選択中のノーツに、個別の速さを付ける (1 か空欄で解除)。
-    /// 同じ位置 (拍・block が完全に一致) のノーツ (スライドの始点のタップなど) にも同じ速さを付ける
-    /// (保存する JSON では、位置ごとに 1 つの値になるため)
+    /// 選んだノーツだけ (同じ位置にある別のノーツには付けない)。スライド / ホールドの始点は本体に付いていく
     func applyNoteSpeedInput(_ text: String) {
         if isPlaying {
             showToast("再生中は編集できません。停止してから操作してください")
@@ -136,7 +135,7 @@ extension EditorState {
         var count = 0
         for i in chart.notes.indices {
             let n = chart.notes[i]
-            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+            guard ids.contains(n.id) else { continue }       // 選んだノーツだけ (同じ位置の別のノーツには付けない)
             if let v = value {
                 chart.notes[i].extra[Beatrix.speedKey] = v
             } else {
@@ -273,8 +272,7 @@ extension EditorState {
     // MARK: ダミー (dummy)
 
     /// 選択中のノーツを ダミー ⇔ 普通 で切り替える (選択の中に普通のノーツが 1 つでもあれば、全部ダミーにする)。
-    /// 同じ位置 (拍・block が完全に一致) のノーツ (スライドの始点のタップなど) もまとめて切り替える
-    /// (保存する JSON では、位置ごとに 1 つの値になるため)
+    /// 選んだノーツだけ (同じ位置にある別のノーツには付けない)。スライド / ホールドの始点は本体に付いていく
     func toggleDummy() {
         if isPlaying {
             showToast("再生中は編集できません。停止してから操作してください")
@@ -293,7 +291,7 @@ extension EditorState {
         var count = 0
         for i in chart.notes.indices {
             let n = chart.notes[i]
-            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+            guard ids.contains(n.id) else { continue }       // 選んだノーツだけ (同じ位置の別のノーツには付けない)
             if toDummy {
                 chart.notes[i].extra[Beatrix.dummyKey] = true
             } else {

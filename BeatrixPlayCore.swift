@@ -135,19 +135,17 @@ struct BxPlayChart {
         let raw = entries.map { $0.dict }
         var out = BxPlayChart()
 
-        // ノーツ個別の速さ (保存する JSON の speeds_each と同じ。LPB・num・block が完全に一致するノーツだけ)
-        var each: [BeatrixKey: Double] = [:]
-        for e in chart.beatrixSpeedsEach() {
-            if let sp = Beatrix.doubleValue(e["speed"]) {
-                each[BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))] = sp
-            }
+        // ノーツ個別の速さ・ダミー (ノーツごと。始点の表記は、同じ位置のスライド / ホールドに付いていく)
+        func spOf(_ idx: Int) -> Double {
+            let e = entries[idx]
+            if e.isHead { return e.bodies.first.flatMap { Beatrix.noteSpeed($0) } ?? 1 }
+            return e.source.flatMap { Beatrix.noteSpeed($0) } ?? 1
         }
-        func spOf(_ d: [String: Any]) -> Double { each[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? 1 }
-
-        // ダミー (保存する JSON の dummy と同じ。LPB・num・block が完全に一致するノーツだけ)
-        var dummyKeys = Set<BeatrixKey>()
-        for e in chart.beatrixDummies() { dummyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))) }
-        func isDummy(_ d: [String: Any]) -> Bool { dummyKeys.contains(BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))) }
+        func dummyOf(_ idx: Int) -> Bool {
+            let e = entries[idx]
+            if e.isHead { return !e.bodies.isEmpty && e.bodies.allSatisfy { Beatrix.isDummy($0) } }   // 始点は、全部の本体がダミーのときだけダミー
+            return e.source.map { Beatrix.isDummy($0) } ?? false
+        }
 
         // 出現 / 消える (ノーツごと。始点の表記は、同じ位置のスライド / ホールドに付いていく)
         func visList(_ n: Note) -> [BxVisEvent] {
@@ -195,21 +193,21 @@ struct BxPlayChart {
             var tp = type
             if type == 1 && holdStarts.contains(BeatrixKey(beat: Beatrix.beat(of: n), block: blk)) { tp = 2 }
             if tp < 1 || tp > 4 { tp = 1 }
-            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n), vis: visOf(idx)))
+            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(idx), dummy: dummyOf(idx), vis: visOf(idx)))
         }
 
         for (idx, n) in raw.enumerated() where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
             let ks = kids(n)
             let blk = block(n)
             let isSlide = ks.contains { block($0) != blk }
-            let dm = isDummy(n)
+            let dm = dummyOf(idx)
             if !isSlide {
                 // ホールド: 半拍ごとに判定点
                 let startBeat = Beatrix.beat(of: n).value
                 guard let last = ks.last else { continue }
                 let endBeat = Beatrix.beat(of: last).value
                 if endBeat <= startBeat { continue }
-                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm, vis: visOf(idx)))
+                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(idx), dummy: dm, vis: visOf(idx)))
                 var curLane = blk
                 var curBeat = startBeat
                 for k in ks {
@@ -229,7 +227,7 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm, vis: visOf(idx)))
+                out.slides.append(BxSlide(pts: pts, sp: spOf(idx), dummy: dm, vis: visOf(idx)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }
             }
         }

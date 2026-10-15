@@ -458,16 +458,16 @@ enum LaneRenderer {
 
     /// ノーツ個別の速さ (speeds_each) が付いているノーツの右に「×2」のように出す (同じ位置は 1 回だけ)
     static func drawNoteSpeeds(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note]) {
-        var done = Set<BeatrixKey>()
+        var rows: [BeatrixKey: Int] = [:]
         for n in notes {
             guard let sp = Beatrix.noteSpeed(n) else { continue }
             let y = g.py(n.beat.value) - barLift
             if y < -24 || y > g.H + 24 { continue }
             let k = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
-            if done.contains(k) { continue }
-            done.insert(k)
+            let row = rows[k] ?? 0                         // 同じ位置に複数あれば、少しずつずらして並べる
+            rows[k] = row + 1
             let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
-            let p = CGPoint(x: g.px(Double(n.x)) + hw - 2, y: y - 7)
+            let p = CGPoint(x: g.px(Double(n.x)) + hw - 2, y: y - 7 - CGFloat(row) * 13)
             let t = Text("×" + Beatrix.speedLabel(sp))
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(sp > 1 ? Color(red: 1, green: 0.45, blue: 0.75) : Color(red: 0.45, green: 0.85, blue: 1))
@@ -498,15 +498,15 @@ enum LaneRenderer {
 
     /// ダミー (dummy) のノーツの左上に「D」を出す (同じ位置は 1 回だけ)
     static func drawDummyMarks(_ c: inout GraphicsContext, _ g: LaneGeo, _ notes: [Note]) {
-        var done = Set<BeatrixKey>()
+        var rows: [BeatrixKey: Int] = [:]
         for n in notes where Beatrix.isDummy(n) {
             let y = g.py(n.beat.value) - barLift
             if y < -24 || y > g.H + 24 { continue }
             let k = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
-            if done.contains(k) { continue }
-            done.insert(k)
+            let row = rows[k] ?? 0                         // 同じ位置に複数あれば、少しずつずらして並べる
+            rows[k] = row + 1
             let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
-            let p = CGPoint(x: g.px(Double(n.x)) - hw + 2, y: y - 7)
+            let p = CGPoint(x: g.px(Double(n.x)) - hw + 2, y: y - 7 - CGFloat(row) * 13)
             let t = Text("D")
                 .font(.system(size: 12, weight: .heavy))
                 .foregroundColor(Color(white: 0.85))

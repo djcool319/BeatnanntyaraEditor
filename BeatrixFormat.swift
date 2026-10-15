@@ -523,36 +523,9 @@ extension ChartData {
             notes[i].extra[Beatrix.headKey] = 0
         }
 
-        // ノーツ個別の速さ: LPB・num・block が完全に一致するノーツ (スライド / ホールドは始点) に割り当てる
-        var eachSpeed: [BeatrixKey: Double] = [:]
-        for e in (obj["speeds_each"] as? [[String: Any]]) ?? [] {
-            guard let sp = Beatrix.doubleValue(e["speed"]) else { continue }
-            let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
-            eachSpeed[BeatrixKey(beat: Beatrix.beat(of: e), block: blk)] = sp
-        }
-        if !eachSpeed.isEmpty {
-            for i in notes.indices {
-                let k = BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))
-                if let sp = eachSpeed[k] { notes[i].extra[Beatrix.speedKey] = sp }
-            }
-        }
-
-        // ダミー: LPB・num・block が完全に一致するノーツ (スライド / ホールドは始点) をダミーにする
-        var dummyKeys = Set<BeatrixKey>()
-        for e in (obj["dummy"] as? [[String: Any]]) ?? [] {
-            let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
-            dummyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: blk))
-        }
-        if !dummyKeys.isEmpty {
-            for i in notes.indices
-            where dummyKeys.contains(BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))) {
-                notes[i].extra[Beatrix.dummyKey] = true
-            }
-        }
-
-        // 出現 / 消える (何回でも)。
-        //   type と nth があれば、その位置の「その種類の何番目のノーツ」(rawNotes の順。始点の表記は数えない) だけに付ける。
-        //   無ければ (前の形式)、その位置のノーツ全部に付ける
+        // ノーツを指す項目 (speeds_each / dummy / appear / disappear) の当て先。
+        //   type があれば、その位置 (拍・block) の「その type の nth 番目」(rawNotes の順。始点の表記は数えない) のノーツ 1 つだけ。
+        //   type が無ければ (前の形式)、その位置のノーツ全部
         var bodyKeys = Set<BeatrixKey>()
         for e in rawNotes where (Beatrix.intValue(e["type"]) ?? 1) == 2 && !((e["notes"] as? [[String: Any]]) ?? []).isEmpty {
             bodyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))))
@@ -573,18 +546,30 @@ extension ChartData {
             counter[ck] = nth + 1
             if let ni = rawToNote[ri] { typed[TypedKey(key: k, type: type, nth: nth)] = ni }
         }
+        func targets(_ e: [String: Any]) -> [Int] {
+            let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
+            let k = BeatrixKey(beat: Beatrix.beat(of: e), block: blk)
+            if let t = Beatrix.intValue(e["type"]) {
+                if let ni = typed[TypedKey(key: k, type: t, nth: Beatrix.intValue(e["nth"]) ?? 0)] { return [ni] }
+                return []
+            }
+            return notes.indices.filter { BeatrixKey(beat: notes[$0].beat, block: Beatrix.block(ofX: Double(notes[$0].x))) == k }
+        }
+
+        // ノーツ個別の速さ
+        for e in (obj["speeds_each"] as? [[String: Any]]) ?? [] {
+            guard let sp = Beatrix.doubleValue(e["speed"]) else { continue }
+            for ni in targets(e) { notes[ni].extra[Beatrix.speedKey] = sp }
+        }
+        // ダミー
+        for e in (obj["dummy"] as? [[String: Any]]) ?? [] {
+            for ni in targets(e) { notes[ni].extra[Beatrix.dummyKey] = true }
+        }
+        // 出現 / 消える (何回でも)
         for (jsonKey, key) in [("appear", Beatrix.appearKey), ("disappear", Beatrix.vanishKey)] {
             for e in (obj[jsonKey] as? [[String: Any]]) ?? [] {
-                let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
-                let k = BeatrixKey(beat: Beatrix.beat(of: e), block: blk)
                 let at = Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
-                var targets: [Int] = []
-                if let t = Beatrix.intValue(e["type"]) {
-                    if let ni = typed[TypedKey(key: k, type: t, nth: Beatrix.intValue(e["nth"]) ?? 0)] { targets = [ni] }
-                } else {
-                    targets = notes.indices.filter { BeatrixKey(beat: notes[$0].beat, block: Beatrix.block(ofX: Double(notes[$0].x))) == k }
-                }
-                for ni in targets {
+                for ni in targets(e) {
                     Beatrix.setAtBeats(&notes[ni], key, Beatrix.atBeats(notes[ni], key) + [at])
                 }
             }
@@ -635,6 +620,22 @@ extension ChartData {
     /// 出現 / 消えるを JSON の "appear" / "disappear" の形にする (同じ位置に複数あるときは 1 つにまとめる)
     func beatrixAtList(_ key: String) -> [[String: Any]] {
         var out: [[String: Any]] = []
+        for t in beatrixTargets() {
+            for at in Beatrix.atBeats(t.note, key) {
+                var d = t.ref
+                let q = Beatrix.lpbNum(at)
+                d["atLPB"] = q.lpb
+                d["atNum"] = q.num
+                out.append(d)
+            }
+        }
+        return out
+    }
+
+    /// "notes" の 1 つ 1 つ (始点の表記を除く) を指す {"LPB","num","block","type","nth"} と、そのもとのノーツ。
+    /// nth = 同じ位置・同じ type の中で何番目か ("notes" の順)。speeds_each / dummy / appear / disappear で使う
+    func beatrixTargets() -> [(ref: [String: Any], note: Note)] {
+        var out: [(ref: [String: Any], note: Note)] = []
         var counter: [String: Int] = [:]
         for e in beatrixEntries() where !e.isHead {
             guard let n = e.source else { continue }
@@ -644,48 +645,24 @@ extension ChartData {
             let nth = counter[ck] ?? 0
             counter[ck] = nth + 1
             let p = Beatrix.lpbNum(n.beat)
-            for at in Beatrix.atBeats(n, key) {
-                let q = Beatrix.lpbNum(at)
-                out.append(["LPB": p.lpb, "num": p.num, "block": blk, "type": type, "nth": nth,
-                            "atLPB": q.lpb, "atNum": q.num])
-            }
+            out.append((ref: ["LPB": p.lpb, "num": p.num, "block": blk, "type": type, "nth": nth], note: n))
         }
         return out
     }
 
-    /// ダミーを JSON の "dummy" の形にする (同じ位置に複数あるときは 1 つにまとめる)
+    /// ダミーを JSON の "dummy" の形にする (ノーツ 1 つずつ)
     func beatrixDummies() -> [[String: Any]] {
-        var done = Set<BeatrixKey>()
-        var out: [[String: Any]] = []
-        let sorted = notes.sorted { a, b in a.beat == b.beat ? a.x < b.x : a.beat < b.beat }
-        for n in sorted where Beatrix.isDummy(n) {
-            let blk = Beatrix.block(ofX: Double(n.x))
-            let k = BeatrixKey(beat: n.beat, block: blk)
-            if done.contains(k) { continue }
-            done.insert(k)
-            let p = Beatrix.lpbNum(n.beat)
-            out.append(["LPB": p.lpb, "num": p.num, "block": blk])
-        }
-        return out
+        beatrixTargets().filter { Beatrix.isDummy($0.note) }.map { $0.ref }
     }
 
-    /// ノーツ個別の速さを JSON の "speeds_each" の形にする (同じ位置に複数あるときは 1 つにまとめる)
+    /// ノーツ個別の速さを JSON の "speeds_each" の形にする (ノーツ 1 つずつ)
     func beatrixSpeedsEach() -> [[String: Any]] {
-        let sorted = notes.sorted { a, b in
-            a.beat == b.beat ? a.x < b.x : a.beat < b.beat
+        beatrixTargets().compactMap { t -> [String: Any]? in
+            guard let sp = Beatrix.noteSpeed(t.note) else { return nil }
+            var d = t.ref
+            d["speed"] = sp
+            return d
         }
-        var done = Set<BeatrixKey>()
-        var out: [[String: Any]] = []
-        for n in sorted {
-            guard let sp = Beatrix.noteSpeed(n) else { continue }
-            let blk = Beatrix.block(ofX: Double(n.x))
-            let k = BeatrixKey(beat: n.beat, block: blk)
-            if done.contains(k) { continue }
-            done.insert(k)
-            let p = Beatrix.lpbNum(n.beat)
-            out.append(["LPB": p.lpb, "num": p.num, "block": blk, "speed": sp])
-        }
-        return out
     }
 
     /// ノーツを JSON の "notes" の形にする (スライド / ホールドの後ろに始点を付ける)
