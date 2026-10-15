@@ -660,3 +660,11 @@
 
 - iOS 15 でも入るようにした（Package / CI の対応 OS を 15.0 に。iOS 16 からの機能は Compat.swift で iOS 16 以上のときだけ使う。CI で minos を ::notice:: に出す）
 - テストプレイの PAUSE に「オート（自動で全部 PERFECT）」。時刻が来たノーツを全部 PERFECT+ で取る（BxGame.auto）。ダミーは取らない。ホールド / スライドは押さえている扱いで光る
+
+## 17. 点滅（2026-10-15）
+
+- JSON の `blink`: `{"LPB","num","block","atLPB","atNum","stepLPB","stepNum"}`。始める拍（at）から、ノーツの拍まで、間隔（step）ごとに 見える → 消える → 見える … をくり返す（始めは見える）。見た目だけで判定はそのまま。appear / disappear と併用可
+- エディタ: More → Blink（再生ラインの拍から。間隔は 1/4・0.5 などで入力）。ノーツの右下に「点滅 4:1/2〜 /1/4」
+- テストプレイ: BxPlayChart で切り替わりの時刻を並べ、bxVisible() で判定
+- Unity 向けの説明は UNITY_SPEC.md の 8 章
+- More メニューは項目が多くなったので、画面に入りきらないときはスクロールする
