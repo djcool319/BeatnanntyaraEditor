@@ -12,10 +12,11 @@ import Foundation
 //                                                                  // 歌詞 (part と同じ形 + text。始まり〜終わりの間だけ表示)
 //     "dummy": [ {"LPB": 4, "num": 240, "block": 3}, ... ],         // ダミーノーツ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) は、流れてくるけど判定が無い
-//     "appear":    [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 248}, ... ],
-//     "disappear": [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 248}, ... ],
-//                  // 出現 / 消える。LPB・num・block が完全に一致するノーツ (ホールド・スライドは始点の位置) が、
-//                  // atLPB・atNum の拍になるまで見えない (appear) / その拍から見えなくなる (disappear)。判定はそのまま
+//     "appear":    [ {"LPB": 4, "num": 256, "block": 3, "type": 2, "nth": 0, "atLPB": 4, "atNum": 248}, ... ],
+//     "disappear": [ {"LPB": 4, "num": 256, "block": 3, "type": 2, "nth": 1, "atLPB": 4, "atNum": 248}, ... ],
+//                  // 出現 / 消える (1 つのノーツに何回でも)。LPB・num・block・type・nth で 1 つのノーツを指す
+//                  // (nth = その位置・その type の何番目か。"notes" の順、始点の表記は数えない)。
+//                  // appear の拍で見えるようになり、disappear の拍で見えなくなる。最初の切り替えが appear なら、それまでは見えない
 //                                                                  // ノーツ個別の速さ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) だけ、その倍率で流れてくる
 //     "notes":  [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []}, ... ] }
@@ -73,26 +74,46 @@ enum Beatrix {
     static let appearKey = "bxAppear"
     static let vanishKey = "bxVanish"
 
-    static func atBeat(_ n: Note, _ key: String) -> Beat? {
-        guard let a = n.extra[key] as? [Any], a.count == 2, let l = intValue(a[0]), let m = intValue(a[1]) else { return nil }
-        return beat(lpb: l, num: m)
+    /// 出現 / 消えるの拍のリスト (何回でも付けられる)。extra には [[LPB, num], ...] で持つ (前の形式 [LPB, num] も読める)
+    static func atBeats(_ n: Note, _ key: String) -> [Beat] {
+        guard let a = n.extra[key] as? [Any], !a.isEmpty else { return [] }
+        if a.first is [Any] {
+            var out: [Beat] = []
+            for e in a {
+                guard let p = e as? [Any], p.count == 2, let l = intValue(p[0]), let m = intValue(p[1]) else { continue }
+                out.append(beat(lpb: l, num: m))
+            }
+            return out.sorted()
+        }
+        if a.count == 2, let l = intValue(a[0]), let m = intValue(a[1]) { return [beat(lpb: l, num: m)] }
+        return []
+    }
+
+    static func setAtBeats(_ n: inout Note, _ key: String, _ list: [Beat]) {
+        if list.isEmpty {
+            n.extra.removeValue(forKey: key)
+            return
+        }
+        var uniq: [Beat] = []
+        for b in list.sorted() where !uniq.contains(b) { uniq.append(b) }
+        n.extra[key] = uniq.map { b -> [Int] in
+            let p = lpbNum(b)
+            return [p.lpb, p.num]
+        }
+    }
+
+    /// 見え方が切り替わる拍 (時刻順)。show = true が出現、false が消える
+    static func visEvents(_ n: Note) -> [(beat: Beat, show: Bool)] {
+        let ev = atBeats(n, appearKey).map { (beat: $0, show: true) } + atBeats(n, vanishKey).map { (beat: $0, show: false) }
+        return ev.sorted { a, b in a.beat == b.beat ? (!a.show && b.show) : a.beat < b.beat }
     }
 
     /// 出現 / 消えるの拍を、ノーツと一緒にずらす (コピー・貼り付け・移動のとき。拍はノーツと同じく絶対の位置で持っているため)
     static func shiftAtBeats(_ n: inout Note, from orig: Note, by delta: Beat, subtract: Bool = false) {
         for key in [appearKey, vanishKey] {
-            if let b = atBeat(orig, key) {
-                setAtBeat(&n, key, subtract ? b - delta : b + delta)
-            }
-        }
-    }
-
-    static func setAtBeat(_ n: inout Note, _ key: String, _ b: Beat?) {
-        if let b = b {
-            let p = lpbNum(b)
-            n.extra[key] = [p.lpb, p.num]
-        } else {
-            n.extra.removeValue(forKey: key)
+            let list = atBeats(orig, key)
+            if list.isEmpty { continue }
+            setAtBeats(&n, key, list.map { subtract ? $0 - delta : $0 + delta })
         }
     }
 
@@ -459,8 +480,9 @@ extension ChartData {
         // ノーツ: 先にスライド (type 2 + 子) を集めて、その始点と同じ位置のタップ / ワイプを始点として吸収する
         var notes: [Note] = []
         var slideAt: [BeatrixKey: Int] = [:]
-        var singles: [(beat: Beat, block: Int, type: Int)] = []
-        for e in rawNotes {
+        var singles: [(beat: Beat, block: Int, type: Int, raw: Int)] = []
+        var noteRaw: [Int] = []          // 作ったノーツ (notes の順) が、rawNotes の何番目から来たか
+        for (ri, e) in rawNotes.enumerated() {
             let bt = Beatrix.beat(of: e)
             let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
             let type = Beatrix.intValue(e["type"]) ?? 1
@@ -476,8 +498,9 @@ extension ChartData {
                 let key = BeatrixKey(beat: bt, block: blk)
                 if slideAt[key] == nil { slideAt[key] = notes.count }
                 notes.append(Note(beat: bt, x: sx, w: Beatrix.sideW, type: nil, segs: segs))
+                noteRaw.append(ri)
             } else {
-                singles.append((beat: bt, block: blk, type: type))
+                singles.append((beat: bt, block: blk, type: type, raw: ri))
             }
         }
         // 始点 (スライド / ホールドと同じ位置のタップ・ワイプ) も、エディタの中では普通のタップ・ワイプとして持つ
@@ -493,6 +516,7 @@ extension ChartData {
                 n.extra[Beatrix.rawTypeKey] = s.type
             }
             notes.append(n)
+            noteRaw.append(s.raw)
         }
         // スライド / ホールドの本体は「始点なし」(0)。始点は、上で普通のノーツとして入れてある
         for i in notes.indices where notes[i].isSlide {
@@ -526,18 +550,42 @@ extension ChartData {
             }
         }
 
-        // 出現 / 消える
+        // 出現 / 消える (何回でも)。
+        //   type と nth があれば、その位置の「その種類の何番目のノーツ」(rawNotes の順。始点の表記は数えない) だけに付ける。
+        //   無ければ (前の形式)、その位置のノーツ全部に付ける
+        var bodyKeys = Set<BeatrixKey>()
+        for e in rawNotes where (Beatrix.intValue(e["type"]) ?? 1) == 2 && !((e["notes"] as? [[String: Any]]) ?? []).isEmpty {
+            bodyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))))
+        }
+        struct TypedKey: Hashable { let key: BeatrixKey; let type: Int; let nth: Int }
+        var rawToNote: [Int: Int] = [:]
+        for (ni, ri) in noteRaw.enumerated() { rawToNote[ri] = ni }
+        var typed: [TypedKey: Int] = [:]          // → notes の番号
+        var counter: [String: Int] = [:]
+        for (ri, e) in rawNotes.enumerated() {
+            let type = Beatrix.intValue(e["type"]) ?? 1
+            let k = BeatrixKey(beat: Beatrix.beat(of: e), block: max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0)))
+            let hasKids = !((e["notes"] as? [[String: Any]]) ?? []).isEmpty
+            if (type == 1 || type == 4) && bodyKeys.contains(k) { continue }      // 始点の表記 (本体に付いていく)
+            if type == 2 && !hasKids { continue }
+            let ck = "\(k.beat.value)-\(k.block)-\(type)"
+            let nth = counter[ck] ?? 0
+            counter[ck] = nth + 1
+            if let ni = rawToNote[ri] { typed[TypedKey(key: k, type: type, nth: nth)] = ni }
+        }
         for (jsonKey, key) in [("appear", Beatrix.appearKey), ("disappear", Beatrix.vanishKey)] {
-            var at: [BeatrixKey: Beat] = [:]
             for e in (obj[jsonKey] as? [[String: Any]]) ?? [] {
                 let blk = max(0, min(Beatrix.blockCount - 1, Beatrix.intValue(e["block"]) ?? 0))
-                at[BeatrixKey(beat: Beatrix.beat(of: e), block: blk)] =
-                    Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
-            }
-            if at.isEmpty { continue }
-            for i in notes.indices {
-                if let b = at[BeatrixKey(beat: notes[i].beat, block: Beatrix.block(ofX: Double(notes[i].x)))] {
-                    Beatrix.setAtBeat(&notes[i], key, b)
+                let k = BeatrixKey(beat: Beatrix.beat(of: e), block: blk)
+                let at = Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
+                var targets: [Int] = []
+                if let t = Beatrix.intValue(e["type"]) {
+                    if let ni = typed[TypedKey(key: k, type: t, nth: Beatrix.intValue(e["nth"]) ?? 0)] { targets = [ni] }
+                } else {
+                    targets = notes.indices.filter { BeatrixKey(beat: notes[$0].beat, block: Beatrix.block(ofX: Double(notes[$0].x))) == k }
+                }
+                for ni in targets {
+                    Beatrix.setAtBeats(&notes[ni], key, Beatrix.atBeats(notes[ni], key) + [at])
                 }
             }
         }
@@ -586,18 +634,21 @@ extension ChartData {
 
     /// 出現 / 消えるを JSON の "appear" / "disappear" の形にする (同じ位置に複数あるときは 1 つにまとめる)
     func beatrixAtList(_ key: String) -> [[String: Any]] {
-        var done = Set<BeatrixKey>()
         var out: [[String: Any]] = []
-        let sorted = notes.sorted { a, b in a.beat == b.beat ? a.x < b.x : a.beat < b.beat }
-        for n in sorted {
-            guard let at = Beatrix.atBeat(n, key) else { continue }
-            let blk = Beatrix.block(ofX: Double(n.x))
-            let k = BeatrixKey(beat: n.beat, block: blk)
-            if done.contains(k) { continue }
-            done.insert(k)
+        var counter: [String: Int] = [:]
+        for e in beatrixEntries() where !e.isHead {
+            guard let n = e.source else { continue }
+            let type = Beatrix.intValue(e.dict["type"]) ?? 1
+            let blk = Beatrix.intValue(e.dict["block"]) ?? 0
+            let ck = "\(n.beat.value)-\(blk)-\(type)"
+            let nth = counter[ck] ?? 0
+            counter[ck] = nth + 1
             let p = Beatrix.lpbNum(n.beat)
-            let q = Beatrix.lpbNum(at)
-            out.append(["LPB": p.lpb, "num": p.num, "block": blk, "atLPB": q.lpb, "atNum": q.num])
+            for at in Beatrix.atBeats(n, key) {
+                let q = Beatrix.lpbNum(at)
+                out.append(["LPB": p.lpb, "num": p.num, "block": blk, "type": type, "nth": nth,
+                            "atLPB": q.lpb, "atNum": q.num])
+            }
         }
         return out
     }
@@ -639,9 +690,17 @@ extension ChartData {
 
     /// ノーツを JSON の "notes" の形にする (スライド / ホールドの後ろに始点を付ける)
     func beatrixNotes() -> [[String: Any]] {
-        let sorted = notes.sorted { a, b in
-            a.beat == b.beat ? a.x < b.x : a.beat < b.beat
-        }
+        beatrixEntries().map { $0.dict }
+    }
+
+    /// "notes" の 1 つ 1 つと、そのもとになったノーツ。
+    /// 並びは 拍 → x → エディタの中の順 (同じ位置にスライドが 2 本あっても、いつも同じ順になるように)
+    func beatrixEntries() -> [BeatrixOutEntry] {
+        let sorted = notes.enumerated().sorted { a, b in
+            if a.element.beat != b.element.beat { return a.element.beat < b.element.beat }
+            if a.element.x != b.element.x { return a.element.x < b.element.x }
+            return a.offset < b.offset
+        }.map { $0.element }
         // スライドの始点 → 始点の種類 (1 = タップ / 4 = ワイプ)
         var starts: [BeatrixKey: Int] = [:]
         for n in sorted where n.isSlide {
@@ -675,7 +734,11 @@ extension ChartData {
             if starts[k] == 1 { starts[k] = 0 }
         }
 
-        var out: [[String: Any]] = []
+        var bodiesAt: [BeatrixKey: [Note]] = [:]
+        for n in sorted where n.isSlide {
+            bodiesAt[BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x))), default: []].append(n)
+        }
+        var out: [BeatrixOutEntry] = []
         var headDone = Set<BeatrixKey>()
         for n in sorted {
             let blk = Beatrix.block(ofX: Double(n.x))
@@ -688,11 +751,12 @@ extension ChartData {
                     kids.append(["LPB": q.lpb, "num": q.num, "block": Beatrix.block(ofX: Double(n.x + s.x)),
                                  "type": 2, "notes": [Any]()])
                 }
-                out.append(["LPB": p.lpb, "num": p.num, "block": blk, "type": 2, "notes": kids])
+                out.append(BeatrixOutEntry(dict: ["LPB": p.lpb, "num": p.num, "block": blk, "type": 2, "notes": kids], source: n))
                 if !headDone.contains(k) && (starts[k] ?? 1) != 0 {
                     headDone.insert(k)
-                    out.append(["LPB": p.lpb * Beatrix.headLPBMul, "num": p.num * Beatrix.headLPBMul, "block": blk,
-                                "type": starts[k] ?? 1, "notes": [Any]()])
+                    out.append(BeatrixOutEntry(dict: ["LPB": p.lpb * Beatrix.headLPBMul, "num": p.num * Beatrix.headLPBMul, "block": blk,
+                                                      "type": starts[k] ?? 1, "notes": [Any]()],
+                                               source: nil, bodies: bodiesAt[k] ?? [], isHead: true))
                 }
             } else {
                 let rawType = Beatrix.intValue(n.extra[Beatrix.rawTypeKey])
@@ -707,7 +771,7 @@ extension ChartData {
                 } else {
                     t = 1
                 }
-                out.append(["LPB": p.lpb, "num": p.num, "block": blk, "type": t, "notes": [Any]()])
+                out.append(BeatrixOutEntry(dict: ["LPB": p.lpb, "num": p.num, "block": blk, "type": t, "notes": [Any]()], source: n))
             }
         }
         return out
@@ -788,6 +852,14 @@ extension ChartData {
     }
 }
 
+/// "notes" の 1 つと、そのもとになったノーツ (書き出し・テストプレイで使う)
+struct BeatrixOutEntry {
+    var dict: [String: Any]
+    var source: Note? = nil          // もとのノーツ (始点の表記は nil)
+    var bodies: [Note] = []          // 始点の表記のとき: 同じ位置のスライド / ホールド (始点はこれらに付いていく)
+    var isHead = false
+}
+
 /// 「拍 + block」の組 (スライドの始点を探すのに使う)
 struct BeatrixKey: Hashable {
     let beat: Beat
@@ -804,7 +876,7 @@ struct BeatrixKey: Hashable {
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
                            "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "part", "lyrics", "notes"]
-    static let innerOrder = ["LPB", "num", "block", "type", "bpm", "speed", "atLPB", "atNum", "text", "notes", "parts"]
+    static let innerOrder = ["LPB", "num", "block", "type", "nth", "bpm", "speed", "atLPB", "atNum", "text", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {
         var out = ""

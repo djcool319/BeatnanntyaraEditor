@@ -872,12 +872,13 @@ struct EditorView: View {
         .overlay(toastLayer, alignment: .bottom)
         .confirmationDialog("出現 / 消える (再生ラインの拍 \(Beat.nearest(state.viewBeat, den: state.snapDen).label))",
                             isPresented: $showAppearMenu, titleVisibility: .visible) {
-            Button("この拍から出現する (それまで見えない)") { state.setAppear(.appear) }
-            Button("この拍で消える (そこから見えない)") { state.setAppear(.vanish) }
-            Button("出現 / 消えるを解除", role: .destructive) { state.setAppear(.clear) }
+            Button("この拍で出現する") { state.setAppear(.appear) }
+            Button("この拍で消える") { state.setAppear(.vanish) }
+            Button("この拍の出現 / 消えるを外す") { state.setAppear(.clearHere) }
+            Button("出現 / 消えるを全部解除", role: .destructive) { state.setAppear(.clear) }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍を境に、見えない状態から急に出てくる / 急に消えます。判定はそのまま (見えなくても判定はある) なので、消すほうはダミーと組み合わせるのがおすすめです")
+            Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍で急に出てくる / 急に消えます。何回でも足せるので、出る→消える→出る… もできます (最初が「出現」なら、それまでは見えません)。選んだノーツだけに付くので、同じ位置のホールドとスライドを入れ替える演出もそのままできます。判定はそのまま (見えなくても判定はある) です")
         }
         // 歌詞の入力 (EditorState が lyricEdit を入れたら出す。iOS 15 でも入力欄が出るように UIKit のダイアログで)
         .onReceive(state.$lyricEdit) { e in
@@ -950,7 +951,10 @@ struct EditorView: View {
         case .divide:
             popupList(divideItems(), maxHeight: height - RightPanel.popupBottomInset - 8)
         case .more:
-            moreList
+            // 項目が多いので、画面に入りきらないときはスクロールできるようにする
+            let full = Self.moreRowHeight * CGFloat(Self.moreRowCount) + Self.morePad * 2
+            ScrollView(.vertical, showsIndicators: false) { moreList }
+                .frame(width: Self.moreWidth, height: min(full, max(100, height - 8)))
         case .none:
             EmptyView()
         }

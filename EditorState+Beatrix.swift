@@ -221,46 +221,52 @@ extension EditorState {
     // MARK: 出現 / 消える (appear / disappear)
 
     enum AppearAction {
-        case appear, vanish, clear
+        case appear, vanish, clearHere, clear
     }
 
-    /// 選択中のノーツに、再生ライン (シアンの横棒) の拍で「出現」/「消える」を付ける (clear で両方外す)。
-    /// 同じ位置 (拍・block が完全に一致) のノーツにもまとめて付ける
+    /// 選択中のノーツに、再生ライン (シアンの横棒) の拍で「出現」/「消える」を足す (何回でも付けられる)。
+    ///   clearHere: 再生ラインの拍の出現 / 消えるだけ外す / clear: 全部外す
+    /// 選んだノーツだけに付ける (同じ位置にある別のノーツには付けない。ホールドとスライドを重ねて入れ替える演出ができるように)
     func setAppear(_ action: AppearAction) {
         if isPlaying {
             showToast("再生中は編集できません。停止してから操作してください")
             return
         }
         let ids = selectedIDs
-        let sel = chart.notes.filter { ids.contains($0.id) }
-        if sel.isEmpty {
+        let idx = chart.notes.indices.filter { ids.contains(chart.notes[$0].id) }
+        if idx.isEmpty {
             showToast("先にノーツを選択してください")
             return
         }
-        var keys = Set<BeatrixKey>()
-        for n in sel { keys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
         let at = Beat.nearest(viewBeat, den: snapDen)
         pushUndo()
-        var count = 0
-        for i in chart.notes.indices {
-            let n = chart.notes[i]
-            guard keys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) else { continue }
+        for i in idx {
+            var ap = Beatrix.atBeats(chart.notes[i], Beatrix.appearKey)
+            var va = Beatrix.atBeats(chart.notes[i], Beatrix.vanishKey)
             switch action {
             case .appear:
-                Beatrix.setAtBeat(&chart.notes[i], Beatrix.appearKey, at)
+                va.removeAll { $0 == at }            // 同じ拍の「消える」とは同時に付けない (置き換える)
+                if !ap.contains(at) { ap.append(at) }
             case .vanish:
-                Beatrix.setAtBeat(&chart.notes[i], Beatrix.vanishKey, at)
+                ap.removeAll { $0 == at }
+                if !va.contains(at) { va.append(at) }
+            case .clearHere:
+                ap.removeAll { $0 == at }
+                va.removeAll { $0 == at }
             case .clear:
-                Beatrix.setAtBeat(&chart.notes[i], Beatrix.appearKey, nil)
-                Beatrix.setAtBeat(&chart.notes[i], Beatrix.vanishKey, nil)
+                ap = []
+                va = []
             }
-            count += 1
+            Beatrix.setAtBeats(&chart.notes[i], Beatrix.appearKey, ap)
+            Beatrix.setAtBeats(&chart.notes[i], Beatrix.vanishKey, va)
         }
         chartChanged()
+        let count = idx.count
         switch action {
-        case .appear: showToast("\(at.label) から出現するようにしました (\(count) 個)")
+        case .appear: showToast("\(at.label) で出現するようにしました (\(count) 個)")
         case .vanish: showToast("\(at.label) で消えるようにしました (\(count) 個)")
-        case .clear: showToast("出現 / 消えるを解除しました (\(count) 個)")
+        case .clearHere: showToast("\(at.label) の出現 / 消えるを外しました (\(count) 個)")
+        case .clear: showToast("出現 / 消えるを全部解除しました (\(count) 個)")
         }
     }
 

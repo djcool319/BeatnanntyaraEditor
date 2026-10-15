@@ -30,8 +30,7 @@ struct BxNote {
     let type: Int
     var sp: Double = 1                     // ノーツ個別の速さ (speeds_each)
     var dummy = false                      // ダミー (判定なし。取れば消えるだけ)
-    var showFrom = -Double.infinity        // この時刻になるまで見えない (appear)
-    var hideFrom = Double.infinity         // この時刻から見えない (disappear)
+    var vis: [[BxVisEvent]] = []           // 出現 / 消える。どれか 1 つの列で見えていれば見える (空なら いつも見える)
     var suppressed = false
     var done = false
     var missed = false                     // 見逃した (本家と同じく、判定ラインを過ぎても流れ続ける)
@@ -43,8 +42,29 @@ struct BxHold {
     let lane: Int
     var sp: Double = 1
     var dummy = false
-    var showFrom = -Double.infinity
-    var hideFrom = Double.infinity
+    var vis: [[BxVisEvent]] = []
+}
+
+/// 見え方の切り替え (時刻と、見える / 見えない)
+struct BxVisEvent {
+    let t: Double
+    let show: Bool
+}
+
+/// 見えるか。列ごとに: 最初の切り替えが「出現」ならそれまでは見えない、「消える」ならそれまでは見える。あとは切り替えのとおり。
+/// 列が複数あるとき (同じ位置のスライド 2 本が 1 つの始点を使っているとき) は、どれか 1 つで見えていれば見える
+func bxVisible(at t: Double, _ vis: [[BxVisEvent]]) -> Bool {
+    if vis.isEmpty { return true }
+    for list in vis {
+        guard let first = list.first else { return true }
+        var v = !first.show
+        for e in list {
+            if e.t > t { break }
+            v = e.show
+        }
+        if v { return true }
+    }
+    return false
 }
 
 struct BxSlidePoint {
@@ -56,8 +76,7 @@ struct BxSlide {
     let pts: [BxSlidePoint]
     var sp: Double = 1
     var dummy = false
-    var showFrom = -Double.infinity
-    var hideFrom = Double.infinity
+    var vis: [[BxVisEvent]] = []
 }
 
 /// 同時押しの線 (2 つのレーンが 2 以上離れているとき)
@@ -112,7 +131,8 @@ struct BxPlayChart {
         func block(_ d: [String: Any]) -> Int { max(0, min(6, Beatrix.intValue(d["block"]) ?? 0)) }
         func kids(_ d: [String: Any]) -> [[String: Any]] { (d["notes"] as? [[String: Any]]) ?? [] }
 
-        let raw = chart.beatrixNotes()
+        let entries = chart.beatrixEntries()
+        let raw = entries.map { $0.dict }
         var out = BxPlayChart()
 
         // ノーツ個別の速さ (保存する JSON の speeds_each と同じ。LPB・num・block が完全に一致するノーツだけ)
@@ -129,19 +149,20 @@ struct BxPlayChart {
         for e in chart.beatrixDummies() { dummyKeys.insert(BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))) }
         func isDummy(_ d: [String: Any]) -> Bool { dummyKeys.contains(BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))) }
 
-        // 出現 / 消える (保存する JSON の appear / disappear と同じ)
-        func atMap(_ key: String) -> [BeatrixKey: Double] {
-            var m: [BeatrixKey: Double] = [:]
-            for e in chart.beatrixAtList(key) {
-                let at = Beatrix.beat(lpb: Beatrix.intValue(e["atLPB"]) ?? 4, num: Beatrix.intValue(e["atNum"]) ?? 0)
-                m[BeatrixKey(beat: Beatrix.beat(of: e), block: block(e))] = tm.sec(atBeat: at.value)
-            }
-            return m
+        // 出現 / 消える (ノーツごと。始点の表記は、同じ位置のスライド / ホールドに付いていく)
+        func visList(_ n: Note) -> [BxVisEvent] {
+            Beatrix.visEvents(n).map { BxVisEvent(t: tm.sec(atBeat: $0.beat.value), show: $0.show) }
         }
-        let appearAt = atMap(Beatrix.appearKey)
-        let vanishAt = atMap(Beatrix.vanishKey)
-        func showOf(_ d: [String: Any]) -> Double { appearAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? -Double.infinity }
-        func hideOf(_ d: [String: Any]) -> Double { vanishAt[BeatrixKey(beat: Beatrix.beat(of: d), block: block(d))] ?? Double.infinity }
+        func visOf(_ idx: Int) -> [[BxVisEvent]] {
+            let e = entries[idx]
+            if e.isHead {
+                let sets = e.bodies.map { visList($0) }
+                return sets.contains { $0.isEmpty } ? [] : sets
+            }
+            guard let n = e.source else { return [] }
+            let l = visList(n)
+            return l.isEmpty ? [] : [l]
+        }
 
         // ソフラン (speeds): 0 拍目より前は 1 倍
         var sps: [(t: Double, speed: Double)] = []
@@ -167,18 +188,17 @@ struct BxPlayChart {
             holdStarts.insert(BeatrixKey(beat: Beatrix.beat(of: n), block: block(n)))
         }
 
-        for n in raw {
+        for (idx, n) in raw.enumerated() {
             let type = Beatrix.intValue(n["type"]) ?? 1
             if type == 2 { continue }                      // 本体 (子あり) は下で。子の無い type 2 は本家でも使っていない
             let blk = block(n)
             var tp = type
             if type == 1 && holdStarts.contains(BeatrixKey(beat: Beatrix.beat(of: n), block: blk)) { tp = 2 }
             if tp < 1 || tp > 4 { tp = 1 }
-            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n),
-                                    showFrom: showOf(n), hideFrom: hideOf(n)))
+            out.notes.append(BxNote(t: sec(n), lane: blk, type: tp, sp: spOf(n), dummy: isDummy(n), vis: visOf(idx)))
         }
 
-        for n in raw where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
+        for (idx, n) in raw.enumerated() where (Beatrix.intValue(n["type"]) ?? 1) == 2 && !kids(n).isEmpty {
             let ks = kids(n)
             let blk = block(n)
             let isSlide = ks.contains { block($0) != blk }
@@ -189,8 +209,7 @@ struct BxPlayChart {
                 guard let last = ks.last else { continue }
                 let endBeat = Beatrix.beat(of: last).value
                 if endBeat <= startBeat { continue }
-                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm,
-                                        showFrom: showOf(n), hideFrom: hideOf(n)))
+                out.holds.append(BxHold(t0: sec(n), t1: sec(last), lane: blk, sp: spOf(n), dummy: dm, vis: visOf(idx)))
                 var curLane = blk
                 var curBeat = startBeat
                 for k in ks {
@@ -210,7 +229,7 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm, showFrom: showOf(n), hideFrom: hideOf(n)))
+                out.slides.append(BxSlide(pts: pts, sp: spOf(n), dummy: dm, vis: visOf(idx)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }
             }
         }
