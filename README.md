@@ -41,7 +41,6 @@
 - More → **Dummy** = JSON の `dummy` (ダミーノーツ)。`{"LPB","num","block"}` で、拍と block が完全に一致するノーツ (ホールド・スライドは始点の位置) が、判定の無いノーツになる。流れてきて、押せば消える (音は鳴る) けど、判定の文字・エフェクト・カウント・コンボ・スコアには一切関係なく、押さなくても MISS にならない。エディタでは薄く描いて「D」を出す。くわしくは HANDOFF.md の 1-5b / 3-1
 - More → **Appear / Vanish** = JSON の `appear` / `disappear`。`{"LPB","num","block","atLPB","atNum"}` で、一致するノーツが atLPB・atNum の拍まで見えない (appear) / その拍から見えなくなる (disappear)。見た目だけで判定はそのまま。再生ラインの拍で付ける。エディタでは「出 4:1/2」「消 5:0/1」と出る。くわしくは HANDOFF.md の 1-5c / 3-2
 - More → **Lyrics** = JSON の `lyrics` (歌詞)。part と同じ形に `text` を足したもの (`{"LPB","num","text","parts":[{"LPB","num","parts":[]}]}`)。始点 → 終点をタップして歌詞を入れると、その間テストプレイの判定ラインの上に小さく出る。区間の中をタップで編集・削除
-- More → **Blink** = JSON の `blink` (点滅)。`{"LPB","num","block","atLPB","atNum","stepLPB","stepNum"}` で、再生ラインの拍 (at) からノーツが来るまで、間隔 (step) ごとに 見える → 消える をくり返す。見た目だけで判定はそのまま
 - Unity 側の対応のしかたは **UNITY_SPEC.md** にまとめてある
 
 ## META → Information

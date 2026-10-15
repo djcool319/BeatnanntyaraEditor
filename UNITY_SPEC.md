@@ -27,7 +27,6 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
   "dummy": [ {"LPB": 4, "num": 264, "block": 0} ],
   "appear": [ {"LPB": 4, "num": 256, "block": 0, "atLPB": 4, "atNum": 248} ],
   "disappear": [ {"LPB": 4, "num": 256, "block": 1, "atLPB": 4, "atNum": 248} ],
-  "blink": [ {"LPB": 4, "num": 256, "block": 3, "atLPB": 4, "atNum": 240, "stepLPB": 4, "stepNum": 1} ],
   "part": [ {"LPB": 4, "num": 512, "parts": [ {"LPB": 4, "num": 640, "parts": []} ]} ],
   "lyrics": [ {"LPB": 4, "num": 512, "text": "歌詞", "parts": [ {"LPB": 4, "num": 528, "parts": []} ]} ],
   "notes": [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []} ]
@@ -45,7 +44,6 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 [System.Serializable] public class SpeedEach   { public int LPB; public int num; public int block; public float speed; }
 [System.Serializable] public class DummyEntry  { public int LPB; public int num; public int block; }
 [System.Serializable] public class AppearEntry { public int LPB; public int num; public int block; public int atLPB; public int atNum; }
-[System.Serializable] public class BlinkEntry  { public int LPB; public int num; public int block; public int atLPB; public int atNum; public int stepLPB; public int stepNum; }
 [System.Serializable] public class RangeEnd    { public int LPB; public int num; }
 [System.Serializable] public class PartEntry   { public int LPB; public int num; public List<RangeEnd> parts; }
 [System.Serializable] public class LyricEntry  { public int LPB; public int num; public string text; public List<RangeEnd> parts; }
@@ -57,7 +55,6 @@ public List<SpeedEach> speeds_each;
 public List<DummyEntry> dummy;
 public List<AppearEntry> appear;
 public List<AppearEntry> disappear;
-public List<BlinkEntry> blink;
 public List<PartEntry> part;
 public List<LyricEntry> lyrics;
 ```
@@ -145,27 +142,7 @@ public List<LyricEntry> lyrics;
   2. 判定ラインの少し上に TextMeshPro（UI）を 1 つ置く
   3. 毎フレーム: 今の時刻を含む歌詞の `text` を入れる（無ければ空）。文字が変わったときだけ書き換える
 
-## 8. 点滅（`blink`）
-
-- `{"LPB", "num", "block", "atLPB", "atNum", "stepLPB", "stepNum"}`: 一致するノーツ（ホールド・スライドは始点の位置）を点滅させる
-  - `atLPB`・`atNum`: 点滅を**始める拍**（num / LPB 拍）
-  - `stepLPB`・`stepNum`: 見える ⇔ 消えるを切り替える**間隔**（拍の長さ。例: LPB 4・num 1 = 1/4 拍）
-- **ふるまい**
-  - 始める拍より前: 普通に見える
-  - 始める拍から、**そのノーツの拍（判定ラインに来る時刻）まで**: `見える（1 間隔）→ 消える（1 間隔）→ 見える → …` をくり返す（始めは見える）
-  - ノーツの拍を過ぎたら: 普通に見える（ホールド・スライドは、始点の拍を過ぎたら帯も普通に見える）
-  - 切り替わりの拍 = 始める拍 + 間隔 × k（k = 1, 2, 3 …、ノーツの拍より前のものだけ）。拍 → 秒は BPM 変化込み
-  - 見えるかどうか = 「今までに切り替わった回数」が偶数なら見える、奇数なら消えている
-- **見た目だけ**。判定はそのまま（消えている間も判定はある）
-- `appear` / `disappear` と一緒に付けてもよい（どれか 1 つでも「見えない」なら見えない）
-- ホールド・スライドは、帯・始点・ノーツ全部をまとめて点滅させる。同時押しの線も、つないでいるノーツのどちらかが見えない間は隠す
-- **実装の手順（案）**
-  1. 読み込み時: 一致したノーツに、切り替わりの時刻（秒）のリスト `blinkTimes` を持たせる（始める拍 + 間隔 × k を、ノーツの拍まで並べて秒にする）
-  2. 毎フレーム: `blinkTimes` のうち `今の時刻` 以下のものの数を数えて（二分探索）、奇数なら Renderer を非表示、偶数なら表示（`appear` / `disappear` の条件とも合わせる）
-  3. 判定の処理には触らない
-- エディタ: 再生ラインを点滅を始めたい拍に合わせて、ノーツを選んで More → **Blink** → 間隔（例: 1/4）を入れて OK。「解除」で外す
-
-## 9. 参考（変わっていないもの）
+## 8. 参考（変わっていないもの）
 
 - `notes`: `type` 1 = タップ / 2 = ホールド・スライドの本体（子の `notes` が経由点）/ 3 = 赤タップ / 4 = ワイプ。始点は本体のすぐ後ろに LPB・num を 2 倍にした別表記のタップ / ワイプ
 - `part`: `{"LPB", "num", "parts": [ {"LPB", "num", "parts": []} ]}`。外側が始まり、`parts[0]` が終わり
