@@ -5,7 +5,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 
 - 時刻はすべて **num / LPB 拍**（0 拍始まり）。例: LPB 4・num 6 は 1.5 拍目
 - 拍 → 秒は、`BPM`（0 拍目）と `bpms`（途中の BPM 変化）を入れて計算する
-- 「LPB・num・block が完全に一致するノーツに当てる」項目は、**拍を約分してから比べる**（LPB 4・num 2 と LPB 8・num 4 は同じ）。ホールド・スライドは**本体（type 2）の LPB・num・block**（= 始点の位置）で比べ、帯・始点のタップ / ワイプ（LPB×2 の表記）・判定点までまとめて当てる
+- `speeds_each` / `dummy` / `appear` / `disappear` は、**ノーツ 1 つを指す**（指し方は下の「0-1. ノーツの指し方」）
 - どの項目も、無いときは空の配列 `[]` で書き出す（キーが無い古い譜面もあるので、無ければ空として扱う）
 
 ## 0. JSON 全体（キーの順番）
@@ -23,10 +23,11 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
   "ver": 1001,
   "bpms": [ {"LPB": 4, "num": 240, "bpm": 306} ],
   "speeds": [ {"LPB": 4, "num": 240, "speed": 1.1} ],
-  "speeds_each": [ {"LPB": 4, "num": 256, "block": 3, "speed": 2.0} ],
-  "dummy": [ {"LPB": 4, "num": 264, "block": 0} ],
-  "appear": [ {"LPB": 4, "num": 256, "block": 0, "atLPB": 4, "atNum": 248} ],
-  "disappear": [ {"LPB": 4, "num": 256, "block": 1, "atLPB": 4, "atNum": 248} ],
+  "speeds_each": [ {"LPB": 4, "num": 256, "block": 3, "type": 1, "nth": 0, "speed": 2.0} ],
+  "dummy": [ {"LPB": 4, "num": 264, "block": 0, "type": 2, "nth": 0} ],
+  "appear": [ {"LPB": 4, "num": 264, "block": 0, "type": 2, "nth": 1, "atLPB": 4, "atNum": 256} ],
+  "disappear": [ {"LPB": 4, "num": 264, "block": 0, "type": 2, "nth": 0, "atLPB": 4, "atNum": 256},
+                 {"LPB": 4, "num": 270, "block": 3, "type": 1, "nth": 0, "atLPB": 4, "atNum": 250} ],
   "part": [ {"LPB": 4, "num": 512, "parts": [ {"LPB": 4, "num": 640, "parts": []} ]} ],
   "lyrics": [ {"LPB": 4, "num": 512, "text": "歌詞", "parts": [ {"LPB": 4, "num": 528, "parts": []} ]} ],
   "notes": [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []} ]
@@ -36,14 +37,33 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 - `name` は曲名だけ（`(EX)` などの略称は付けない）。略称はファイル名（`曲名(EX).json`）にだけ付ける
 - `difficulty`: 0 = BASIC / 1 = HARD / 2 = EXTREME / 3 = INSANE
 
+### 0-1. ノーツの指し方（`speeds_each` / `dummy` / `appear` / `disappear` 共通）（2026-10-15 変更）
+
+同じ位置（同じ拍・同じ block）に、まっすぐのホールドとギザギザのスライドを重ねて入れ替える、のような演出ができるように、**位置だけでなく「どのノーツか」まで指す**ようにした。
+
+- `LPB`・`num`・`block`: ノーツの位置（ホールド・スライドは本体 = 始点の位置）。**拍は約分してから比べる**（LPB 4・num 2 と LPB 8・num 4 は同じ）
+- `type`: ノーツの種類（`notes` の `type` と同じ。1 = タップ / 2 = ホールド・スライドの本体 / 3 = 赤タップ / 4 = ワイプ）
+- `nth`: その位置・その `type` のノーツの中で**何番目か**（0 始まり）。`notes` の並び順で数える
+  - **始点の表記**（本体と同じ位置の type 1 / 4。LPB・num を 2 倍にして書いてあるもの）は**数えない・指さない**。始点は本体に付いていく
+- 指したノーツ**1 つだけ**に効く（同じ位置の別のノーツには効かない）
+- **前の形式**（`type` が無いもの）: その位置のノーツ**全部**に効く（古い譜面も読めるように）
+- **始点の扱い**: 始点（type 1 / 4 の始点の表記）は、同じ位置の本体（type 2）に付いていく
+  - 同じ位置に本体が 2 つ以上あって、始点を 1 つ共有しているとき:
+    - `dummy`: 本体が**全部**ダミーのときだけ、始点もダミー
+    - `appear` / `disappear`: 本体の**どれか 1 つでも見えている**間は、始点も見える
+    - `speeds_each`: 最初の本体（`nth` = 0）の速さ
+- **実装のしかた（案）**: NotesGenerate で `notes` を上から読むときに、始点の表記以外のノーツについて「(約分した拍, block, type) ごとの通し番号」を数えておく。それが `nth`。`(拍, block, type, nth)` → 生成したノーツ の辞書を作り、各項目をそこから引く
+
 ### C#（JsonUtility）でのクラスの例
 
 ```csharp
 [System.Serializable] public class BpmEntry    { public int LPB; public int num; public float bpm; }
 [System.Serializable] public class SpeedEntry  { public int LPB; public int num; public float speed; }
-[System.Serializable] public class SpeedEach   { public int LPB; public int num; public int block; public float speed; }
-[System.Serializable] public class DummyEntry  { public int LPB; public int num; public int block; }
-[System.Serializable] public class AppearEntry { public int LPB; public int num; public int block; public int atLPB; public int atNum; }
+// type が無い古い譜面のために、type は -1 を「無し」として扱う (JsonUtility はキーが無いと 0 になるので、
+// 読み込んだあとに「JSON に "type" があったか」を見たいときは、文字列で "type" を含むか調べるか、MiniJSON などを使う)
+[System.Serializable] public class SpeedEach   { public int LPB; public int num; public int block; public int type; public int nth; public float speed; }
+[System.Serializable] public class DummyEntry  { public int LPB; public int num; public int block; public int type; public int nth; }
+[System.Serializable] public class AppearEntry { public int LPB; public int num; public int block; public int type; public int nth; public int atLPB; public int atNum; }
 [System.Serializable] public class RangeEnd    { public int LPB; public int num; }
 [System.Serializable] public class PartEntry   { public int LPB; public int num; public List<RangeEnd> parts; }
 [System.Serializable] public class LyricEntry  { public int LPB; public int num; public string text; public List<RangeEnd> parts; }
@@ -85,7 +105,7 @@ public List<LyricEntry> lyrics;
 
 ## 4. ノーツ個別の速さ（`speeds_each`）
 
-- `{"LPB", "num", "block", "speed"}`: 一致するノーツ**だけ**、その倍率で流れてくる
+- `{"LPB", "num", "block", "type", "nth", "speed"}`: 指したノーツ（0-1）**だけ**、その倍率で流れてくる
 - 全体のソフランと**掛け算**: 奥行き = `(pos(ノーツ) − pos(今)) × スクロール速度 × speed`
 - ホールド・スライドは、帯の両端・経由点もこの倍率で計算する
 - **見た目だけ**。判定の時刻は変わらない
@@ -93,7 +113,7 @@ public List<LyricEntry> lyrics;
 
 ## 5. ダミーノーツ（`dummy`）
 
-- `{"LPB", "num", "block"}`: 一致するノーツが**判定の無いノーツ**になる
+- `{"LPB", "num", "block", "type", "nth"}`: 指したノーツ（0-1）が**判定の無いノーツ**になる
 - **ふるまい**
   - 普通と**同じ見た目**で流れてくる（ひっかけ用。見分けは付かない）
   - PERFECT / GREAT / MISS の文字・タッチエフェクトは**出さない**。判定のカウント・コンボ・スコア・ノーツ総数（スコアの分母）に**一切数えない**
@@ -109,26 +129,34 @@ public List<LyricEntry> lyrics;
   2. そうでなければ、本物のノーツだけで今までどおり判定する
   3. 本物が何も取れなかったときだけ、範囲の中のダミーを 1 つ消す
 - **実装の手順（案）**
-  1. NotesGenerate: `dummy` から「(約分した拍, block)」の集合を作り、一致したノーツ（とホールド・スライドの判定点、始点）に `isDummy = true` を付ける。ノーツ総数からダミーを除く
+  1. NotesGenerate: `dummy` で指したノーツ（0-1。ホールド・スライドは判定点も）に `isDummy = true` を付ける。始点は 0-1 の「始点の扱い」のとおり。ノーツ総数からダミーを除く
   2. keyjudge: 押した瞬間は上の順番。押している間は、ダミーのワイプ・判定点を消す（本物の判定は続けて探す）。ダミーを消すときは、判定の文字・エフェクト・カウント・コンボ・スコアを何も呼ばない（SE だけ）
   3. 見逃しの処理: ダミーは MISS にせず消す
   4. リザルト: AP / FC・スコアはダミーを除いたノーツだけで計算する
 
-## 6. 出現 / 消える（`appear` / `disappear`）
+## 6. 出現 / 消える（`appear` / `disappear`）（2026-10-15 変更: 何回でも切り替えられる）
 
-- `{"LPB", "num", "block", "atLPB", "atNum"}`: 一致するノーツの見え方を変える。`atLPB`・`atNum` が境目の拍
-  - `appear`: 曲がその拍になるまで、ノーツは**見えない**。その拍から急に見える
-  - `disappear`: その拍から、ノーツは**見えなくなる**
-  - 両方付けてもよい
-- **見た目だけ**。判定はそのまま（見えない間も判定はある）。消すほうは `dummy` と組み合わせるのが基本
-- ホールド・スライドは、帯・始点・ノーツ全部をまとめて隠す
+- `{"LPB", "num", "block", "type", "nth", "atLPB", "atNum"}`: 指したノーツ（0-1）の見え方を、`atLPB`・`atNum` の拍で切り替える
+  - `appear`: その拍で**見えるようになる**
+  - `disappear`: その拍で**見えなくなる**
+  - **1 つのノーツに何個でも付けられる**（同じノーツを指す項目が `appear` / `disappear` に何個あってもよい）。出る → 消える → 出る → … ができる
+- **見えるかどうかの決め方**（ノーツごと）
+  1. そのノーツの `appear` と `disappear` の拍を全部集めて、拍の順に並べる
+  2. **最初の切り替えより前**: 最初が `appear` なら**見えない**、最初が `disappear` なら**見える**
+  3. あとは、今の時刻までに起きた最後の切り替えのとおり（`appear` なら見える、`disappear` なら見えない）
+  4. 切り替えが 1 つも無いノーツは、いつも見える
+  - 同じ拍に `appear` と `disappear` が両方あることは無い（エディタで付けるときに置き換える）
+- **見た目だけ**。判定はそのまま（見えない間も判定はある）。消えている間に取らせたくないときは `dummy` と組み合わせる
+- ホールド・スライドは、帯・判定点の見た目・ノーツ全部をまとめて切り替える。始点は 0-1 の「始点の扱い」のとおり（同じ位置の本体のどれか 1 つでも見えていれば見える）
 - 同時押しの線は、つないでいるノーツのどちらかが見えない間は隠す
-- 使い方の例（まっすぐのホールドが急にギザギザのスライドに入れ替わる）:
-  1. まっすぐのホールド（ダミー）に `disappear` を入れ替えの拍で付ける
-  2. 同じところのギザギザのスライド（本物）に `appear` を同じ拍で付ける
+- 使い方の例（まっすぐのホールドが急にギザギザのスライドに入れ替わる。**同じ位置・同じ拍でできる**）:
+  1. まっすぐのホールド（`type` 2・`nth` 0、ダミー）に、入れ替えの拍で `disappear`
+  2. 同じ位置のギザギザのスライド（`type` 2・`nth` 1、本物）に、同じ拍で `appear`
+  3. → 入れ替えの拍までは、まっすぐのホールドだけが見えて、その拍からギザギザのスライドだけが見える（1/64 ずらす必要はない）
 - **実装の手順（案）**
-  1. NotesGenerate: 一致したノーツに `showTime`（appear の拍の秒）と `hideTime`（disappear の拍の秒）を持たせる（無ければ −∞ / +∞）
-  2. 毎フレーム: `曲の時刻 < showTime` または `曲の時刻 >= hideTime` の間は、Renderer（SpriteRenderer / MeshRenderer / LineRenderer など）を非表示にする。判定の処理には触らない
+  1. NotesGenerate: 指したノーツに、切り替えのリスト `visEvents`（[(秒, 見える/見えない)] を時刻順）を持たせる。秒は BPM 変化込み
+  2. 毎フレーム: 上の「見えるかどうかの決め方」で見えるか決めて、Renderer（SpriteRenderer / MeshRenderer / LineRenderer など）の表示 / 非表示を切り替える。判定の処理には触らない
+  3. 共有している始点は、本体のどれか 1 つでも見えていれば表示
 
 ## 7. 歌詞（`lyrics`）
 

@@ -660,3 +660,12 @@
 
 - iOS 15 でも入るようにした（Package / CI の対応 OS を 15.0 に。iOS 16 からの機能は Compat.swift で iOS 16 以上のときだけ使う。CI で minos を ::notice:: に出す）
 - テストプレイの PAUSE に「オート（自動で全部 PERFECT）」。時刻が来たノーツを全部 PERFECT+ で取る（BxGame.auto）。ダミーは取らない。ホールド / スライドは押さえている扱いで光る
+
+## 17. 出現 / 消えるを何回でも・ノーツの指し方（2026-10-15）
+
+- 点滅（blink）は、ユーザーの希望と違ったので取り消した（git revert）
+- 出現 / 消える: 1 つのノーツに何回でも付けられる（extra の bxAppear / bxVanish は [[LPB, num], ...]。前の [LPB, num] も読める）。最初の切り替えが出現ならそれまで見えない。More → Appear / Vanish に「この拍の出現 / 消えるを外す」「全部解除」
+- `speeds_each` / `dummy` / `appear` / `disappear` の JSON に `type` と `nth` を足して、ノーツ 1 つを指すようにした（同じ位置にホールドとスライドを重ねて入れ替える演出を、ずらさずにできる）。`type` が無い古い譜面は、その位置のノーツ全部に当てる
+- エディタの Dummy / Note speed / Appear・Vanish は、選んだノーツだけに付く（前は同じ位置のノーツ全部に付いていた）
+- 書き出しは beatrixEntries()（"notes" の 1 つ 1 つと、もとのノーツ）を使う。並びは 拍 → x → エディタの中の順で、いつも同じ
+- Unity 向けの説明は UNITY_SPEC.md の 0-1・4・5・6 章
