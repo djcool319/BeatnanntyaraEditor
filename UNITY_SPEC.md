@@ -59,8 +59,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 ```csharp
 [System.Serializable] public class BpmEntry    { public int LPB; public int num; public float bpm; }
 [System.Serializable] public class SpeedEntry  { public int LPB; public int num; public float speed; }
-// type が無い古い譜面のために、type は -1 を「無し」として扱う (JsonUtility はキーが無いと 0 になるので、
-// 読み込んだあとに「JSON に "type" があったか」を見たいときは、文字列で "type" を含むか調べるか、MiniJSON などを使う)
+// JsonUtility は、JSON にキーが無いと 0 になる。type は 1〜4 しか使わないので、type == 0 なら「前の形式 (type 無し)」として扱えばよい
 [System.Serializable] public class SpeedEach   { public int LPB; public int num; public int block; public int type; public int nth; public float speed; }
 [System.Serializable] public class DummyEntry  { public int LPB; public int num; public int block; public int type; public int nth; }
 [System.Serializable] public class AppearEntry { public int LPB; public int num; public int block; public int type; public int nth; public int atLPB; public int atNum; }
