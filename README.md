@@ -41,7 +41,8 @@
 - More → **Dummy** = JSON の `dummy` (ダミーノーツ)。`{"LPB","num","block"}` で、拍と block が完全に一致するノーツ (ホールド・スライドは始点の位置) が、判定の無いノーツになる。流れてきて、押せば消える (音は鳴る) けど、判定の文字・エフェクト・カウント・コンボ・スコアには一切関係なく、押さなくても MISS にならない。エディタでは薄く描いて「D」を出す。くわしくは HANDOFF.md の 1-5b / 3-1
 - More → **Appear / Vanish** = JSON の `appear` / `disappear`。`{"LPB","num","block","atLPB","atNum"}` で、一致するノーツが atLPB・atNum の拍まで見えない (appear) / その拍から見えなくなる (disappear)。見た目だけで判定はそのまま。再生ラインの拍で付ける。エディタでは「出 4:1/2」「消 5:0/1」と出る。くわしくは HANDOFF.md の 1-5c / 3-2
 - More → **Lyrics** = JSON の `lyrics` (歌詞)。part と同じ形に `text` を足したもの (`{"LPB","num","text","parts":[{"LPB","num","parts":[]}]}`)。始点 → 終点をタップして歌詞を入れると、その間テストプレイの判定ラインの上に小さく出る。区間の中をタップで編集・削除
-- `speeds_each` / `dummy` / `appear` / `disappear` は `type` と `nth` で **ノーツ 1 つ** を指す (同じ位置に重ねたノーツも別々に設定できる)。出現 / 消えるは 1 つのノーツに何回でも付けられる
+- More → **Curve** = JSON の `curve` (曲線スライド)。選んだスライドを、見た目だけ丸くする (経由点をなめらかなカーブでつなぐ)。判定の位置は経由点のまま。エディタの帯もテストプレイも丸くなる。くわしくは UNITY_SPEC.md の 7-2
+- `speeds_each` / `dummy` / `appear` / `disappear` / `curve` は `type` と `nth` で **ノーツ 1 つ** を指す (同じ位置に重ねたノーツも別々に設定できる)。出現 / 消えるは 1 つのノーツに何回でも付けられる
 - Unity 側の対応のしかたは **UNITY_SPEC.md** にまとめてある
 
 ## META → Information
@@ -55,6 +56,7 @@
   "speeds": [ {"LPB":4, "num":240, "speed":1.1} ],
   "speeds_each": [ {"LPB":4, "num":256, "block":3, "speed":2.0} ],
   "dummy": [ {"LPB":4, "num":264, "block":0} ],
+  "curve": [ {"LPB":4, "num":128, "block":3, "type":2, "nth":0} ],
   "appear": [ {"LPB":4, "num":256, "block":0, "atLPB":4, "atNum":248} ],
   "disappear": [ {"LPB":4, "num":256, "block":1, "atLPB":4, "atNum":248} ],
   "lyrics": [ {"LPB":4, "num":512, "text":"歌詞", "parts":[ {"LPB":4, "num":528, "parts":[]} ]} ],

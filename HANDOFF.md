@@ -669,3 +669,12 @@
 - エディタの Dummy / Note speed / Appear・Vanish は、選んだノーツだけに付く（前は同じ位置のノーツ全部に付いていた）
 - 書き出しは beatrixEntries()（"notes" の 1 つ 1 つと、もとのノーツ）を使う。並びは 拍 → x → エディタの中の順で、いつも同じ
 - Unity 向けの説明は UNITY_SPEC.md の 0-1・4・5・6 章
+
+## 18. 曲線スライド（2026-10-16）
+
+- More → **Curve**: 選んだスライドを 曲線 ⇔ 普通 で切り替える（EditorState.toggleCurve。選んだスライドだけ。extra の bxCurve = true）
+- 見た目だけ丸くする。判定点（始点・経由点）の時刻・レーンは変えない。曲線は経由点を必ず通る
+- 曲線の計算は Beatrix.curvePoints（単調 3 次補間 Fritsch–Carlson、区間ごとに 16 分割）。折り返しの点と、同じレーンが続く区間では行き過ぎない（まっすぐはまっすぐ）
+- エディタの帯（Renderers.drawNotes / drawOrder）と、テストプレイの帯（BxSlide.draw → BeatrixGameView）の両方が曲線になる
+- JSON: `"curve": [ {"LPB","num","block","type":2,"nth"} ]`（disappear の後、part の前）。読み込みも対応
+- Unity 向けの説明は UNITY_SPEC.md の 7-2 章（C# の CurvePoints 付き）

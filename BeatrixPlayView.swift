@@ -897,12 +897,13 @@ final class BeatrixGameView: UIView, GameSessionView {
             let active = slideActive(s, at: viewTime, zones: zones)
             let path = active ? sActive : sIdle
             let lo = viewTime
-            for k in 0..<(s.pts.count - 1) {
-                let a = s.pts[k]
-                let b = s.pts[k + 1]
+            let dp = s.draw.isEmpty ? s.pts.map { BxDrawPoint(t: $0.t, f: Self.laneFrac($0.lane)) } : s.draw
+            for k in 0..<(dp.count - 1) {
+                let a = dp[k]
+                let b = dp[k + 1]
                 if b.t <= a.t || b.t < lo { continue }
-                let fa0 = Self.laneFrac(a.lane)
-                let fb0 = Self.laneFrac(b.lane)
+                let fa0 = a.f
+                let fb0 = b.f
                 let ta = max(a.t, lo)
                 let tb = b.t
                 if tb <= ta { continue }

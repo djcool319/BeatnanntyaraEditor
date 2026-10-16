@@ -72,8 +72,15 @@ struct BxSlidePoint {
     let lane: Int
 }
 
+/// 帯を描くための点 (横の位置はレーンの左端 = 0 / 右端 = 1)
+struct BxDrawPoint {
+    let t: Double
+    let f: Double
+}
+
 struct BxSlide {
     let pts: [BxSlidePoint]
+    var draw: [BxDrawPoint] = []           // 描く形 (曲線スライドは細かい点。ふつうは経由点そのまま)
     var sp: Double = 1
     var dummy = false
     var vis: [[BxVisEvent]] = []
@@ -227,7 +234,13 @@ struct BxPlayChart {
                 // スライド: 始点と経由点に判定点
                 var pts = [BxSlidePoint(t: sec(n), lane: blk)]
                 for k in ks { pts.append(BxSlidePoint(t: sec(k), lane: block(k))) }
-                out.slides.append(BxSlide(pts: pts, sp: spOf(idx), dummy: dm, vis: visOf(idx)))
+                // 描く形: 曲線スライドは経由点をなめらかにつないだ細かい点、ふつうは経由点そのまま (判定点は経由点のまま)
+                let frac = { (lane: Int) -> Double in Double(3 + 2 * lane) / 18.0 }
+                var draw = pts.map { BxDrawPoint(t: $0.t, f: frac($0.lane)) }
+                if let src = entries[idx].source, Beatrix.isCurve(src) {
+                    draw = Beatrix.curvePoints(pts.map { $0.t }, pts.map { frac($0.lane) }).map { BxDrawPoint(t: $0.x, f: $0.y) }
+                }
+                out.slides.append(BxSlide(pts: pts, draw: draw, sp: spOf(idx), dummy: dm, vis: visOf(idx)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }
             }
         }

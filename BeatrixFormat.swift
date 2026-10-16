@@ -10,6 +10,8 @@ import Foundation
 //     "speeds_each": [ {"LPB": 4, "num": 240, "block": 3, "speed": 2.0}, ... ],
 //     "lyrics": [ {"LPB": 4, "num": 560, "text": "歌詞", "parts": [ {"LPB": 4, "num": 576, "parts": []} ]}, ... ],
 //                                                                  // 歌詞 (part と同じ形 + text。始まり〜終わりの間だけ表示)
+//     "curve": [ {"LPB": 4, "num": 128, "block": 3, "type": 2, "nth": 0}, ... ],
+//                  // 曲線スライド。指したスライドの見た目を、経由点をなめらかな曲線でつないだ形にする (判定の位置は経由点のまま)
 //     "dummy": [ {"LPB": 4, "num": 240, "block": 3}, ... ],         // ダミーノーツ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) は、流れてくるけど判定が無い
 //     "appear":    [ {"LPB": 4, "num": 256, "block": 3, "type": 2, "nth": 0, "atLPB": 4, "atNum": 248}, ... ],
@@ -65,6 +67,63 @@ enum Beatrix {
     static let speedKey = "bxSpeed"
     /// ダミーノーツ ("dummy")。true なら判定が無い
     static let dummyKey = "bxDummy"
+    /// 曲線スライド ("curve")。true なら、見た目だけ経由点をなめらかな曲線でつなぐ (判定の位置は経由点のまま)
+    static let curveKey = "bxCurve"
+
+    static func isCurve(_ n: Note) -> Bool {
+        (n.extra[curveKey] as? Bool) == true
+    }
+
+    /// 経由点 (x = 拍か秒、y = 横の位置) を、なめらかな曲線でつないだ細かい点の列にする。
+    /// 単調な 3 次の補間 (Fritsch–Carlson) なので、経由点を通り、経由点の間で行き過ぎ (はみ出し) が起きない。
+    /// 同じ位置が続くところ (まっすぐの区間) はまっすぐのまま。x が同じ (時間 0 の) 区間は直線でつなぐ
+    static func curvePoints(_ xs: [Double], _ ys: [Double], samples: Int = 16) -> [(x: Double, y: Double)] {
+        let n = xs.count
+        guard n >= 3, ys.count == n else { return zip(xs, ys).map { (x: $0, y: $1) } }
+        var d = [Double](repeating: 0, count: n - 1)
+        for k in 0..<(n - 1) {
+            let h = xs[k + 1] - xs[k]
+            d[k] = h > 1e-12 ? (ys[k + 1] - ys[k]) / h : 0
+        }
+        var m = [Double](repeating: 0, count: n)
+        m[0] = d[0]
+        m[n - 1] = d[n - 2]
+        for k in 1..<(n - 1) {
+            m[k] = d[k - 1] * d[k] <= 0 ? 0 : (d[k - 1] + d[k]) / 2
+        }
+        for k in 0..<(n - 1) {
+            if d[k] == 0 {
+                m[k] = 0
+                m[k + 1] = 0
+                continue
+            }
+            let a = m[k] / d[k]
+            let b = m[k + 1] / d[k]
+            let s = a * a + b * b
+            if s > 9 {
+                let tau = 3 / s.squareRoot()
+                m[k] = tau * a * d[k]
+                m[k + 1] = tau * b * d[k]
+            }
+        }
+        var out: [(x: Double, y: Double)] = [(x: xs[0], y: ys[0])]
+        for k in 0..<(n - 1) {
+            let h = xs[k + 1] - xs[k]
+            if h <= 1e-12 {
+                out.append((x: xs[k + 1], y: ys[k + 1]))
+                continue
+            }
+            for i in 1...samples {
+                let t = Double(i) / Double(samples)
+                let t2 = t * t
+                let t3 = t2 * t
+                let y = (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k]
+                    + (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * h * m[k + 1]
+                out.append((x: xs[k] + h * t, y: y))
+            }
+        }
+        return out
+    }
 
     static func isDummy(_ n: Note) -> Bool {
         (n.extra[dummyKey] as? Bool) == true
@@ -445,7 +504,7 @@ extension ChartData {
         }
 
         var b = obj
-        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear"] { b.removeValue(forKey: k) }
+        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve"] { b.removeValue(forKey: k) }
         let nameInfo = Beatrix.splitName((obj["name"] as? String) ?? "")
         b["name"] = nameInfo.title
         var diff = nameInfo.diff ?? .extreme
@@ -565,6 +624,10 @@ extension ChartData {
         for e in (obj["dummy"] as? [[String: Any]]) ?? [] {
             for ni in targets(e) { notes[ni].extra[Beatrix.dummyKey] = true }
         }
+        // 曲線スライド
+        for e in (obj["curve"] as? [[String: Any]]) ?? [] {
+            for ni in targets(e) where notes[ni].isSlide { notes[ni].extra[Beatrix.curveKey] = true }
+        }
         // 出現 / 消える (何回でも)
         for (jsonKey, key) in [("appear", Beatrix.appearKey), ("disappear", Beatrix.vanishKey)] {
             for e in (obj[jsonKey] as? [[String: Any]]) ?? [] {
@@ -609,6 +672,7 @@ extension ChartData {
         out["speeds"] = speeds
         out["speeds_each"] = beatrixSpeedsEach()
         out["dummy"] = beatrixDummies()
+        out["curve"] = beatrixTargets().filter { $0.note.isSlide && Beatrix.isCurve($0.note) }.map { $0.ref }
         out["appear"] = beatrixAtList(Beatrix.appearKey)
         out["disappear"] = beatrixAtList(Beatrix.vanishKey)
 
@@ -852,7 +916,7 @@ struct BeatrixKey: Hashable {
 
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
-                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "part", "lyrics", "notes"]
+                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve", "part", "lyrics", "notes"]
     static let innerOrder = ["LPB", "num", "block", "type", "nth", "bpm", "speed", "atLPB", "atNum", "text", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {

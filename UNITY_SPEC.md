@@ -28,6 +28,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
   "appear": [ {"LPB": 4, "num": 264, "block": 0, "type": 2, "nth": 1, "atLPB": 4, "atNum": 256} ],
   "disappear": [ {"LPB": 4, "num": 264, "block": 0, "type": 2, "nth": 0, "atLPB": 4, "atNum": 256},
                  {"LPB": 4, "num": 270, "block": 3, "type": 1, "nth": 0, "atLPB": 4, "atNum": 250} ],
+  "curve": [ {"LPB": 4, "num": 128, "block": 3, "type": 2, "nth": 0} ],
   "part": [ {"LPB": 4, "num": 512, "parts": [ {"LPB": 4, "num": 640, "parts": []} ]} ],
   "lyrics": [ {"LPB": 4, "num": 512, "text": "歌詞", "parts": [ {"LPB": 4, "num": 528, "parts": []} ]} ],
   "notes": [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []} ]
@@ -37,7 +38,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 - `name` は曲名だけ（`(EX)` などの略称は付けない）。略称はファイル名（`曲名(EX).json`）にだけ付ける
 - `difficulty`: 0 = BASIC / 1 = HARD / 2 = EXTREME / 3 = INSANE
 
-### 0-1. ノーツの指し方（`speeds_each` / `dummy` / `appear` / `disappear` 共通）（2026-10-15 変更）
+### 0-1. ノーツの指し方（`speeds_each` / `dummy` / `appear` / `disappear` / `curve` 共通）（2026-10-15 変更）
 
 同じ位置（同じ拍・同じ block）に、まっすぐのホールドとギザギザのスライドを重ねて入れ替える、のような演出ができるように、**位置だけでなく「どのノーツか」まで指す**ようにした。
 
@@ -62,6 +63,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 // JsonUtility は、JSON にキーが無いと 0 になる。type は 1〜4 しか使わないので、type == 0 なら「前の形式 (type 無し)」として扱えばよい
 [System.Serializable] public class SpeedEach   { public int LPB; public int num; public int block; public int type; public int nth; public float speed; }
 [System.Serializable] public class DummyEntry  { public int LPB; public int num; public int block; public int type; public int nth; }
+[System.Serializable] public class CurveEntry  { public int LPB; public int num; public int block; public int type; public int nth; }
 [System.Serializable] public class AppearEntry { public int LPB; public int num; public int block; public int type; public int nth; public int atLPB; public int atNum; }
 [System.Serializable] public class RangeEnd    { public int LPB; public int num; }
 [System.Serializable] public class PartEntry   { public int LPB; public int num; public List<RangeEnd> parts; }
@@ -74,6 +76,7 @@ public List<SpeedEach> speeds_each;
 public List<DummyEntry> dummy;
 public List<AppearEntry> appear;
 public List<AppearEntry> disappear;
+public List<CurveEntry> curve;
 public List<PartEntry> part;
 public List<LyricEntry> lyrics;
 ```
@@ -168,6 +171,57 @@ public List<LyricEntry> lyrics;
   1. 読み込み時に、各歌詞の始まり・終わりを秒にしておく（BPM 変化込み）
   2. 判定ラインの少し上に TextMeshPro（UI）を 1 つ置く
   3. 毎フレーム: 今の時刻を含む歌詞の `text` を入れる（無ければ空）。文字が変わったときだけ書き換える
+
+## 7-2. 曲線スライド（`curve`）（2026-10-16 追加）
+
+- `{"LPB", "num", "block", "type": 2, "nth"}`: 指したスライド（0-1 の指し方。`type` はいつも 2）を、**見た目だけ丸く**する
+  - ギザギザ（3 → 5 → 6 → 6 → 5 → 3 のような「く」の字）が、角の取れたなめらかなカーブで流れてくる
+  - **判定はそのまま**。判定点（始点と経由点）の時刻・レーンは今までと同じ。曲線は経由点を必ず通るので、判定点は帯の上に乗ったまま
+  - 項目が無いスライドは今までどおり（経由点を直線でつなぐ）。ホールド（まっすぐ）に付けても見た目は変わらない
+- **曲線の作り方**（エディタのテストプレイと同じ。単調 3 次補間 = Fritsch–Carlson）
+  - 点の列: 始点と経由点を時刻順に `(t[k], x[k])`。`t` は秒（BPM 変化込み）、`x` は横の位置（レーンの中心。`(3 + 2·block) / 18` などそっちで使っている値でよい）
+  - 経由点の数（始点込み）が 3 未満なら直線のまま
+  - 1. 傾き: `d[k] = (x[k+1] - x[k]) / (t[k+1] - t[k])`（`t` が同じなら 0）
+  - 2. 各点の接線: 両端は `m[0] = d[0]`、`m[n-1] = d[n-2]`。中は、`d[k-1]` と `d[k]` の符号が違う（または片方 0）なら `m[k] = 0`（**折り返しの点で行き過ぎない**）、同じ符号なら `(d[k-1] + d[k]) / 2`
+  - 3. `d[k] == 0`（同じレーンが続く区間）は `m[k] = m[k+1] = 0`（**まっすぐのところはまっすぐのまま**）
+  - 4. それ以外は `a = m[k]/d[k]`, `b = m[k+1]/d[k]`, `s = a² + b²` が 9 を超えたら `τ = 3/√s` で `m[k] = τ·a·d[k]`, `m[k+1] = τ·b·d[k]`
+  - 5. 区間ごとに 16 分割して、エルミート曲線で点を作る（`h = t[k+1] - t[k]`、`u` = 0〜1）:
+    `x(u) = (2u³ - 3u² + 1)·x[k] + (u³ - 2u² + u)·h·m[k] + (-2u³ + 3u²)·x[k+1] + (u³ - u²)·h·m[k+1]`、時刻は `t[k] + h·u`
+  - `t` が同じ（時間 0 の）区間は、補間せずに直線でつなぐ
+- C#（そのまま使える形）:
+
+```csharp
+// ts: 時刻(秒), xs: 横位置。戻り値: 描く点 (時刻, 横位置) の列
+public static List<Vector2> CurvePoints(float[] ts, float[] xs, int samples = 16) {
+    int n = ts.Length; var outp = new List<Vector2>();
+    if (n < 3) { for (int i = 0; i < n; i++) outp.Add(new Vector2(ts[i], xs[i])); return outp; }
+    var d = new float[n - 1]; var m = new float[n];
+    for (int k = 0; k < n - 1; k++) { float h = ts[k + 1] - ts[k]; d[k] = h > 1e-6f ? (xs[k + 1] - xs[k]) / h : 0f; }
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (int k = 1; k < n - 1; k++) m[k] = d[k - 1] * d[k] <= 0 ? 0 : (d[k - 1] + d[k]) / 2;
+    for (int k = 0; k < n - 1; k++) {
+        if (d[k] == 0) { m[k] = 0; m[k + 1] = 0; continue; }
+        float a = m[k] / d[k], b = m[k + 1] / d[k], s = a * a + b * b;
+        if (s > 9) { float tau = 3 / Mathf.Sqrt(s); m[k] = tau * a * d[k]; m[k + 1] = tau * b * d[k]; }
+    }
+    outp.Add(new Vector2(ts[0], xs[0]));
+    for (int k = 0; k < n - 1; k++) {
+        float h = ts[k + 1] - ts[k];
+        if (h <= 1e-6f) { outp.Add(new Vector2(ts[k + 1], xs[k + 1])); continue; }
+        for (int i = 1; i <= samples; i++) {
+            float u = (float)i / samples, u2 = u * u, u3 = u2 * u;
+            float x = (2*u3 - 3*u2 + 1) * xs[k] + (u3 - 2*u2 + u) * h * m[k] + (-2*u3 + 3*u2) * xs[k + 1] + (u3 - u2) * h * m[k + 1];
+            outp.Add(new Vector2(ts[k] + h * u, x));
+        }
+    }
+    return outp;
+}
+```
+
+- **実装の手順（案）**
+  1. NotesGenerate: `curve` で指したスライドに `isCurve = true` を付ける。判定点（始点・経由点）は今までどおり作る
+  2. 帯（メッシュ / LineRenderer）を作るところで、`isCurve` なら経由点の代わりに `CurvePoints` の点の列で帯を作る（細かい区間を今までの「2 点の間の帯」と同じやり方で並べるだけ）。ソフラン・`speeds_each` による位置の計算は、細かい点の時刻でそのまま行う
+  3. 判定・スコア・SE には触らない
 
 ## 8. 参考（変わっていないもの）
 

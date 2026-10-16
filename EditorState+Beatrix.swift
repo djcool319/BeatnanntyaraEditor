@@ -303,6 +303,36 @@ extension EditorState {
         showToast(toDummy ? "ダミーにしました (\(count) 個。判定なし)" : "ダミーを解除しました (\(count) 個)")
     }
 
+    // MARK: 曲線スライド (curve)
+
+    /// 選択中のスライドを 曲線 ⇔ 普通 で切り替える (選択の中に普通のスライドが 1 つでもあれば、全部曲線にする)。
+    /// 見た目 (エディタの帯 / テストプレイ) だけが丸くなる。判定の位置は経由点のまま
+    func toggleCurve() {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        let ids = selectedIDs
+        let sel = chart.notes.filter { ids.contains($0.id) && $0.isSlide }
+        if sel.isEmpty {
+            showToast("先にスライドを選択してください")
+            return
+        }
+        let toCurve = sel.contains { !Beatrix.isCurve($0) }
+        pushUndo()
+        var count = 0
+        for i in chart.notes.indices where ids.contains(chart.notes[i].id) && chart.notes[i].isSlide {
+            if toCurve {
+                chart.notes[i].extra[Beatrix.curveKey] = true
+            } else {
+                chart.notes[i].extra.removeValue(forKey: Beatrix.curveKey)
+            }
+            count += 1
+        }
+        chartChanged()
+        showToast(toCurve ? "曲線スライドにしました (\(count) 個。見た目だけ丸く、判定は今のまま)" : "曲線を解除しました (\(count) 個)")
+    }
+
     // MARK: part
 
     /// Part ツールでレーンをタップしたとき。

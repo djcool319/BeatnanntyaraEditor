@@ -306,12 +306,18 @@ enum LaneRenderer {
             let fill = k == 0 ? Color(red: 1.0, green: 0.24, blue: 0.24) : Color(red: 0.35, green: 0.78, blue: 1.0)
             let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
             let sb = n.beat.value
-            var prevB = sb
-            var prevX = Double(n.x)
             // 表示範囲に掛かっている区間だけを塗る (drawNotes のリボンと同じ切り詰め)
-            for s in n.segs {
-                let curB = sb + s.beat.value
-                let curX = Double(n.x + s.x)
+            // 帯の形 (曲線スライドは、経由点をなめらかにつないだ細かい点。ふつうは経由点そのまま)
+            var shape: [(b: Double, x: Double)] = [(b: sb, x: Double(n.x))]
+            for s in n.segs { shape.append((b: sb + s.beat.value, x: Double(n.x + s.x))) }
+            if Beatrix.isCurve(n) && shape.count >= 3 && zip(shape, shape.dropFirst()).allSatisfy({ $0.b <= $1.b }) {
+                shape = Beatrix.curvePoints(shape.map { $0.b }, shape.map { $0.x }).map { (b: $0.x, x: $0.y) }
+            }
+            for idx in 1..<max(1, shape.count) {
+                let prevB = shape[idx - 1].b
+                let prevX = shape[idx - 1].x
+                let curB = shape[idx].b
+                let curX = shape[idx].x
                 if max(prevB, curB) >= lo && min(prevB, curB) <= hi {
                     var ta = 0.0
                     var tb = 1.0
@@ -334,8 +340,6 @@ enum LaneRenderer {
                         c.fill(q, with: .color(fill.opacity(0.42)))
                     }
                 }
-                prevB = curB
-                prevX = curX
             }
             let y0 = g.py(sb)
             if y0 > -20 && y0 < g.H + 20 {
@@ -528,16 +532,22 @@ enum LaneRenderer {
             let isSel = !selected.isEmpty && selected.contains(n.id)
             let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
             let sb = n.beat.value
-            var prevB = sb
-            var prevX = Double(n.x)
             let y0 = g.py(sb)
             if y0 > -24 && y0 < g.H + 24 {
-                let p0 = CGPoint(x: g.px(prevX), y: y0)
+                let p0 = CGPoint(x: g.px(Double(n.x)), y: y0)
                 if isSel { selDots.append(p0) } else { dots.append(p0) }
             }
-            for s in n.segs {
-                let curB = sb + s.beat.value
-                let curX = Double(n.x + s.x)
+            // 帯の形 (曲線スライドは、経由点をなめらかにつないだ細かい点。ふつうは経由点そのまま)
+            var shape: [(b: Double, x: Double)] = [(b: sb, x: Double(n.x))]
+            for s in n.segs { shape.append((b: sb + s.beat.value, x: Double(n.x + s.x))) }
+            if Beatrix.isCurve(n) && shape.count >= 3 && zip(shape, shape.dropFirst()).allSatisfy({ $0.b <= $1.b }) {
+                shape = Beatrix.curvePoints(shape.map { $0.b }, shape.map { $0.x }).map { (b: $0.x, x: $0.y) }
+            }
+            for idx in 1..<max(1, shape.count) {
+                let prevB = shape[idx - 1].b
+                let prevX = shape[idx - 1].x
+                let curB = shape[idx].b
+                let curX = shape[idx].x
                 if max(prevB, curB) >= lo && min(prevB, curB) <= hi {
                     var ta = 0.0
                     var tb = 1.0
@@ -562,13 +572,15 @@ enum LaneRenderer {
                             .opacity(Beatrix.isDummy(n) ? 0.35 : 1)))
                     }
                 }
+            }
+            for s in n.segs {
+                let curB = sb + s.beat.value
+                let curX = Double(n.x + s.x)
                 let cy = g.py(curB)
                 if cy > -24 && cy < g.H + 24 {
                     let pt = CGPoint(x: g.px(curX), y: cy)
                     dots.append(pt)                         // seg の点は、選択中でも通常の色のまま (本家は、赤くなるのは始点とリボンだけ)
                 }
-                prevB = curB
-                prevX = curX
             }
         }
         var redKeys = Set<BeatrixKey>()
