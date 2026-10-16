@@ -222,6 +222,7 @@ public static List<Vector2> CurvePoints(float[] ts, float[] xs, int samples = 16
   1. NotesGenerate: `curve` で指したスライドに `isCurve = true` を付ける。判定点（始点・経由点）は今までどおり作る
   2. 帯（メッシュ / LineRenderer）を作るところで、`isCurve` なら経由点の代わりに `CurvePoints` の点の列で帯を作る（細かい区間を今までの「2 点の間の帯」と同じやり方で並べるだけ）。ソフラン・`speeds_each` による位置の計算は、細かい点の時刻でそのまま行う
   3. 判定・スコア・SE には触らない
+- 補足: エディタの **Curve bake** は、曲線に沿って中継点を足すだけ（JSON では普通の経由点）なので、Unity 側の追加対応は要らない
 
 ## 8. 参考（変わっていないもの）
 

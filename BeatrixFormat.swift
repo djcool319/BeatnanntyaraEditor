@@ -77,14 +77,16 @@ enum Beatrix {
     /// 経由点 (x = 拍か秒、y = 横の位置) を、なめらかな曲線でつないだ細かい点の列にする。
     /// 単調な 3 次の補間 (Fritsch–Carlson) なので、経由点を通り、経由点の間で行き過ぎ (はみ出し) が起きない。
     /// 同じ位置が続くところ (まっすぐの区間) はまっすぐのまま。x が同じ (時間 0 の) 区間は直線でつなぐ
-    static func curvePoints(_ xs: [Double], _ ys: [Double], samples: Int = 16) -> [(x: Double, y: Double)] {
+    /// curvePoints の各経由点での傾き (単調 3 次補間 Fritsch–Carlson)。点が 3 個未満なら直線の傾き
+    static func curveTangents(_ xs: [Double], _ ys: [Double]) -> [Double] {
         let n = xs.count
-        guard n >= 3, ys.count == n else { return zip(xs, ys).map { (x: $0, y: $1) } }
+        guard n >= 2, ys.count == n else { return [Double](repeating: 0, count: n) }
         var d = [Double](repeating: 0, count: n - 1)
         for k in 0..<(n - 1) {
             let h = xs[k + 1] - xs[k]
             d[k] = h > 1e-12 ? (ys[k + 1] - ys[k]) / h : 0
         }
+        if n == 2 { return [d[0], d[0]] }
         var m = [Double](repeating: 0, count: n)
         m[0] = d[0]
         m[n - 1] = d[n - 2]
@@ -106,6 +108,22 @@ enum Beatrix {
                 m[k + 1] = tau * b * d[k]
             }
         }
+        return m
+    }
+
+    /// 区間 k の中の位置 (u = 0〜1) での曲線の値 (エルミート曲線)
+    static func curveValue(_ xs: [Double], _ ys: [Double], _ m: [Double], segment k: Int, u t: Double) -> Double {
+        let h = xs[k + 1] - xs[k]
+        let t2 = t * t
+        let t3 = t2 * t
+        return (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k]
+            + (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * h * m[k + 1]
+    }
+
+    static func curvePoints(_ xs: [Double], _ ys: [Double], samples: Int = 16) -> [(x: Double, y: Double)] {
+        let n = xs.count
+        guard n >= 3, ys.count == n else { return zip(xs, ys).map { (x: $0, y: $1) } }
+        let m = curveTangents(xs, ys)
         var out: [(x: Double, y: Double)] = [(x: xs[0], y: ys[0])]
         for k in 0..<(n - 1) {
             let h = xs[k + 1] - xs[k]
@@ -115,11 +133,7 @@ enum Beatrix {
             }
             for i in 1...samples {
                 let t = Double(i) / Double(samples)
-                let t2 = t * t
-                let t3 = t2 * t
-                let y = (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k]
-                    + (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * h * m[k + 1]
-                out.append((x: xs[k] + h * t, y: y))
+                out.append((x: xs[k] + h * t, y: curveValue(xs, ys, m, segment: k, u: t)))
             }
         }
         return out

@@ -1032,7 +1032,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 16
+    private static let moreRowCount = 17
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1107,7 +1107,7 @@ struct EditorView: View {
                         ])
                 }
             }
-          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 5 つも Group にまとめる
+          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 6 つも Group にまとめる
           Group {
             // 歌詞 (始点 → 終点をタップして文字を入れる。区間の中をタップで編集・削除)
             moreItem("Lyrics", icon: .timeRange, active: state.tool == .lyrics) {
@@ -1124,6 +1124,11 @@ struct EditorView: View {
             moreItem("Curve", icon: .slideModify, dim: state.selectedIDs.isEmpty) {
                 state.popup = .none
                 state.toggleCurve()
+            }
+            // 曲線の焼き込み (曲線に沿って中継点を足す。判定点が増える)
+            moreItem("Curve bake", icon: .slideModify, dim: state.selectedIDs.isEmpty) {
+                state.popup = .none
+                state.bakeCurve()
             }
           }
         }

@@ -333,6 +333,89 @@ extension EditorState {
         showToast(toCurve ? "曲線スライドにしました (\(count) 個。見た目だけ丸く、判定は今のまま)" : "曲線を解除しました (\(count) 個)")
     }
 
+    /// 選択中のスライドの曲線を「焼き込む」: 曲線をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。
+    /// 例: 3 → 5 の区間なら、曲線が 4 を通る拍 (1/16 拍に合わせる。入らなければ 1/48 拍) に 4 の中継点を入れる。
+    /// 判定点が増える (スコア・ノーツ数が変わる)。曲線 (curve) の印は付けたまま (見た目も丸いまま)
+    func bakeCurve() {
+        if isPlaying {
+            showToast("再生中は編集できません。停止してから操作してください")
+            return
+        }
+        let ids = selectedIDs
+        let idx = chart.notes.indices.filter { ids.contains(chart.notes[$0].id) && chart.notes[$0].isSlide }
+        if idx.isEmpty {
+            showToast("先にスライドを選択してください")
+            return
+        }
+        var newSegs: [Int: [Seg]] = [:]
+        var added = 0
+        for i in idx {
+            let n = chart.notes[i]
+            var beats: [Beat] = [n.beat]
+            var lanes: [Int] = [Beatrix.block(ofX: Double(n.x))]
+            for sg in n.segs {
+                beats.append(n.beat + sg.beat)
+                lanes.append(Beatrix.block(ofX: Double(n.x + sg.x)))
+            }
+            guard beats.count >= 2, zip(beats, beats.dropFirst()).allSatisfy({ $0 <= $1 }) else { continue }
+            let xs = beats.map { $0.value }
+            let ys = lanes.map { Double($0) }
+            let m = Beatrix.curveTangents(xs, ys)
+            var out: [Seg] = []
+            var count = 0
+            for k in 0..<(beats.count - 1) {
+                let a = lanes[k]
+                let b = lanes[k + 1]
+                if abs(b - a) >= 2 && beats[k] < beats[k + 1] {
+                    let dir = b > a ? 1 : -1
+                    var last = beats[k]
+                    var lane = a + dir
+                    while lane != b {
+                        // 曲線が lane を通る位置 (区間の中は単調なので二分探索)
+                        var lo = 0.0
+                        var hi = 1.0
+                        for _ in 0..<40 {
+                            let mid = (lo + hi) / 2
+                            let v = Beatrix.curveValue(xs, ys, m, segment: k, u: mid)
+                            if (v - Double(lane)) * Double(dir) < 0 { lo = mid } else { hi = mid }
+                        }
+                        let target = xs[k] + (xs[k + 1] - xs[k]) * (lo + hi) / 2
+                        var put: Beat? = nil
+                        for den in [16, 48, 192] {
+                            let c = Beat.nearest(target, den: den)
+                            if last < c && c < beats[k + 1] {
+                                put = c
+                                break
+                            }
+                        }
+                        if let c = put {
+                            out.append(Seg(beat: c - n.beat, x: Beatrix.centerX(ofBlock: lane) - n.x))
+                            last = c
+                            count += 1
+                        }
+                        lane += dir
+                    }
+                }
+                out.append(n.segs[k])
+            }
+            if count > 0 {
+                newSegs[i] = out
+                added += count
+            }
+        }
+        if added == 0 {
+            showToast("足す中継点はありません (レーンが 2 つ以上飛ぶところが無い)")
+            return
+        }
+        pushUndo()
+        for (i, segs) in newSegs {
+            chart.notes[i].segs = segs
+            chart.notes[i].extra[Beatrix.curveKey] = true
+        }
+        chartChanged()
+        showToast("曲線に沿って中継点を \(added) 個足しました (\(newSegs.count) 本。判定点が増えます)")
+    }
+
     // MARK: part
 
     /// Part ツールでレーンをタップしたとき。

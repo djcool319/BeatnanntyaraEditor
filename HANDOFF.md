@@ -678,3 +678,4 @@
 - エディタの帯（Renderers.drawNotes / drawOrder）と、テストプレイの帯（BxSlide.draw → BeatrixGameView）の両方が曲線になる
 - JSON: `"curve": [ {"LPB","num","block","type":2,"nth"} ]`（disappear の後、part の前）。読み込みも対応
 - Unity 向けの説明は UNITY_SPEC.md の 7-2 章（C# の CurvePoints 付き）
+- More → **Curve bake**（EditorState.bakeCurve）: 曲線（Beatrix.curveTangents / curveValue。拍とレーン番号で計算）をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。曲線がそのレーンを通る拍を二分探索で求め、1/16 拍（入らなければ 1/48 → 1/192）に合わせる。判定点が増える。curve の印は付けたまま。JSON は普通の経由点として出るので、Unity 側の追加対応は不要
