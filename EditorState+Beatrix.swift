@@ -334,7 +334,7 @@ extension EditorState {
     }
 
     /// 選択中のスライドの曲線を「焼き込む」: 曲線をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。
-    /// 例: 3 → 5 の区間なら、曲線が 4 を通る拍 (1/16 拍に合わせる。入らなければ 1/48 拍) に 4 の中継点を入れる。
+    /// 例: 3 → 5 の区間なら、曲線が 4 を通る拍に 4 の中継点を入れる (曲線から 0.15 レーン以内になる、いちばん粗い拍 (1/16〜1/384) に合わせる)。
     /// 判定点が増える (スコア・ノーツ数が変わる)。曲線 (curve) の印は付けたまま (見た目も丸いまま)
     func bakeCurve() {
         if isPlaying {
@@ -379,14 +379,22 @@ extension EditorState {
                             let v = Beatrix.curveValue(xs, ys, m, segment: k, u: mid)
                             if (v - Double(lane)) * Double(dir) < 0 { lo = mid } else { hi = mid }
                         }
-                        let target = xs[k] + (xs[k + 1] - xs[k]) * (lo + hi) / 2
+                        let h = xs[k + 1] - xs[k]
+                        let target = xs[k] + h * (lo + hi) / 2
+                        // 拍に合わせると、曲線からずれる (1/16 拍だと最大 1 レーン近くずれて、丸く見えなくなる)。
+                        // 粗いほうの拍から順に試して、合わせた拍での曲線の位置が lane から 0.15 レーン以内に収まる、いちばん粗い拍を使う。
+                        // どれも収まらなければ、いちばんずれの小さい拍
                         var put: Beat? = nil
-                        for den in [16, 48, 192] {
+                        var bestErr = Double.greatestFiniteMagnitude
+                        for den in [16, 32, 48, 64, 96, 192, 384] {
                             let c = Beat.nearest(target, den: den)
-                            if last < c && c < beats[k + 1] {
+                            guard last < c && c < beats[k + 1] else { continue }
+                            let err = abs(Beatrix.curveValue(xs, ys, m, segment: k, u: (c.value - xs[k]) / h) - Double(lane))
+                            if err < bestErr {
+                                bestErr = err
                                 put = c
-                                break
                             }
+                            if err <= 0.15 { break }
                         }
                         if let c = put {
                             out.append(Seg(beat: c - n.beat, x: Beatrix.centerX(ofBlock: lane) - n.x))
