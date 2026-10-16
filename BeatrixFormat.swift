@@ -115,9 +115,78 @@ enum Beatrix {
         return m
     }
 
-    /// 区間 k の中の位置 (u = 0〜1) での曲線の値 (エルミート曲線)
-    static func curveValue(_ xs: [Double], _ ys: [Double], _ m: [Double], segment k: Int, u t: Double) -> Double {
+    /// 曲線の描き方の計画。区間ごとに 0 = エルミート曲線 / 1 = 円 (始まり側) / 2 = 円 (終わり側) と、円をかける範囲 (点の番号 rs〜re)
+    struct CurvePlan {
+        var shape: [Int]
+        var rs: [Int]
+        var re: [Int]
+    }
+
+    /// 円 (4 分の 1 の円 f(u) = √(1 − (1 − u)²)) をかける範囲を決める。
+    /// ・始点から同じ向きに進んで、折り返す (または止まる) 点までのひと続き → 真横から出て、ぐるっと回って縦に収まる
+    /// ・折り返す (または止まる) 点から、同じ向きに進んで終点までのひと続き → 縦から出て、ぐるっと回って真横で終わる
+    /// ひと続きの途中に点があるとき (Curve bake で足した点など) は、どの点も円から幅の 1 割以内にあるときだけ、まとめて 1 つの円にする
+    /// (離れていたら、判定点が帯から外れないように、ふつうの曲線のまま)
+    static func curvePlan(_ xs: [Double], _ ys: [Double]) -> CurvePlan {
+        let n = ys.count
+        var plan = CurvePlan(shape: [Int](repeating: 0, count: max(0, n - 1)),
+                             rs: Array(0..<max(0, n - 1)), re: Array(1..<max(1, n)))
+        guard n >= 3, xs.count == n else { return plan }
+        func fits(_ rs: Int, _ re: Int, _ kind: Int) -> Bool {
+            let span = xs[re] - xs[rs]
+            guard span > 1e-12 else { return false }
+            let tol = abs(ys[re] - ys[rs]) * 0.1
+            for i in (rs + 1)..<re {
+                guard xs[i] > xs[i - 1] - 1e-12 else { return false }
+                let v = arc(ys[rs], ys[re], (xs[i] - xs[rs]) / span, kind)
+                if abs(v - ys[i]) > tol { return false }
+            }
+            return true
+        }
+        // 始まり側
+        var headEnd = -1
+        let d0 = ys[1] - ys[0]
+        if d0 != 0 {
+            var j = 1
+            while j + 1 < n && (ys[j + 1] - ys[j]) * d0 > 0 { j += 1 }
+            if j < n - 1 && fits(0, j, 1) {
+                for k in 0..<j { plan.shape[k] = 1; plan.rs[k] = 0; plan.re[k] = j }
+                headEnd = j
+            }
+        }
+        // 終わり側
+        let dl = ys[n - 1] - ys[n - 2]
+        if dl != 0 {
+            var i = n - 2
+            while i - 1 >= 0 && (ys[i] - ys[i - 1]) * dl > 0 { i -= 1 }
+            if i > 0 && i >= headEnd && fits(i, n - 1, 2) {
+                for k in i..<(n - 1) { plan.shape[k] = 2; plan.rs[k] = i; plan.re[k] = n - 1 }
+            }
+        }
+        return plan
+    }
+
+    /// a → b の 4 分の 1 の円。kind 1 = 横に速く出て縦に収まる / 2 = 縦から出て横に速く終わる
+    static func arc(_ a: Double, _ b: Double, _ u: Double, _ kind: Int) -> Double {
+        let t = min(1, max(0, u))
+        if kind == 1 {
+            let v = 1 - t
+            return a + (b - a) * (1 - v * v).squareRoot()
+        }
+        return a + (b - a) * (1 - (1 - t * t).squareRoot())
+    }
+
+    /// 区間 k の中の位置 (u = 0〜1) での曲線の値
+    static func curveValue(_ xs: [Double], _ ys: [Double], _ m: [Double], _ plan: CurvePlan, segment k: Int, u t: Double) -> Double {
         let h = xs[k + 1] - xs[k]
+        let shape = k < plan.shape.count ? plan.shape[k] : 0
+        if shape != 0 {
+            let rs = plan.rs[k]
+            let re = plan.re[k]
+            let span = xs[re] - xs[rs]
+            let x = xs[k] + h * t
+            return arc(ys[rs], ys[re], span > 1e-12 ? (x - xs[rs]) / span : t, shape)
+        }
         let t2 = t * t
         let t3 = t2 * t
         return (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k]
@@ -128,6 +197,7 @@ enum Beatrix {
         let n = xs.count
         guard n >= 3, ys.count == n else { return zip(xs, ys).map { (x: $0, y: $1) } }
         let m = curveTangents(xs, ys)
+        let plan = curvePlan(xs, ys)
         var out: [(x: Double, y: Double)] = [(x: xs[0], y: ys[0])]
         for k in 0..<(n - 1) {
             let h = xs[k + 1] - xs[k]
@@ -135,9 +205,15 @@ enum Beatrix {
                 out.append((x: xs[k + 1], y: ys[k + 1]))
                 continue
             }
-            for i in 1...samples {
-                let t = Double(i) / Double(samples)
-                out.append((x: xs[k] + h * t, y: curveValue(xs, ys, m, segment: k, u: t)))
+            let shape = plan.shape[k]
+            let cnt = shape == 0 ? samples : samples * 2
+            for i in 1...cnt {
+                let s = Double(i) / Double(cnt)
+                // 円の区間は、横に速く動く側 (円の始め / 終わり) ほど細かく刻む (帯がカクッとしないように)
+                var t = s
+                if shape == 1 && k == plan.rs[k] { t = s * s }
+                if shape == 2 && k + 1 == plan.re[k] { t = 1 - (1 - s) * (1 - s) }
+                out.append((x: xs[k] + h * t, y: curveValue(xs, ys, m, plan, segment: k, u: t)))
             }
         }
         return out

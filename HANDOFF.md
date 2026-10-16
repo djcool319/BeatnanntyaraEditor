@@ -680,3 +680,5 @@
 - Unity 向けの説明は UNITY_SPEC.md の 7-2 章（C# の CurvePoints 付き）
 - More → **Curve bake**（EditorState.bakeCurve）: 曲線（Beatrix.curveTangents / curveValue。拍とレーン番号で計算）をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。曲線がそのレーンを通る拍を二分探索で求め、曲線から 0.15 レーン以内に収まるいちばん粗い拍（1/16 → 1/32 → 1/48 → 1/64 → 1/96 → 1/192 → 1/384）に合わせる（1/16 固定だと最大 1 レーン近くずれて、焼き込み後に丸く見えなかった）。判定点が増える。curve の印は付けたまま。JSON は普通の経由点として出るので、Unity 側の追加対応は不要
 - 曲線の形を変更（2026-10-16）: Fritsch–Carlson（中は平均、端は区間の傾きそのまま）だと「まっすぐ → 折り返し直前で急に曲がる」形になり、Curve bake 後に角が見えた。中の点は間隔で重みを付けた調和平均（PCHIP）、端は次で折り返すなら区間の傾きの 2 倍（放物線）・それ以外は 3 点の式、にした（Beatrix.curveTangents）。UNITY_SPEC.md 7-2 の式と C# も更新
+- 曲線に 4 分の 1 の円を追加（2026-10-16、ユーザー提案の f(t) = √(1 − (1 − t)²)）: 始点から同じ向きに進んで折り返す・止まる点までのひと続きと、折り返す・止まる点から終点までのひと続きを、円で描く（Beatrix.curvePlan / arc）。途中の点が円から幅の 1 割以内のときだけ（bake の点は収まる）。それ以外は PCHIP。Curve bake も同じ曲線をなぞる
+- Unity 用に `unity/SlideCurve.cs`（新規）と `unity/SlideFollower.cs`（ユーザーの LineRenderer 版を元に、曲線の帯を描く処理を足したもの。まるごと差し替え）を置いた。UNITY_SPEC.md 7-2

@@ -361,6 +361,7 @@ extension EditorState {
             let xs = beats.map { $0.value }
             let ys = lanes.map { Double($0) }
             let m = Beatrix.curveTangents(xs, ys)
+            let plan = Beatrix.curvePlan(xs, ys)
             var out: [Seg] = []
             var count = 0
             for k in 0..<(beats.count - 1) {
@@ -376,7 +377,7 @@ extension EditorState {
                         var hi = 1.0
                         for _ in 0..<40 {
                             let mid = (lo + hi) / 2
-                            let v = Beatrix.curveValue(xs, ys, m, segment: k, u: mid)
+                            let v = Beatrix.curveValue(xs, ys, m, plan, segment: k, u: mid)
                             if (v - Double(lane)) * Double(dir) < 0 { lo = mid } else { hi = mid }
                         }
                         let h = xs[k + 1] - xs[k]
@@ -389,7 +390,7 @@ extension EditorState {
                         for den in [16, 32, 48, 64, 96, 192, 384] {
                             let c = Beat.nearest(target, den: den)
                             guard last < c && c < beats[k + 1] else { continue }
-                            let err = abs(Beatrix.curveValue(xs, ys, m, segment: k, u: (c.value - xs[k]) / h) - Double(lane))
+                            let err = abs(Beatrix.curveValue(xs, ys, m, plan, segment: k, u: (c.value - xs[k]) / h) - Double(lane))
                             if err < bestErr {
                                 bestErr = err
                                 put = c
