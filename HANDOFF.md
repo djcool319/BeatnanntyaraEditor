@@ -674,8 +674,9 @@
 
 - More → **Curve**: 選んだスライドを 曲線 ⇔ 普通 で切り替える（EditorState.toggleCurve。選んだスライドだけ。extra の bxCurve = true）
 - 見た目だけ丸くする。判定点（始点・経由点）の時刻・レーンは変えない。曲線は経由点を必ず通る
-- 曲線の計算は Beatrix.curvePoints（単調 3 次補間 Fritsch–Carlson、区間ごとに 16 分割）。折り返しの点と、同じレーンが続く区間では行き過ぎない（まっすぐはまっすぐ）
+- 曲線の計算は Beatrix.curvePoints（単調 3 次補間 PCHIP、区間ごとに 16 分割）。折り返しの点と、同じレーンが続く区間では行き過ぎない（まっすぐはまっすぐ）
 - エディタの帯（Renderers.drawNotes / drawOrder）と、テストプレイの帯（BxSlide.draw → BeatrixGameView）の両方が曲線になる
 - JSON: `"curve": [ {"LPB","num","block","type":2,"nth"} ]`（disappear の後、part の前）。読み込みも対応
 - Unity 向けの説明は UNITY_SPEC.md の 7-2 章（C# の CurvePoints 付き）
 - More → **Curve bake**（EditorState.bakeCurve）: 曲線（Beatrix.curveTangents / curveValue。拍とレーン番号で計算）をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。曲線がそのレーンを通る拍を二分探索で求め、曲線から 0.15 レーン以内に収まるいちばん粗い拍（1/16 → 1/32 → 1/48 → 1/64 → 1/96 → 1/192 → 1/384）に合わせる（1/16 固定だと最大 1 レーン近くずれて、焼き込み後に丸く見えなかった）。判定点が増える。curve の印は付けたまま。JSON は普通の経由点として出るので、Unity 側の追加対応は不要
+- 曲線の形を変更（2026-10-16）: Fritsch–Carlson（中は平均、端は区間の傾きそのまま）だと「まっすぐ → 折り返し直前で急に曲がる」形になり、Curve bake 後に角が見えた。中の点は間隔で重みを付けた調和平均（PCHIP）、端は次で折り返すなら区間の傾きの 2 倍（放物線）・それ以外は 3 点の式、にした（Beatrix.curveTangents）。UNITY_SPEC.md 7-2 の式と C# も更新

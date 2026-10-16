@@ -75,39 +75,43 @@ enum Beatrix {
     }
 
     /// 経由点 (x = 拍か秒、y = 横の位置) を、なめらかな曲線でつないだ細かい点の列にする。
-    /// 単調な 3 次の補間 (Fritsch–Carlson) なので、経由点を通り、経由点の間で行き過ぎ (はみ出し) が起きない。
+    /// 単調な 3 次の補間 (PCHIP。傾きは curveTangents) なので、経由点を通り、経由点の間で行き過ぎ (はみ出し) が起きない。
     /// 同じ位置が続くところ (まっすぐの区間) はまっすぐのまま。x が同じ (時間 0 の) 区間は直線でつなぐ
-    /// curvePoints の各経由点での傾き (単調 3 次補間 Fritsch–Carlson)。点が 3 個未満なら直線の傾き
+    /// curvePoints の各経由点での傾き。
+    /// ・中の点: 前後の傾きの向きが違う (折り返し) か片方が 0 なら 0 (行き過ぎない)。同じ向きなら、間隔で重みを付けた調和平均 (PCHIP)。
+    ///   間隔がばらばら (Curve bake で足した点など) でも、角ができにくい
+    /// ・両端: 次の区間で折り返す (または止まる) なら、端の傾きを区間の傾きの 2 倍にする (= 放物線。曲がり方が区間全体に均等に広がって丸く見える)。
+    ///   そうでなければ 3 点の式 ((2h0 + h1)·d0 − h0·d1) / (h0 + h1) (向きが逆なら 0、3·d0 を超えたら 3·d0)
     static func curveTangents(_ xs: [Double], _ ys: [Double]) -> [Double] {
         let n = xs.count
         guard n >= 2, ys.count == n else { return [Double](repeating: 0, count: n) }
+        var h = [Double](repeating: 0, count: n - 1)
         var d = [Double](repeating: 0, count: n - 1)
         for k in 0..<(n - 1) {
-            let h = xs[k + 1] - xs[k]
-            d[k] = h > 1e-12 ? (ys[k + 1] - ys[k]) / h : 0
+            h[k] = xs[k + 1] - xs[k]
+            d[k] = h[k] > 1e-12 ? (ys[k + 1] - ys[k]) / h[k] : 0
         }
         if n == 2 { return [d[0], d[0]] }
         var m = [Double](repeating: 0, count: n)
-        m[0] = d[0]
-        m[n - 1] = d[n - 2]
         for k in 1..<(n - 1) {
-            m[k] = d[k - 1] * d[k] <= 0 ? 0 : (d[k - 1] + d[k]) / 2
-        }
-        for k in 0..<(n - 1) {
-            if d[k] == 0 {
+            if d[k - 1] * d[k] <= 0 {
                 m[k] = 0
-                m[k + 1] = 0
-                continue
-            }
-            let a = m[k] / d[k]
-            let b = m[k + 1] / d[k]
-            let s = a * a + b * b
-            if s > 9 {
-                let tau = 3 / s.squareRoot()
-                m[k] = tau * a * d[k]
-                m[k + 1] = tau * b * d[k]
+            } else {
+                let w1 = 2 * h[k] + h[k - 1]
+                let w2 = h[k] + 2 * h[k - 1]
+                m[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k])
             }
         }
+        func end(_ h0: Double, _ h1: Double, _ d0: Double, _ d1: Double) -> Double {
+            if d0 == 0 { return 0 }
+            if d0 * d1 <= 0 { return 2 * d0 }
+            let e = ((2 * h0 + h1) * d0 - h0 * d1) / max(1e-12, h0 + h1)
+            if e * d0 <= 0 { return 0 }
+            if abs(e) > abs(3 * d0) { return 3 * d0 }
+            return e
+        }
+        m[0] = end(h[0], h[1], d[0], d[1])
+        m[n - 1] = end(h[n - 2], h[n - 3], d[n - 2], d[n - 3])
         return m
     }
 

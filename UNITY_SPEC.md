@@ -178,15 +178,17 @@ public List<LyricEntry> lyrics;
   - ギザギザ（3 → 5 → 6 → 6 → 5 → 3 のような「く」の字）が、角の取れたなめらかなカーブで流れてくる
   - **判定はそのまま**。判定点（始点と経由点）の時刻・レーンは今までと同じ。曲線は経由点を必ず通るので、判定点は帯の上に乗ったまま
   - 項目が無いスライドは今までどおり（経由点を直線でつなぐ）。ホールド（まっすぐ）に付けても見た目は変わらない
-- **曲線の作り方**（エディタのテストプレイと同じ。単調 3 次補間 = Fritsch–Carlson）
+- **曲線の作り方**（エディタのテストプレイと同じ。単調 3 次補間 = PCHIP）（2026-10-16 更新: もっと丸く見えるように端の傾きと中の傾きの決め方を変えた）
   - 点の列: 始点と経由点を時刻順に `(t[k], x[k])`。`t` は秒（BPM 変化込み）、`x` は横の位置（レーンの中心。`(3 + 2·block) / 18` などそっちで使っている値でよい）
   - 経由点の数（始点込み）が 3 未満なら直線のまま
-  - 1. 傾き: `d[k] = (x[k+1] - x[k]) / (t[k+1] - t[k])`（`t` が同じなら 0）
-  - 2. 各点の接線: 両端は `m[0] = d[0]`、`m[n-1] = d[n-2]`。中は、`d[k-1]` と `d[k]` の符号が違う（または片方 0）なら `m[k] = 0`（**折り返しの点で行き過ぎない**）、同じ符号なら `(d[k-1] + d[k]) / 2`
-  - 3. `d[k] == 0`（同じレーンが続く区間）は `m[k] = m[k+1] = 0`（**まっすぐのところはまっすぐのまま**）
-  - 4. それ以外は `a = m[k]/d[k]`, `b = m[k+1]/d[k]`, `s = a² + b²` が 9 を超えたら `τ = 3/√s` で `m[k] = τ·a·d[k]`, `m[k+1] = τ·b·d[k]`
-  - 5. 区間ごとに 16 分割して、エルミート曲線で点を作る（`h = t[k+1] - t[k]`、`u` = 0〜1）:
-    `x(u) = (2u³ - 3u² + 1)·x[k] + (u³ - 2u² + u)·h·m[k] + (-2u³ + 3u²)·x[k+1] + (u³ - u²)·h·m[k+1]`、時刻は `t[k] + h·u`
+  - 1. 間隔と傾き: `h[k] = t[k+1] - t[k]`、`d[k] = (x[k+1] - x[k]) / h[k]`（`h` が 0 なら `d` は 0）
+  - 2. 中の点の接線 `m[k]`: `d[k-1]` と `d[k]` の符号が違う（または片方 0）なら `0`（**折り返しの点で行き過ぎない**）。同じ符号なら、間隔で重みを付けた調和平均: `w1 = 2h[k] + h[k-1]`, `w2 = h[k] + 2h[k-1]`, `m[k] = (w1 + w2) / (w1/d[k-1] + w2/d[k])`
+  - 3. 両端の接線（始点は `h0=h[0], h1=h[1], d0=d[0], d1=d[1]`、終点は `h0=h[n-2], h1=h[n-3], d0=d[n-2], d1=d[n-3]`）:
+    - `d0 == 0` なら `0`
+    - `d0` と `d1` の符号が違う（または `d1 == 0`）なら `2·d0`（**放物線になって、曲がりが区間全体に広がるので丸く見える**）
+    - それ以外は `e = ((2h0 + h1)·d0 - h0·d1) / (h0 + h1)`。`e` が `d0` と逆向きなら `0`、`|e| > |3·d0|` なら `3·d0`、それ以外は `e`
+  - 4. 区間ごとに 16 分割して、エルミート曲線で点を作る（`u` = 0〜1）:
+    `x(u) = (2u³ - 3u² + 1)·x[k] + (u³ - 2u² + u)·h[k]·m[k] + (-2u³ + 3u²)·x[k+1] + (u³ - u²)·h[k]·m[k+1]`、時刻は `t[k] + h[k]·u`
   - `t` が同じ（時間 0 の）区間は、補間せずに直線でつなぐ
 - C#（そのまま使える形）:
 
@@ -195,26 +197,33 @@ public List<LyricEntry> lyrics;
 public static List<Vector2> CurvePoints(float[] ts, float[] xs, int samples = 16) {
     int n = ts.Length; var outp = new List<Vector2>();
     if (n < 3) { for (int i = 0; i < n; i++) outp.Add(new Vector2(ts[i], xs[i])); return outp; }
-    var d = new float[n - 1]; var m = new float[n];
-    for (int k = 0; k < n - 1; k++) { float h = ts[k + 1] - ts[k]; d[k] = h > 1e-6f ? (xs[k + 1] - xs[k]) / h : 0f; }
-    m[0] = d[0]; m[n - 1] = d[n - 2];
-    for (int k = 1; k < n - 1; k++) m[k] = d[k - 1] * d[k] <= 0 ? 0 : (d[k - 1] + d[k]) / 2;
-    for (int k = 0; k < n - 1; k++) {
-        if (d[k] == 0) { m[k] = 0; m[k + 1] = 0; continue; }
-        float a = m[k] / d[k], b = m[k + 1] / d[k], s = a * a + b * b;
-        if (s > 9) { float tau = 3 / Mathf.Sqrt(s); m[k] = tau * a * d[k]; m[k + 1] = tau * b * d[k]; }
+    var h = new float[n - 1]; var d = new float[n - 1]; var m = new float[n];
+    for (int k = 0; k < n - 1; k++) { h[k] = ts[k + 1] - ts[k]; d[k] = h[k] > 1e-6f ? (xs[k + 1] - xs[k]) / h[k] : 0f; }
+    for (int k = 1; k < n - 1; k++) {
+        if (d[k - 1] * d[k] <= 0) m[k] = 0;
+        else { float w1 = 2 * h[k] + h[k - 1], w2 = h[k] + 2 * h[k - 1]; m[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k]); }
     }
+    m[0] = EndTangent(h[0], h[1], d[0], d[1]);
+    m[n - 1] = EndTangent(h[n - 2], h[n - 3], d[n - 2], d[n - 3]);
     outp.Add(new Vector2(ts[0], xs[0]));
     for (int k = 0; k < n - 1; k++) {
-        float h = ts[k + 1] - ts[k];
-        if (h <= 1e-6f) { outp.Add(new Vector2(ts[k + 1], xs[k + 1])); continue; }
+        if (h[k] <= 1e-6f) { outp.Add(new Vector2(ts[k + 1], xs[k + 1])); continue; }
         for (int i = 1; i <= samples; i++) {
             float u = (float)i / samples, u2 = u * u, u3 = u2 * u;
-            float x = (2*u3 - 3*u2 + 1) * xs[k] + (u3 - 2*u2 + u) * h * m[k] + (-2*u3 + 3*u2) * xs[k + 1] + (u3 - u2) * h * m[k + 1];
-            outp.Add(new Vector2(ts[k] + h * u, x));
+            float x = (2*u3 - 3*u2 + 1) * xs[k] + (u3 - 2*u2 + u) * h[k] * m[k] + (-2*u3 + 3*u2) * xs[k + 1] + (u3 - u2) * h[k] * m[k + 1];
+            outp.Add(new Vector2(ts[k] + h[k] * u, x));
         }
     }
     return outp;
+}
+
+static float EndTangent(float h0, float h1, float d0, float d1) {
+    if (d0 == 0) return 0;
+    if (d0 * d1 <= 0) return 2 * d0;
+    float e = ((2 * h0 + h1) * d0 - h0 * d1) / Mathf.Max(1e-6f, h0 + h1);
+    if (e * d0 <= 0) return 0;
+    if (Mathf.Abs(e) > Mathf.Abs(3 * d0)) return 3 * d0;
+    return e;
 }
 ```
 
