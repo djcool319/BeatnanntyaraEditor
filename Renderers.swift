@@ -591,6 +591,12 @@ enum LaneRenderer {
             let b = n.beat.value
             if b >= lo && b <= hi { redKeys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
         }
+        // ホールド / スライドの始点の位置 (拍と block)。ここに置いてあるふつうのタップは、始点と同じ水色で描く (色だけ。中身は変えない)
+        var headKeys = Set<BeatrixKey>()
+        for n in notes where n.isSlide {
+            let b = n.beat.value
+            if b >= lo && b <= hi { headKeys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
+        }
         // 2) タップ / 赤タップ / ウィップの棒。びーとりのスライド / ホールドには始点があるので、始点の棒も描く
         //    (始点は水色のタップか、ワイプ。どちらにするかは More の「Head Tap / Wipe」)
         for n in notes {
@@ -610,7 +616,10 @@ enum LaneRenderer {
                 drawWipe(&cc, xL: cx - hw, xR: cx + hw, yMid: y, selected: isSel)
             } else {
                 let rect = CGRect(x: cx - hw, y: y - tapH / 2, width: hw * 2, height: tapH)
-                let tint: TapTint = n.isSlide ? .slideHead : (kind == 3 ? .red : .normal)
+                var tint: TapTint = n.isSlide ? .slideHead : (kind == 3 ? .red : .normal)
+                if tint == .normal && headKeys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) {
+                    tint = .slideHead                 // ホールド / スライドの始点に置いてあるタップ
+                }
                 drawTap(&cc, rect: rect, selected: isSel, tint: tint)
             }
         }
