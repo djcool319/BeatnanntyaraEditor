@@ -1000,6 +1000,7 @@ final class EditorState: ObservableObject {
             if useEngine, let a = engineAudio {
                 a.shiftOffset(by: delta)                 // 曲の再生位置はそのまま、譜面の時計だけずらす
                 BeatrixSounds.shared.cancelScheduled()   // 予約済みのノーツ音は、ずらす前の時刻なので捨てて予約し直す
+                a.cancelSE()
                 keyDone = playSec(atHost: CACurrentMediaTime())
             } else {
                 pause()                                  // 従来方式 (予備) のときだけ、その場で再生し直す
@@ -1043,6 +1044,7 @@ final class EditorState: ObservableObject {
     func applyVolumes() {
         audio?.volume = Float(musicVolume)
         engineAudio?.setVolume(Float(musicVolume))
+        engineAudio?.setSEVolume(Float(noteVolume))
         KeySound.shared.volume = Float(noteVolume)
     }
 
@@ -1121,6 +1123,16 @@ final class EditorState: ObservableObject {
             if keyTimes[mid] <= keyDone { lo = mid + 1 } else { hi = mid }
         }
         var i = lo
+        if let a = eng, a.mixesSE {
+            // 曲と同じ音の流れ (C++ のミキサー) で鳴らす: 譜面時刻 t = 曲のその位置のサンプルに、ぴったり鳴る
+            let late = a.chartTime(atUptime: now) - 0.08 * rate
+            while i < keyTimes.count && keyTimes[i] <= horizon {
+                if keyTimes[i] > late { a.scheduleSE(keyKinds[i], chartTime: keyTimes[i]) }   // 大きく遅れてしまった分は捨てる
+                i += 1
+            }
+            keyDone = horizon
+            return
+        }
         while i < keyTimes.count && keyTimes[i] <= horizon {
             let t = keyTimes[i]
             // 譜面時刻 t が鳴る壁時計の時刻 (レーン上でノーツが再生ラインに触れる瞬間 = 曲のその位置が聞こえる瞬間)。

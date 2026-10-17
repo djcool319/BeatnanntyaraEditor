@@ -145,6 +145,58 @@ final class BeatrixSounds {
         }
     }
 
+    // MARK: 曲と同じ流れで鳴らす用 (GameAudio のミキサー。BxAudio)
+
+    /// ミキサーでの音の番号
+    static let mixerID: [Kind: Int32] = [.tap: 0, .wipe: 1, .red: 2]
+    static let mixerHoldID: Int32 = 3
+
+    /// 鳴らす音の番号 (赤タップは tap と red_note を重ねる)
+    static func mixerIDs(of kind: Kind) -> [Int32] {
+        kind == .red ? [0, 2] : [mixerID[kind] ?? 0]
+    }
+
+    /// ミキサーに渡す音 (左右の PCM)。sampleRate に合わせて直す (曲が 48000 のときなど)
+    static func mixerSounds(sampleRate: Double) -> [(id: Int32, l: [Float], r: [Float])] {
+        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 2) else { return [] }
+        var out: [(id: Int32, l: [Float], r: [Float])] = []
+        let list: [(Int32, AVAudioPCMBuffer?)] = [
+            (0, decode(BeatrixSoundData.tap, format: fmt)),
+            (1, decode(BeatrixSoundData.wipe, format: fmt)),
+            (2, decode(BeatrixSoundData.red, format: fmt)),
+            (mixerHoldID, makeHoldNoise(format: fmt)),
+        ]
+        for (id, b) in list {
+            guard let b = b, let ch = b.floatChannelData else { continue }
+            let n = Int(b.frameLength)
+            let l = Array(UnsafeBufferPointer(start: ch[0], count: n))
+            let r = Array(UnsafeBufferPointer(start: ch[1], count: n))
+            out.append((id: id, l: resample(l, from: Self.sampleRate, to: sampleRate),
+                        r: resample(r, from: Self.sampleRate, to: sampleRate)))
+        }
+        return out
+    }
+
+    /// ふつうの直線補間で、サンプリング周波数を変える (短い効果音用)
+    static func resample(_ x: [Float], from a: Double, to b: Double) -> [Float] {
+        if abs(a - b) < 0.5 || x.isEmpty { return x }
+        let n = max(1, Int((Double(x.count) * b / a).rounded()))
+        var y = [Float](repeating: 0, count: n)
+        let step = a / b
+        for i in 0..<n {
+            let p = Double(i) * step
+            let k = Int(p)
+            let f = Float(p - Double(k))
+            let v0 = x[min(k, x.count - 1)]
+            let v1 = x[min(k + 1, x.count - 1)]
+            y[i] = v0 + (v1 - v0) * f
+        }
+        return y
+    }
+
+    /// 「しゅ〜」の大きさ (ミキサー用。ノーツ音の音量に掛ける前の値)
+    var mixerHoldGain: Float { holdLevel }
+
     // MARK: 音のデータ
 
     /// 埋め込んだ 16bit・ステレオ (左右交互) の PCM を、再生用のバッファにする

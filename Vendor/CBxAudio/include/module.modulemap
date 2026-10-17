@@ -1,0 +1,4 @@
+module CBxAudio {
+    header "bxaudio.h"
+    export *
+}

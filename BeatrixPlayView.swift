@@ -345,6 +345,15 @@ final class BeatrixGameView: UIView, GameSessionView {
         // 白タップ・始点 = tap / 赤タップ = red_note (+ tap) / ワイプ = yellow (ノーツが判定ラインに来たとき)
         game.onSound = { [weak self] type, t in
             guard let self = self, self.session.seOn else { return }      // 効果音オフ
+            if let a = self.audio, a.mixesSE {
+                // 曲と同じ音の流れ (C++ のミキサー) で鳴らす。ワイプは、譜面の時刻 (= 曲のその位置) ぴったりに予約する
+                switch type {
+                case 3: a.playSENow(.red)
+                case 4: a.scheduleSE(.wipe, chartTime: t)
+                default: a.playSENow(.tap)
+                }
+                return
+            }
             switch type {
             case 3: BeatrixSounds.shared.playNow(.red)
             case 4: self.pendingWipeSounds.append(t)
@@ -619,7 +628,8 @@ final class BeatrixGameView: UIView, GameSessionView {
             for z in zones { game.hold(zone: z, at: t) }
         }
         game.update(to: t)
-        BeatrixSounds.shared.setHold(session.seOn && anyHoldActive(at: t, zones: zones))      // ホールド / スライドを押さえている間の「しゅ〜」
+        let holdNow = session.seOn && anyHoldActive(at: t, zones: zones)      // ホールド / スライドを押さえている間の「しゅ〜」
+        if let a = audio, a.mixesSE { a.setHoldSE(holdNow) } else { BeatrixSounds.shared.setHold(holdNow) }
         if !pendingWipeSounds.isEmpty {
             let before = pendingWipeSounds.count
             pendingWipeSounds.removeAll { $0 <= t }

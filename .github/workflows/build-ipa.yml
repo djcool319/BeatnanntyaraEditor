@@ -79,9 +79,20 @@ jobs:
               targets: [
                   .executableTarget(
                       name: "AppModule",
-                      dependencies: ["CRubberBand"],
+                      dependencies: ["CRubberBand", "CBxAudio"],
                       path: ".",
-                      exclude: ["Vendor", "AppIcon"]
+                      exclude: ["Vendor", "AppIcon", "unity"]
+                  ),
+                  // 曲とノーツ音を 1 本の音の流れで混ぜる C++ のミキサー (Vendor/CBxAudio。リポジトリに入っている)
+                  .target(
+                      name: "CBxAudio",
+                      path: "Vendor/CBxAudio",
+                      sources: ["src/bxaudio.cpp"],
+                      publicHeadersPath: "include",
+                      cxxSettings: [
+                          .define("NDEBUG"),
+                          .unsafeFlags(["-O3"])
+                      ]
                   ),
                   .target(
                       name: "CRubberBand",

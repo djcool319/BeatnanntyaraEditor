@@ -1461,6 +1461,9 @@ final class FilePCMSource: PCMSource {
     }
 }
 
+#if !canImport(CBxAudio)
+// Swift Playgrounds (C++ を組み込めない) のときだけ使う、これまでの GameAudio。
+// GitHub Actions のビルド (ipa) では、GameAudioMixer.swift の GameAudio (C++ のミキサーで曲とノーツ音を 1 本の流れにする) を使う
 // MARK: - 音声システム(AVAudioEngine + 時計)
 // 譜面時刻は「実際に再生されている音のサンプル位置」から作る。別のタイマーを持たないので、
 // ポーズ・リトライを何度繰り返してもズレが蓄積しない(毎回、サンプル位置を基準に再計算される)。
@@ -1826,6 +1829,17 @@ final class GameAudio: @unchecked Sendable {
         }
     }
 }
+
+extension GameAudio {
+    /// ノーツ音を曲と同じ流れで鳴らせるか (このビルドではできない。BeatrixSounds で別に鳴らす)
+    var mixesSE: Bool { false }
+    func scheduleSE(_ kind: BeatrixSounds.Kind, chartTime t: Double) {}
+    func playSENow(_ kind: BeatrixSounds.Kind) {}
+    func setHoldSE(_ on: Bool) {}
+    func cancelSE() {}
+    func setSEVolume(_ v: Float) {}
+}
+#endif
 
 // MARK: - ゲーム設定(ポーズ画面で変える値。次回起動時も保存される)
 
