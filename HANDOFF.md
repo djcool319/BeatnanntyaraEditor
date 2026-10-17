@@ -694,3 +694,4 @@
 - JSON: `"ease": [ {"LPB","num","block","type":2,"nth","eases":[…]} ]`（curve の後、part の前）
 - Unity: UNITY_SPEC.md 7-3、unity/SlideFollower.cs（ease 対応を足した。まるごと差し替え）
 - Curve / Curve bake はそのまま残してある
+- 曲線の形を PCHIP（経由点を必ず通る）に戻した（2026-10-17）: 角を丸める形（ベジェ）は、移動が大きい（0 ↔ 6 のギザギザ）と角での丸めを 0.4 レーンに抑えても角のワイプと帯がずれた。PCHIP なら必ず経由点を通り、折り返しでは縦向きになるので、ギザギザはなめらかな波になる。端の傾きは区間の傾きのまま（円・放物線にしない）。Beatrix.curveTangents / curveValue / curvePoints。Unity の SlideCurve.cs も同じ式に差し替え
