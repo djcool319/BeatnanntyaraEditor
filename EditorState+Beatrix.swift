@@ -333,9 +333,11 @@ extension EditorState {
         showToast(toCurve ? "曲線スライドにしました (\(count) 個。見た目だけ角を丸く、判定は今のまま)" : "曲線を解除しました (\(count) 個)")
     }
 
-    /// 選択中のスライドの曲線を「焼き込む」: 曲線をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。
-    /// 例: 3 → 5 の区間なら、曲線が 4 を通る拍に 4 の中継点を入れる (曲線から 0.15 レーン以内になる、いちばん粗い拍 (1/16〜1/384) に合わせる)。
-    /// 判定点が増える (スコア・ノーツ数が変わる)。曲線 (curve) の印は付けたまま (見た目も丸いまま)
+    /// 選択中のスライドを「曲線に作り直す」(Curve bake)。
+    /// 置いた中継点を「形の目安 (制御点)」にして、それに沿った大きくなめらかな曲線 (3 次 B スプライン) を作り、
+    /// その曲線がレーンの真ん中を通る拍ごとに、中継点を置き直す (元の中継点は、始点・終点・横に飛ぶ点以外は消える)。
+    /// 拍は、曲線から 0.15 レーン以内に収まるいちばん粗い拍 (1/16 → … → 1/384) に合わせる。
+    /// 判定点が変わる (スコア・ノーツ数が変わる)。曲線 (curve) の印も付ける (足した点の間も丸く描く)。Undo で戻せる
     func bakeCurve() {
         if isPlaying {
             showToast("再生中は編集できません。停止してから操作してください")
@@ -348,70 +350,12 @@ extension EditorState {
             return
         }
         var newSegs: [Int: [Seg]] = [:]
-        var added = 0
         for i in idx {
             let n = chart.notes[i]
-            var beats: [Beat] = [n.beat]
-            var lanes: [Int] = [Beatrix.block(ofX: Double(n.x))]
-            for sg in n.segs {
-                beats.append(n.beat + sg.beat)
-                lanes.append(Beatrix.block(ofX: Double(n.x + sg.x)))
-            }
-            guard beats.count >= 2, zip(beats, beats.dropFirst()).allSatisfy({ $0 <= $1 }) else { continue }
-            let xs = beats.map { $0.value }
-            let ys = lanes.map { Double($0) }
-            guard let shape = Beatrix.curveShape(xs, ys, laneUnit: 1) else { continue }
-            var out: [Seg] = []
-            var count = 0
-            for k in 0..<(beats.count - 1) {
-                let a = lanes[k]
-                let b = lanes[k + 1]
-                if abs(b - a) >= 2 && beats[k] < beats[k + 1] {
-                    let dir = b > a ? 1 : -1
-                    var last = beats[k]
-                    var lane = a + dir
-                    while lane != b {
-                        // 曲線が lane を通る位置 (区間の中は単調なので二分探索)
-                        var lo = xs[k]
-                        var hi = xs[k + 1]
-                        for _ in 0..<50 {
-                            let mid = (lo + hi) / 2
-                            let v = Beatrix.curveAt(shape, mid)
-                            if (v - Double(lane)) * Double(dir) < 0 { lo = mid } else { hi = mid }
-                        }
-                        let target = (lo + hi) / 2
-                        // 拍に合わせると、曲線からずれる (1/16 拍だと最大 1 レーン近くずれて、丸く見えなくなる)。
-                        // 粗いほうの拍から順に試して、合わせた拍での曲線の位置が lane から 0.15 レーン以内に収まる、いちばん粗い拍を使う。
-                        // どれも収まらなければ、いちばんずれの小さい拍
-                        var put: Beat? = nil
-                        var bestErr = Double.greatestFiniteMagnitude
-                        for den in [16, 32, 48, 64, 96, 192, 384] {
-                            let c = Beat.nearest(target, den: den)
-                            guard last < c && c < beats[k + 1] else { continue }
-                            let err = abs(Beatrix.curveAt(shape, c.value) - Double(lane))
-                            if err < bestErr {
-                                bestErr = err
-                                put = c
-                            }
-                            if err <= 0.15 { break }
-                        }
-                        if let c = put {
-                            out.append(Seg(beat: c - n.beat, x: Beatrix.centerX(ofBlock: lane) - n.x))
-                            last = c
-                            count += 1
-                        }
-                        lane += dir
-                    }
-                }
-                out.append(n.segs[k])
-            }
-            if count > 0 {
-                newSegs[i] = out
-                added += count
-            }
+            if let segs = Self.bakedSegs(n) { newSegs[i] = segs }
         }
-        if added == 0 {
-            showToast("足す中継点はありません (レーンが 2 つ以上飛ぶところが無い)")
+        if newSegs.isEmpty {
+            showToast("曲線にできるスライドがありません (中継点が 2 個以上いります)")
             return
         }
         pushUndo()
@@ -420,7 +364,85 @@ extension EditorState {
             chart.notes[i].extra[Beatrix.curveKey] = true
         }
         chartChanged()
-        showToast("曲線に沿って中継点を \(added) 個足しました (\(newSegs.count) 本。判定点が増えます)")
+        showToast("曲線に作り直しました (\(newSegs.count) 本。判定点が変わります。Undo で戻せます)")
+    }
+
+    /// 1 本のスライドを曲線に作り直した seg。作り直せなければ nil
+    static func bakedSegs(_ n: Note) -> [Seg]? {
+        var beats: [Beat] = [n.beat]
+        var lanes: [Int] = [Beatrix.block(ofX: Double(n.x))]
+        for sg in n.segs {
+            beats.append(n.beat + sg.beat)
+            lanes.append(Beatrix.block(ofX: Double(n.x + sg.x)))
+        }
+        guard beats.count >= 3, zip(beats, beats.dropFirst()).allSatisfy({ $0 <= $1 }) else { return nil }
+        let xs = beats.map { $0.value }
+        // 横に飛ぶ線 (時間 0 の区間) で区切って、ひと続きごとに曲線にする
+        var pieces: [[Int]] = [[0]]
+        for k in 1..<beats.count {
+            if beats[k] == beats[k - 1] { pieces.append([k]) } else { pieces[pieces.count - 1].append(k) }
+        }
+        var out: [Seg] = []
+        func addOriginal(_ k: Int) {
+            if k == 0 { return }
+            out.append(n.segs[k - 1])
+        }
+        var changed = false
+        for (pi, piece) in pieces.enumerated() {
+            if pi > 0 { addOriginal(piece[0]) }               // 横に飛んだ先の点はそのまま
+            guard piece.count >= 3 else {
+                for k in piece.dropFirst() { addOriginal(k) }
+                continue
+            }
+            let samples = Beatrix.bSplineSamples(piece.map { xs[$0] }, piece.map { Double(lanes[$0]) })
+            func valueAt(_ t: Double) -> Double {
+                var j = 1
+                while j < samples.count - 1 && samples[j].t < t { j += 1 }
+                let p = samples[j - 1]
+                let q = samples[j]
+                let h = q.t - p.t
+                return h <= 1e-12 ? q.v : p.v + (q.v - p.v) * min(1, max(0, (t - p.t) / h))
+            }
+            let endBeat = beats[piece[piece.count - 1]]
+            var lastBeat = beats[piece[0]]
+            var lastLane = lanes[piece[0]]
+            for j in 1..<samples.count {
+                let (t1, v1) = (samples[j - 1].t, samples[j - 1].v)
+                let (t2, v2) = (samples[j].t, samples[j].v)
+                let lo = Int(min(v1, v2).rounded(.up))
+                let hi = Int(max(v1, v2).rounded(.down))
+                if lo > hi { continue }
+                let order: [Int] = v2 >= v1 ? Array(lo...hi) : Array((lo...hi).reversed())
+                for L in order {
+                    if Double(L) == v1 { continue }           // 前の区切りで数えた
+                    let target = t1 + (t2 - t1) * (Double(L) - v1) / (v2 - v1)
+                    // 同じレーンが続くときは、少し (1/32 拍) 離れているときだけ置く (平らな区間の終わり)
+                    if L == lastLane && target - lastBeat.value < 1.0 / 32 { continue }
+                    var put: Beat? = nil
+                    var bestErr = Double.greatestFiniteMagnitude
+                    for den in [16, 32, 48, 64, 96, 192, 384] {
+                        let c = Beat.nearest(target, den: den)
+                        guard lastBeat < c && c < endBeat else { continue }
+                        let err = abs(valueAt(c.value) - Double(L))
+                        if err < bestErr {
+                            bestErr = err
+                            put = c
+                        }
+                        if err <= 0.15 { break }
+                    }
+                    if let c = put {
+                        out.append(Seg(beat: c - n.beat, x: Beatrix.centerX(ofBlock: L) - n.x))
+                        lastBeat = c
+                        lastLane = L
+                        changed = true
+                    }
+                }
+            }
+            addOriginal(piece[piece.count - 1])               // 終わりの点はそのまま
+        }
+        // 元と同じ点の数・位置なら作り直していない
+        if !changed && out.count == n.segs.count { return nil }
+        return out
     }
 
     // MARK: part

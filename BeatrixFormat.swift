@@ -147,6 +147,32 @@ enum Beatrix {
         return ys[ys.count - 1]
     }
 
+    /// Curve bake 用: 点の列を「制御点」にした 3 次 B スプライン (両端は点に一致) を細かい点にする (時刻 t, 横 v)。
+    /// 制御点の時刻が小さい順なら、曲線の時刻も小さい順になる。曲線は制御点を通らず、内側を大きくなめらかに通る
+    static func bSplineSamples(_ ts: [Double], _ vs: [Double], perSpan: Int = 48) -> [(t: Double, v: Double)] {
+        let n = ts.count
+        guard n >= 2, vs.count == n else { return zip(ts, vs).map { (t: $0, v: $1) } }
+        let pt = [ts[0], ts[0]] + ts + [ts[n - 1], ts[n - 1]]
+        let pv = [vs[0], vs[0]] + vs + [vs[n - 1], vs[n - 1]]
+        var out: [(t: Double, v: Double)] = []
+        for i in 0..<(pt.count - 3) {
+            for j in 0..<perSpan {
+                let u = Double(j) / Double(perSpan)
+                let u2 = u * u
+                let u3 = u2 * u
+                let b0 = (1 - u) * (1 - u) * (1 - u) / 6
+                let b1 = (3 * u3 - 6 * u2 + 4) / 6
+                let b2 = (-3 * u3 + 3 * u2 + 3 * u + 1) / 6
+                let b3 = u3 / 6
+                out.append((t: b0 * pt[i] + b1 * pt[i + 1] + b2 * pt[i + 2] + b3 * pt[i + 3],
+                            v: b0 * pv[i] + b1 * pv[i + 1] + b2 * pv[i + 2] + b3 * pv[i + 3]))
+            }
+        }
+        out.append((t: ts[n - 1], v: vs[n - 1]))
+        out[0] = (t: ts[0], v: vs[0])
+        return out
+    }
+
     /// 経由点 (x = 拍か秒、y = 横の位置) を、角を丸めた曲線の細かい点の列にする (区間ごとに samples 個)。
     /// 時間 0 の区間は、そのまま横に飛ぶ線
     static func curvePoints(_ xs: [Double], _ ys: [Double], laneUnit: Double, samples: Int = 24) -> [(x: Double, y: Double)] {

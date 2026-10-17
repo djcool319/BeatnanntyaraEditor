@@ -220,7 +220,7 @@ public List<LyricEntry> lyrics;
   - 2026-10-17 の形の変更では、SlideFollower.cs は変わっていない（SlideCurve.cs だけ差し替える）。**押しているかの判定（`currentLane`）は今までどおりまっすぐの補間のまま**
 4. 判定・スコア・SE・ノーツの生成（判定点）には触らない
 
-- 補足: エディタの **Curve bake** は、曲線に沿って中継点を足すだけ（JSON では普通の経由点）。足した点は曲線の上に乗るので、bake 後もほぼ同じ形で描かれる
+- 補足: エディタの **Curve bake** は、置いた中継点を目安にした大きなカーブに沿って**中継点を置き直す**だけ（JSON では普通の経由点 + `curve`）。Unity 側は今の `curve` 対応（SlideCurve.cs / SlideFollower.cs）だけでよく、追加の対応は要らない
 
 ## 8. 参考（変わっていないもの）
 
