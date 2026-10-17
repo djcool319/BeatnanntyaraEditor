@@ -140,6 +140,8 @@ jobs:
           # 対応している iOS の最低バージョン (minos) を表示する (iOS 15 でも入るか確認用)
           MINOS=$(otool -l "$BIN" | grep -A4 LC_BUILD_VERSION | grep minos | awk '{print $2}' | head -1)
           echo "::notice::minos = $MINOS"
+          # C++ のミキサー (CBxAudio) が入ったか (入っていれば、曲とノーツ音を 1 本の流れで鳴らす版)
+          if nm "$BIN" 2>/dev/null | grep -q "_bx_render"; then echo "::notice::CBxAudio mixer: included"; else echo "::warning::CBxAudio mixer: NOT included"; fi
           rm -rf Payload BeatTriXEditor.ipa
           mkdir -p Payload/MalodySlideEditor.app
           cp "$BIN" Payload/MalodySlideEditor.app/MalodySlideEditor
