@@ -695,3 +695,16 @@
 - Unity: UNITY_SPEC.md 7-3、unity/SlideFollower.cs（ease 対応を足した。まるごと差し替え）
 - Curve / Curve bake はそのまま残してある
 - 曲線の形を PCHIP（経由点を必ず通る）に戻した（2026-10-17）: 角を丸める形（ベジェ）は、移動が大きい（0 ↔ 6 のギザギザ）と角での丸めを 0.4 レーンに抑えても角のワイプと帯がずれた。PCHIP なら必ず経由点を通り、折り返しでは縦向きになるので、ギザギザはなめらかな波になる。端の傾きは区間の傾きのまま（円・放物線にしない）。Beatrix.curveTangents / curveValue / curvePoints。Unity の SlideCurve.cs も同じ式に差し替え
+
+## 20. 音の再生を C++ のミキサーに（2026-10-17）
+
+- 以前: 曲 = GameAudio（AVAudioEngine の AVAudioPlayerNode）、ノーツ音 = 別の AVAudioEngine（BeatrixSounds）にホスト時刻で予約。2 つのエンジンの出力の遅れ・時計の見積もりの分だけずれていた
+- 今（GitHub Actions のビルド = ipa）: `Vendor/CBxAudio`（C++。リポジトリに入れてある）のミキサーで、曲とノーツ音を 1 本の流れにして AVAudioSourceNode から出す（GameAudioMixer.swift の GameAudio）
+  - 曲: decodeQueue が 10ms おきにリングバッファ（2^18 フレーム）へ書く（bx_music_write）。出力スレッドが読む（ロックなし）
+  - ノーツ音: 「タイムラインのフレーム」（再生を始めてから出力したフレーム数。曲の頭より前の無音 lead を含む）で予約（bx_schedule）。曲のサンプルと同じ番号なので、サンプル単位でぴったり合う。ブロックの途中からでも鳴り始める
+  - 譜面時刻 t → フレーム: `lead + ((t − offsetTotal)·sr − baseFrame) / rate`（速度 1 未満は伸ばした音のフレームで数える）
+  - 時計: 出力のたびに「ブロック先頭のフレーム」と「ホスト時刻」を記録（bx_clock、シーケンスロック）。聞こえる時刻 = ホスト時刻 + outputLatency + ioBufferDuration（前と同じ見積もり）
+  - テストプレイ: 打鍵音（bx_play_now）・ワイプ音（譜面時刻で予約）・「しゅ〜」（bx_set_loop）も同じミキサー
+  - 効果音は BeatrixSounds.mixerSounds で曲のサンプリング周波数に直して登録（0 tap / 1 wipe / 2 red / 3 しゅ〜）
+- Swift Playgrounds（C++ を入れられない）では、TestPlay.swift の前の GameAudio（`#if !canImport(CBxAudio)`）と BeatrixSounds のまま
+- CI: ビルド用の Package.swift に CBxAudio ターゲット（-O3）を足した。ビルド後に「CBxAudio mixer: included」と出れば入っている。Playgrounds 用の Package.swift は Vendor / unity を除外

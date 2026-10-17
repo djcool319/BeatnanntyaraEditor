@@ -51,6 +51,12 @@
 曲名 (略称なし) / アーティスト / 難易度 (BS・HD・EX・IN → `difficulty` 0〜3、`name` とファイル名に付く) / LEVEL / プレビュー / offset。
 - offset の単位は **44100 = 1 秒**
 
+## 音の再生 (ipa のビルド)
+
+- 曲とノーツ音は、C++ のミキサー (`Vendor/CBxAudio`、`GameAudioMixer.swift`) で **1 本の音の流れ** にして鳴らす。ノーツ音は曲のサンプルと同じ番号で予約するので、サンプル単位でぴったり合う (出力の遅れや画面のフレームに関係ない)
+- テストプレイの打鍵音・ワイプ音・ホールドの「しゅ〜」も同じミキサー
+- Swift Playgrounds で動かすときは C++ を入れられないので、前の方式 (曲とノーツ音が別々のエンジン) のまま
+
 ## JSON の形 (BeatrixFormat.swift)
 ```
 { "name": "曲名", "maxBlock": 7, "BPM": 153, "LEVEL": 11.7, "difficulty": 2, "artist": "", "offset": 0,
