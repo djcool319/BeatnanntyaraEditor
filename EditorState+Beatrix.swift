@@ -330,7 +330,7 @@ extension EditorState {
             count += 1
         }
         chartChanged()
-        showToast(toCurve ? "曲線スライドにしました (\(count) 個。見た目だけ丸く、判定は今のまま)" : "曲線を解除しました (\(count) 個)")
+        showToast(toCurve ? "曲線スライドにしました (\(count) 個。見た目だけ角を丸く、判定は今のまま)" : "曲線を解除しました (\(count) 個)")
     }
 
     /// 選択中のスライドの曲線を「焼き込む」: 曲線をなぞって、レーンが 2 つ以上飛ぶ区間の間のレーンに中継点を足す。
@@ -360,8 +360,7 @@ extension EditorState {
             guard beats.count >= 2, zip(beats, beats.dropFirst()).allSatisfy({ $0 <= $1 }) else { continue }
             let xs = beats.map { $0.value }
             let ys = lanes.map { Double($0) }
-            let m = Beatrix.curveTangents(xs, ys)
-            let plan = Beatrix.curvePlan(xs, ys)
+            guard let shape = Beatrix.curveShape(xs, ys, laneUnit: 1) else { continue }
             var out: [Seg] = []
             var count = 0
             for k in 0..<(beats.count - 1) {
@@ -373,15 +372,14 @@ extension EditorState {
                     var lane = a + dir
                     while lane != b {
                         // 曲線が lane を通る位置 (区間の中は単調なので二分探索)
-                        var lo = 0.0
-                        var hi = 1.0
-                        for _ in 0..<40 {
+                        var lo = xs[k]
+                        var hi = xs[k + 1]
+                        for _ in 0..<50 {
                             let mid = (lo + hi) / 2
-                            let v = Beatrix.curveValue(xs, ys, m, plan, segment: k, u: mid)
+                            let v = Beatrix.curveAt(shape, mid)
                             if (v - Double(lane)) * Double(dir) < 0 { lo = mid } else { hi = mid }
                         }
-                        let h = xs[k + 1] - xs[k]
-                        let target = xs[k] + h * (lo + hi) / 2
+                        let target = (lo + hi) / 2
                         // 拍に合わせると、曲線からずれる (1/16 拍だと最大 1 レーン近くずれて、丸く見えなくなる)。
                         // 粗いほうの拍から順に試して、合わせた拍での曲線の位置が lane から 0.15 レーン以内に収まる、いちばん粗い拍を使う。
                         // どれも収まらなければ、いちばんずれの小さい拍
@@ -390,7 +388,7 @@ extension EditorState {
                         for den in [16, 32, 48, 64, 96, 192, 384] {
                             let c = Beat.nearest(target, den: den)
                             guard last < c && c < beats[k + 1] else { continue }
-                            let err = abs(Beatrix.curveValue(xs, ys, m, plan, segment: k, u: (c.value - xs[k]) / h) - Double(lane))
+                            let err = abs(Beatrix.curveAt(shape, c.value) - Double(lane))
                             if err < bestErr {
                                 bestErr = err
                                 put = c

@@ -682,3 +682,4 @@
 - 曲線の形を変更（2026-10-16）: Fritsch–Carlson（中は平均、端は区間の傾きそのまま）だと「まっすぐ → 折り返し直前で急に曲がる」形になり、Curve bake 後に角が見えた。中の点は間隔で重みを付けた調和平均（PCHIP）、端は次で折り返すなら区間の傾きの 2 倍（放物線）・それ以外は 3 点の式、にした（Beatrix.curveTangents）。UNITY_SPEC.md 7-2 の式と C# も更新
 - 曲線に 4 分の 1 の円を追加（2026-10-16、ユーザー提案の f(t) = √(1 − (1 − t)²)）: 始点から同じ向きに進んで折り返す・止まる点までのひと続きと、折り返す・止まる点から終点までのひと続きを、円で描く（Beatrix.curvePlan / arc）。途中の点が円から幅の 1 割以内のときだけ（bake の点は収まる）。それ以外は PCHIP。Curve bake も同じ曲線をなぞる
 - Unity 用に `unity/SlideCurve.cs`（新規）と `unity/SlideFollower.cs`（ユーザーの LineRenderer 版を元に、曲線の帯を描く処理を足したもの。まるごと差し替え）を置いた。UNITY_SPEC.md 7-2
+- 曲線の形を「角を丸める」に変更（2026-10-17）: 円（始点から真横に出る）は見た目が気持ち悪いと言われたので、折れ線の角ごとに A・B（角から両側の線の r 倍の位置）を 2 次ベジェでつなぐ形にした（Beatrix.curveShape / curveAt / curvePoints(laneUnit:)）。r = 0.5、角でのずれが 0.4 レーンを超えるなら小さくする。laneUnit は 1 レーンの大きさ（エディタの帯 = 255·2/18、テストプレイ = 2/18、bake = 1）。PCHIP・円のコードは消した。Unity の SlideCurve.cs も同じ式に差し替え（SlideFollower.cs はそのまま）

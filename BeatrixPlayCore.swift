@@ -238,7 +238,7 @@ struct BxPlayChart {
                 let frac = { (lane: Int) -> Double in Double(3 + 2 * lane) / 18.0 }
                 var draw = pts.map { BxDrawPoint(t: $0.t, f: frac($0.lane)) }
                 if let src = entries[idx].source, Beatrix.isCurve(src) {
-                    draw = Beatrix.curvePoints(pts.map { $0.t }, pts.map { frac($0.lane) }).map { BxDrawPoint(t: $0.x, f: $0.y) }
+                    draw = Beatrix.curvePoints(pts.map { $0.t }, pts.map { frac($0.lane) }, laneUnit: 2.0 / 18.0).map { BxDrawPoint(t: $0.x, f: $0.y) }
                 }
                 out.slides.append(BxSlide(pts: pts, draw: draw, sp: spOf(idx), dummy: dm, vis: visOf(idx)))
                 for p in pts { out.notes.append(BxNote(t: p.t, lane: p.lane, type: 5, dummy: dm)) }

@@ -74,146 +74,93 @@ enum Beatrix {
         (n.extra[curveKey] as? Bool) == true
     }
 
-    /// 経由点 (x = 拍か秒、y = 横の位置) を、なめらかな曲線でつないだ細かい点の列にする。
-    /// 単調な 3 次の補間 (PCHIP。傾きは curveTangents) なので、経由点を通り、経由点の間で行き過ぎ (はみ出し) が起きない。
-    /// 同じ位置が続くところ (まっすぐの区間) はまっすぐのまま。x が同じ (時間 0 の) 区間は直線でつなぐ
-    /// curvePoints の各経由点での傾き。
-    /// ・中の点: 前後の傾きの向きが違う (折り返し) か片方が 0 なら 0 (行き過ぎない)。同じ向きなら、間隔で重みを付けた調和平均 (PCHIP)。
-    ///   間隔がばらばら (Curve bake で足した点など) でも、角ができにくい
-    /// ・両端: 次の区間で折り返す (または止まる) なら、端の傾きを区間の傾きの 2 倍にする (= 放物線。曲がり方が区間全体に均等に広がって丸く見える)。
-    ///   そうでなければ 3 点の式 ((2h0 + h1)·d0 − h0·d1) / (h0 + h1) (向きが逆なら 0、3·d0 を超えたら 3·d0)
-    static func curveTangents(_ xs: [Double], _ ys: [Double]) -> [Double] {
+    // MARK: 曲線スライドの形 (角を丸める)
+    //
+    // 経由点をつないだ折れ線の「角」ごとに、角の両側の線の途中 (A・B) を 2 次ベジェ曲線 (A → 角 → B) でつなぐ。
+    //   A = 角 + (前の点 − 角) × r、B = 角 + (次の点 − 角) × r。r はふつう 0.5 (隣の線の真ん中まで) → 全体がなめらかにつながる
+    //   ・始点と終点は動かさない (始点から斜めに出て、角でゆるく曲がる)
+    //   ・角の点から曲線がはなれすぎないように、角での横のずれ (= |前 − 角 + 次 − 角| × r / 4) が 0.4 レーン以下になるまで r を小さくする
+    //     (急なギザギザの角は小さく丸める。判定点が帯から外れない)
+    //   ・時間 0 の区間 (横に飛ぶ線) の両端の角は丸めない
+    // 判定点 (経由点) の時刻・レーンは変えない。見た目だけ
+
+    /// 角を丸めるときの最大の r と、角での横のずれの上限 (レーン)
+    static let curveCornerR = 0.5
+    static let curveMaxDevLanes = 0.4
+
+    struct CurveCorner {
+        var at: Double; var av: Double     // A (時刻, 横)
+        var pt: Double; var pv: Double     // 角
+        var bt: Double; var bv: Double     // B
+    }
+
+    struct CurveShape {
+        var xs: [Double]
+        var ys: [Double]
+        var corners: [CurveCorner]
+    }
+
+    /// 曲線の形を作る。xs = 時刻 (拍か秒。小さい順)、ys = 横の位置、laneUnit = 1 レーンが ys でいくつか。
+    /// 点が 3 個未満、または時刻が逆戻りしていたら nil (まっすぐのまま)
+    static func curveShape(_ xs: [Double], _ ys: [Double], laneUnit: Double) -> CurveShape? {
         let n = xs.count
-        guard n >= 2, ys.count == n else { return [Double](repeating: 0, count: n) }
-        var h = [Double](repeating: 0, count: n - 1)
-        var d = [Double](repeating: 0, count: n - 1)
-        for k in 0..<(n - 1) {
-            h[k] = xs[k + 1] - xs[k]
-            d[k] = h[k] > 1e-12 ? (ys[k + 1] - ys[k]) / h[k] : 0
-        }
-        if n == 2 { return [d[0], d[0]] }
-        var m = [Double](repeating: 0, count: n)
+        guard n >= 3, ys.count == n else { return nil }
+        for k in 1..<n where xs[k] < xs[k - 1] { return nil }
+        var corners: [CurveCorner] = []
         for k in 1..<(n - 1) {
-            if d[k - 1] * d[k] <= 0 {
-                m[k] = 0
+            if xs[k] - xs[k - 1] <= 1e-9 || xs[k + 1] - xs[k] <= 1e-9 { continue }
+            let s = abs((ys[k - 1] - ys[k]) + (ys[k + 1] - ys[k])) * 0.25
+            let maxDev = curveMaxDevLanes * laneUnit
+            let r = s * curveCornerR <= maxDev ? curveCornerR : maxDev / s
+            if r <= 0 { continue }
+            corners.append(CurveCorner(at: xs[k] + (xs[k - 1] - xs[k]) * r, av: ys[k] + (ys[k - 1] - ys[k]) * r,
+                                       pt: xs[k], pv: ys[k],
+                                       bt: xs[k] + (xs[k + 1] - xs[k]) * r, bv: ys[k] + (ys[k + 1] - ys[k]) * r))
+        }
+        return CurveShape(xs: xs, ys: ys, corners: corners)
+    }
+
+    /// 時刻 t での曲線の横の位置
+    static func curveAt(_ c: CurveShape, _ t: Double) -> Double {
+        for q in c.corners where q.at <= t && t <= q.bt {
+            // 時刻 t になる、ベジェの位置 s を求める (時刻は s について 2 次式)
+            let a = q.at - 2 * q.pt + q.bt
+            let b = 2 * (q.pt - q.at)
+            let cc = q.at - t
+            var s: Double
+            if abs(a) < 1e-12 {
+                s = abs(b) < 1e-12 ? 0 : -cc / b
             } else {
-                let w1 = 2 * h[k] + h[k - 1]
-                let w2 = h[k] + 2 * h[k - 1]
-                m[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k])
+                s = (-b + max(0, b * b - 4 * a * cc).squareRoot()) / (2 * a)
             }
+            s = min(1, max(0, s))
+            return (1 - s) * (1 - s) * q.av + 2 * s * (1 - s) * q.pv + s * s * q.bv
         }
-        func end(_ h0: Double, _ h1: Double, _ d0: Double, _ d1: Double) -> Double {
-            if d0 == 0 { return 0 }
-            if d0 * d1 <= 0 { return 2 * d0 }
-            let e = ((2 * h0 + h1) * d0 - h0 * d1) / max(1e-12, h0 + h1)
-            if e * d0 <= 0 { return 0 }
-            if abs(e) > abs(3 * d0) { return 3 * d0 }
-            return e
+        let xs = c.xs
+        let ys = c.ys
+        if t <= xs[0] { return ys[0] }
+        for k in 0..<(xs.count - 1) where t <= xs[k + 1] {
+            let h = xs[k + 1] - xs[k]
+            if h <= 1e-12 { return ys[k + 1] }
+            return ys[k] + (ys[k + 1] - ys[k]) * (t - xs[k]) / h
         }
-        m[0] = end(h[0], h[1], d[0], d[1])
-        m[n - 1] = end(h[n - 2], h[n - 3], d[n - 2], d[n - 3])
-        return m
+        return ys[ys.count - 1]
     }
 
-    /// 曲線の描き方の計画。区間ごとに 0 = エルミート曲線 / 1 = 円 (始まり側) / 2 = 円 (終わり側) と、円をかける範囲 (点の番号 rs〜re)
-    struct CurvePlan {
-        var shape: [Int]
-        var rs: [Int]
-        var re: [Int]
-    }
-
-    /// 円 (4 分の 1 の円 f(u) = √(1 − (1 − u)²)) をかける範囲を決める。
-    /// ・始点から同じ向きに進んで、折り返す (または止まる) 点までのひと続き → 真横から出て、ぐるっと回って縦に収まる
-    /// ・折り返す (または止まる) 点から、同じ向きに進んで終点までのひと続き → 縦から出て、ぐるっと回って真横で終わる
-    /// ひと続きの途中に点があるとき (Curve bake で足した点など) は、どの点も円から幅の 1 割以内にあるときだけ、まとめて 1 つの円にする
-    /// (離れていたら、判定点が帯から外れないように、ふつうの曲線のまま)
-    static func curvePlan(_ xs: [Double], _ ys: [Double]) -> CurvePlan {
-        let n = ys.count
-        var plan = CurvePlan(shape: [Int](repeating: 0, count: max(0, n - 1)),
-                             rs: Array(0..<max(0, n - 1)), re: Array(1..<max(1, n)))
-        guard n >= 3, xs.count == n else { return plan }
-        func fits(_ rs: Int, _ re: Int, _ kind: Int) -> Bool {
-            let span = xs[re] - xs[rs]
-            guard span > 1e-12 else { return false }
-            let tol = abs(ys[re] - ys[rs]) * 0.1
-            for i in (rs + 1)..<re {
-                guard xs[i] > xs[i - 1] - 1e-12 else { return false }
-                let v = arc(ys[rs], ys[re], (xs[i] - xs[rs]) / span, kind)
-                if abs(v - ys[i]) > tol { return false }
-            }
-            return true
-        }
-        // 始まり側
-        var headEnd = -1
-        let d0 = ys[1] - ys[0]
-        if d0 != 0 {
-            var j = 1
-            while j + 1 < n && (ys[j + 1] - ys[j]) * d0 > 0 { j += 1 }
-            if j < n - 1 && fits(0, j, 1) {
-                for k in 0..<j { plan.shape[k] = 1; plan.rs[k] = 0; plan.re[k] = j }
-                headEnd = j
-            }
-        }
-        // 終わり側
-        let dl = ys[n - 1] - ys[n - 2]
-        if dl != 0 {
-            var i = n - 2
-            while i - 1 >= 0 && (ys[i] - ys[i - 1]) * dl > 0 { i -= 1 }
-            if i > 0 && i >= headEnd && fits(i, n - 1, 2) {
-                for k in i..<(n - 1) { plan.shape[k] = 2; plan.rs[k] = i; plan.re[k] = n - 1 }
-            }
-        }
-        return plan
-    }
-
-    /// a → b の 4 分の 1 の円。kind 1 = 横に速く出て縦に収まる / 2 = 縦から出て横に速く終わる
-    static func arc(_ a: Double, _ b: Double, _ u: Double, _ kind: Int) -> Double {
-        let t = min(1, max(0, u))
-        if kind == 1 {
-            let v = 1 - t
-            return a + (b - a) * (1 - v * v).squareRoot()
-        }
-        return a + (b - a) * (1 - (1 - t * t).squareRoot())
-    }
-
-    /// 区間 k の中の位置 (u = 0〜1) での曲線の値
-    static func curveValue(_ xs: [Double], _ ys: [Double], _ m: [Double], _ plan: CurvePlan, segment k: Int, u t: Double) -> Double {
-        let h = xs[k + 1] - xs[k]
-        let shape = k < plan.shape.count ? plan.shape[k] : 0
-        if shape != 0 {
-            let rs = plan.rs[k]
-            let re = plan.re[k]
-            let span = xs[re] - xs[rs]
-            let x = xs[k] + h * t
-            return arc(ys[rs], ys[re], span > 1e-12 ? (x - xs[rs]) / span : t, shape)
-        }
-        let t2 = t * t
-        let t3 = t2 * t
-        return (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k]
-            + (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * h * m[k + 1]
-    }
-
-    static func curvePoints(_ xs: [Double], _ ys: [Double], samples: Int = 16) -> [(x: Double, y: Double)] {
-        let n = xs.count
-        guard n >= 3, ys.count == n else { return zip(xs, ys).map { (x: $0, y: $1) } }
-        let m = curveTangents(xs, ys)
-        let plan = curvePlan(xs, ys)
+    /// 経由点 (x = 拍か秒、y = 横の位置) を、角を丸めた曲線の細かい点の列にする (区間ごとに samples 個)。
+    /// 時間 0 の区間は、そのまま横に飛ぶ線
+    static func curvePoints(_ xs: [Double], _ ys: [Double], laneUnit: Double, samples: Int = 24) -> [(x: Double, y: Double)] {
+        guard let c = curveShape(xs, ys, laneUnit: laneUnit) else { return zip(xs, ys).map { (x: $0, y: $1) } }
         var out: [(x: Double, y: Double)] = [(x: xs[0], y: ys[0])]
-        for k in 0..<(n - 1) {
+        for k in 0..<(xs.count - 1) {
             let h = xs[k + 1] - xs[k]
             if h <= 1e-12 {
                 out.append((x: xs[k + 1], y: ys[k + 1]))
                 continue
             }
-            let shape = plan.shape[k]
-            let cnt = shape == 0 ? samples : samples * 2
-            for i in 1...cnt {
-                let s = Double(i) / Double(cnt)
-                // 円の区間は、横に速く動く側 (円の始め / 終わり) ほど細かく刻む (帯がカクッとしないように)
-                var t = s
-                if shape == 1 && k == plan.rs[k] { t = s * s }
-                if shape == 2 && k + 1 == plan.re[k] { t = 1 - (1 - s) * (1 - s) }
-                out.append((x: xs[k] + h * t, y: curveValue(xs, ys, m, plan, segment: k, u: t)))
+            for i in 1...samples {
+                let t = xs[k] + h * Double(i) / Double(samples)
+                out.append((x: t, y: curveAt(c, t)))
             }
         }
         return out
