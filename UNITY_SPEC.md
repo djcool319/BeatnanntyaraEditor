@@ -29,6 +29,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
   "disappear": [ {"LPB": 4, "num": 264, "block": 0, "type": 2, "nth": 0, "atLPB": 4, "atNum": 256},
                  {"LPB": 4, "num": 270, "block": 3, "type": 1, "nth": 0, "atLPB": 4, "atNum": 250} ],
   "curve": [ {"LPB": 4, "num": 128, "block": 3, "type": 2, "nth": 0} ],
+  "ease": [ {"LPB": 4, "num": 128, "block": 3, "type": 2, "nth": 0, "eases": [0, 2, 1]} ],
   "part": [ {"LPB": 4, "num": 512, "parts": [ {"LPB": 4, "num": 640, "parts": []} ]} ],
   "lyrics": [ {"LPB": 4, "num": 512, "text": "歌詞", "parts": [ {"LPB": 4, "num": 528, "parts": []} ]} ],
   "notes": [ {"LPB": 4, "num": 0, "block": 0, "type": 1, "notes": []} ]
@@ -38,7 +39,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 - `name` は曲名だけ（`(EX)` などの略称は付けない）。略称はファイル名（`曲名(EX).json`）にだけ付ける
 - `difficulty`: 0 = BASIC / 1 = HARD / 2 = EXTREME / 3 = INSANE
 
-### 0-1. ノーツの指し方（`speeds_each` / `dummy` / `appear` / `disappear` / `curve` 共通）（2026-10-15 変更）
+### 0-1. ノーツの指し方（`speeds_each` / `dummy` / `appear` / `disappear` / `curve` / `ease` 共通）（2026-10-15 変更）
 
 同じ位置（同じ拍・同じ block）に、まっすぐのホールドとギザギザのスライドを重ねて入れ替える、のような演出ができるように、**位置だけでなく「どのノーツか」まで指す**ようにした。
 
@@ -64,6 +65,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 [System.Serializable] public class SpeedEach   { public int LPB; public int num; public int block; public int type; public int nth; public float speed; }
 [System.Serializable] public class DummyEntry  { public int LPB; public int num; public int block; public int type; public int nth; }
 [System.Serializable] public class CurveEntry  { public int LPB; public int num; public int block; public int type; public int nth; }
+[System.Serializable] public class EaseEntry   { public int LPB; public int num; public int block; public int type; public int nth; public List<int> eases; }
 [System.Serializable] public class AppearEntry { public int LPB; public int num; public int block; public int type; public int nth; public int atLPB; public int atNum; }
 [System.Serializable] public class RangeEnd    { public int LPB; public int num; }
 [System.Serializable] public class PartEntry   { public int LPB; public int num; public List<RangeEnd> parts; }
@@ -77,6 +79,7 @@ public List<DummyEntry> dummy;
 public List<AppearEntry> appear;
 public List<AppearEntry> disappear;
 public List<CurveEntry> curve;
+public List<EaseEntry> ease;
 public List<PartEntry> part;
 public List<LyricEntry> lyrics;
 ```
@@ -221,6 +224,32 @@ public List<LyricEntry> lyrics;
 4. 判定・スコア・SE・ノーツの生成（判定点）には触らない
 
 - 補足: エディタの **Curve bake** は、置いた中継点を目安にした大きなカーブに沿って**中継点を置き直す**だけ（JSON では普通の経由点 + `curve`）。Unity 側は今の `curve` 対応（SlideCurve.cs / SlideFollower.cs）だけでよく、追加の対応は要らない
+
+## 7-3. 区間ごとの曲がり方（`ease`）（2026-10-17 追加）
+
+- `{"LPB", "num", "block", "type": 2, "nth", "eases": [ … ]}`: 指したスライド（0-1 の指し方）の**区間ごとの曲がり方**
+  - `eases[k]` = 点 k → 点 k+1 の区間（点 0 = 始点、点 1 = 1 つ目の経由点 …）。数は経由点の数と同じ。足りない分は 0
+  - `0` = まっすぐ（今まで通り）/ `1` = **Ease In**（はじめゆっくり → あと速く）/ `2` = **Ease Out**（はじめ速く → あとゆっくり）
+  - **見た目だけ**。判定点（始点・経由点）の時刻・レーンと、押しているかの判定（`currentLane`）は今までと同じ
+  - `ease` が付いているスライドでは `curve` は使わない（両方あったら `ease` が優先）
+- 形（区間の始まりのレーン `a`、終わりのレーン `b`、区間の中の位置 `u = (t − timeA) / (timeB − timeA)`）:
+  - Ease In: `lane = a + (b − a) · u²`
+  - Ease Out: `lane = a + (b − a) · (1 − (1 − u)²)`
+  - 区間を 16 等分した点で帯を描く（ソフランの変わり目の点も今まで通り入れる）
+- エディタ: More → **Ease** を選んで、スライドの帯（点と点の間）をタップ → 「まっすぐ / Ease In / Ease Out / このスライド全部 …」を選ぶ
+- **実装の手順**
+  1. `SlideFollower.cs` をまるごと差し替える（`public int ease` と、ease の帯・光の動きを足した。ease が 0 なら今までと同じ）
+  2. NotesGenerate: `ease` で指したスライドのとき、区間 k の SlideFollower に `follower.ease = eases[k]` を入れる（`EnsureInit` の前に）。`ease` があるスライドには `curve` は入れない
+     ```csharp
+     // easeList: そのスライドの eases (無ければ null)。followers[k]: 区間 k (点 k → 点 k+1) の SlideFollower
+     if (easeList != null)
+     {
+         for (int k = 0; k < followers.Count; k++)
+             followers[k].ease = k < easeList.Count ? easeList[k] : 0;
+     }
+     else if (isCurve) { /* 7-2 のとおり SlideCurve を入れる */ }
+     ```
+  3. 判定・スコア・SE には触らない
 
 ## 8. 参考（変わっていないもの）
 

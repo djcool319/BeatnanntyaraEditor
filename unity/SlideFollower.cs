@@ -23,6 +23,11 @@ public class SlideFollower : MonoBehaviour
 
     // ★曲線スライド(curve)：同じスライドの全セグメントで共有する曲線。null なら今まで通りまっすぐ(見た目だけ。判定は変えない)
     [HideInInspector] public SlideCurve curve;
+
+    // ★区間の曲がり方(ease)：0 = まっすぐ / 1 = Ease In(はじめゆっくり→あと速く) / 2 = Ease Out(はじめ速く→あとゆっくり)
+    //   0 以外なら curve より優先(見た目だけ。判定は変えない)
+    [HideInInspector] public int ease = 0;
+    private const int EaseSamples = 16;
     private int _curveSeg = -1;
 
     // ★帯の点を置く時刻(両端を除く)。ソフランの変わり目と、曲線の細かい点を時刻順に並べたもの
@@ -88,8 +93,13 @@ public class SlideFollower : MonoBehaviour
         // ★曲線スライド：曲線の細かい点も足す(ソフランの変わり目と合わせて時刻順)
         _midTimes.Clear();
         _midTimes.AddRange(_cutTimes);
-        _curveSeg = (curve != null && timeB - timeA > 1e-6f) ? curve.SegmentOf(timeA, timeB) : -1;
+        _curveSeg = (ease == 0 && curve != null && timeB - timeA > 1e-6f) ? curve.SegmentOf(timeA, timeB) : -1;
         if (_curveSeg >= 0) curve.AppendSampleTimes(_curveSeg, _midTimes);
+        // ★ease：区間を細かく刻む
+        if (ease != 0 && timeB - timeA > 1e-6f && laneA != laneB)
+        {
+            for (int i = 1; i < EaseSamples; i++) _midTimes.Add(timeA + (timeB - timeA) * i / EaseSamples);
+        }
         _midTimes.Sort();
         line.positionCount = 2 + _midTimes.Count;
 
@@ -171,6 +181,7 @@ public class SlideFollower : MonoBehaviour
                 float rawX = Mathf.Lerp(indicatorXA, indicatorXB, progress);
                 // ★曲線スライド：光も帯(曲線)の上を動かす(見た目だけ。押しているかの判定は上の currentLane のまま)
                 if (_curveSeg >= 0) rawX = IndicatorBlockToX(curve.LaneAt(_curveSeg, (float)now));
+                else if (ease != 0) rawX = IndicatorBlockToX(Mathf.Lerp(laneA, laneB, EaseFraction(ease, progress)));
                 // ★ソフラン：「今の時刻」の帯の位置 = 判定ラインの位置(ソフランが無いときの今までの値と同じ)
                 float rawZ = GameManager.noteslineZ + 0.03f;
 
@@ -228,7 +239,17 @@ public class SlideFollower : MonoBehaviour
     {
         if (_curveSeg >= 0) return -0.337f + curve.LaneAt(_curveSeg, t) * 0.112333333f;
         float u = Mathf.InverseLerp(timeA, timeB, t);
+        if (ease != 0) u = EaseFraction(ease, u);
         return Mathf.Lerp(BlockToX(laneA), BlockToX(laneB), u);
+    }
+
+    // ★ease：区間の中の位置 u (0〜1) で、横にどれだけ進んだか (0〜1)。エディタの Beatrix.easeFraction と同じ
+    public static float EaseFraction(int e, float u)
+    {
+        float t = Mathf.Clamp01(u);
+        if (e == 1) return t * t;                       // Ease In
+        if (e == 2) return 1 - (1 - t) * (1 - t);       // Ease Out
+        return t;
     }
 
     // ★SnapIndicator専用。laneの中心(3)を基準に、端に行くほど縮めて広がりすぎを抑える

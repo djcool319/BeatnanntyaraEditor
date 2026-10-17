@@ -684,3 +684,13 @@
 - Unity 用に `unity/SlideCurve.cs`（新規）と `unity/SlideFollower.cs`（ユーザーの LineRenderer 版を元に、曲線の帯を描く処理を足したもの。まるごと差し替え）を置いた。UNITY_SPEC.md 7-2
 - 曲線の形を「角を丸める」に変更（2026-10-17）: 円（始点から真横に出る）は見た目が気持ち悪いと言われたので、折れ線の角ごとに A・B（角から両側の線の r 倍の位置）を 2 次ベジェでつなぐ形にした（Beatrix.curveShape / curveAt / curvePoints(laneUnit:)）。r = 0.5、角でのずれが 0.4 レーンを超えるなら小さくする。laneUnit は 1 レーンの大きさ（エディタの帯 = 255·2/18、テストプレイ = 2/18、bake = 1）。PCHIP・円のコードは消した。Unity の SlideCurve.cs も同じ式に差し替え（SlideFollower.cs はそのまま）
 - Curve bake を「曲線に作り直す」に変更（2026-10-17、ユーザーの本当の希望）: おおまかなギザギザを置いて押すと、大きくなめらかなカーブのスライドになる。中継点を制御点にした 3 次 B スプライン（両端は一致。Beatrix.bSplineSamples）を作り、曲線がレーンの真ん中（整数）を通る拍ごとに中継点を置き直す（EditorState.bakedSegs）。始点・終点・時間 0 の区間（横に飛ぶ線）の点はそのまま、ほかの元の中継点は消える。同じレーンが続くときは 1/32 拍以上離れたときだけ置く（平らな区間の終わり）。拍は曲線から 0.15 レーン以内のいちばん粗い拍。curve の印も付ける（描くときは Curve の角丸めで、置き直した点の間もなめらか）。JSON は普通の経由点なので Unity の追加対応は不要
+
+## 19. 区間ごとの曲がり方 ease（2026-10-17）
+
+- ユーザーが見せた動画（プロセカの譜面エディタ風）のように、スライドの区間ごとに「まっすぐ / Ease In / Ease Out」を選べるようにした
+- More → **Ease**（EditTool.ease）: 帯（点と点の間）をタップ → easeTap がその区間を探す → confirmationDialog（easeTarget）で選ぶ → setEase（その区間だけ / このスライド全部）
+- extra の bxEase = [Int]（k = 点 k → 点 k+1。0 まっすぐ / 1 Ease In u² / 2 Ease Out 1−(1−u)²）。Beatrix.eases / hasEase / easeFraction / slideShape
+- 描画: エディタの帯（Renderers）とテストプレイ（BxSlide.draw）。ease があれば curve より優先。判定は変えない
+- JSON: `"ease": [ {"LPB","num","block","type":2,"nth","eases":[…]} ]`（curve の後、part の前）
+- Unity: UNITY_SPEC.md 7-3、unity/SlideFollower.cs（ease 対応を足した。まるごと差し替え）
+- Curve / Curve bake はそのまま残してある
