@@ -297,7 +297,7 @@ struct StripView: View {
                                 if state.isPlaying { state.pause() }
                                 origin = state.viewBeat
                             }
-                            let ppb = Double(proxy.size.height) / state.stripBeats
+                            let ppb = state.stripPPB(stripHeight: Double(proxy.size.height))   // レーンと同じだけ動く
                             if let o = origin {
                                 state.setViewBeat(o + Double(v.translation.height) / ppb)
                             }

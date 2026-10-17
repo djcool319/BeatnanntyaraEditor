@@ -708,3 +708,8 @@
   - 効果音は BeatrixSounds.mixerSounds で曲のサンプリング周波数に直して登録（0 tap / 1 wipe / 2 red / 3 しゅ〜）
 - Swift Playgrounds（C++ を入れられない）では、TestPlay.swift の前の GameAudio（`#if !canImport(CBxAudio)`）と BeatrixSounds のまま
 - CI: ビルド用の Package.swift に CBxAudio ターゲット（-O3）を足した。ビルド後に「CBxAudio mixer: included」と出れば入っている。Playgrounds 用の Package.swift は Vendor / unity を除外
+
+## 21. 左の帯の倍率をズームに連動（2026-10-17）
+
+- 左の縦長の帯（StripView / StripRenderer）の 1 拍の長さを、真ん中のレーンと同じ（レーンの高さ ÷ 表示拍数）にした（EditorState.stripPPB）。ズームに比例し、帯をドラッグするとレーンと同じだけ動く。前は本家と同じ 1 拍 = 約 178pt 固定（stripBeats = 4.6）
+- レーンの高さは LaneRenderer が描くたびに state.laneHeight に入れる

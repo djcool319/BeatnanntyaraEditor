@@ -78,6 +78,7 @@ private func lineStyle(rem: Int, den: Int) -> (Color, CGFloat) {
 enum LaneRenderer {
     static func draw(ctx: GraphicsContext, size: CGSize, state: EditorState) {
         let g = state.geo(size)
+        state.laneHeight = Double(size.height)       // 左の帯の倍率をレーンに合わせるため
         var c = ctx
         // 背景は塗らない (EditorBackground の背景画像を透かす)
         // 左の番号欄だけは、時刻表示から続く明るいパネルを敷く (本家と同じ)
@@ -776,8 +777,7 @@ enum StripRenderer {
         let faceRect = CGRect(x: 0, y: faceTop, width: faceW, height: max(1, H - faceTop - faceBottomInset))
         c.fill(Path(faceRect), with: .color(faceColor))
 
-        let beats = state.stripBeats
-        let ppb = Double(H) / beats
+        let ppb = state.stripPPB(stripHeight: Double(H))       // レーンと同じ 1 拍の長さ (ズームに比例)
         let center = H * 0.5
         let vb = state.currentBeat()
         func y(_ b: Double) -> CGFloat { center - CGFloat((b - vb) * ppb) }

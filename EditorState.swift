@@ -444,9 +444,14 @@ final class EditorState: ObservableObject {
     var zoomIndex: Int { Int(zoomLevel.rounded()) }
     var visibleBeats: Double { Self.visibleBeats(forLevel: zoomLevel) }
 
-    /// 左の縦長タイムラインは、本家と同じく倍率を固定する (ズームには連動しない)。
-    /// 本家の実測: 1拍 = 約 178pt (iPad Air 4 の高さ 820pt で 約 4.6拍)
-    var stripBeats: Double { 4.6 }
+    /// 左の縦長タイムライン (帯) の 1 拍の長さ (pt)。真ん中のレーンと同じにする (ズームに比例。帯をドラッグすると、レーンと同じだけ動く)。
+    /// (前は本家と同じく 1拍 = 約 178pt に固定していた)
+    func stripPPB(stripHeight h: Double) -> Double {
+        let laneH = laneHeight > 1 ? laneHeight : h
+        return laneH / visibleBeats
+    }
+    /// 真ん中のレーンの高さ (LaneRenderer が描くたびに入れる。帯の倍率をレーンに合わせるため)
+    var laneHeight: Double = 0
 
     var zoomLabel: String { zoomIndex >= 16 ? "1/32拍" : "\(zoomIndex + 1)/16" }
 
