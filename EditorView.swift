@@ -811,7 +811,7 @@ struct RightPanel: View {
             }
             .frame(height: pitch)
             PanelButton(glyph: "•••",      // More
-                        active: state.popup == .more || state.tool == .selectRange || state.tool == .lasso || state.tool == .slideModify || state.tool == .part || state.tool == .lyrics,
+                        active: state.popup == .more || state.tool == .selectRange || state.tool == .lasso || state.tool == .slideModify || state.tool == .part || state.tool == .lyrics || state.tool == .ease,
                         icon: { AnyView(PanelIconView(kind: .more, color: $0)) }) {
                 state.popup = state.popup == .more ? .none : .more
             }
@@ -879,6 +879,20 @@ struct EditorView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍で急に出てくる / 急に消えます。何回でも足せるので、出る→消える→出る… もできます (最初が「出現」なら、それまでは見えません)。選んだノーツだけに付くので、同じ位置のホールドとスライドを入れ替える演出もそのままできます。判定はそのまま (見えなくても判定はある) です")
+        }
+        // 区間の曲がり方 (Ease ツールで帯をタップしたら出す)
+        .confirmationDialog("この区間の曲がり方", isPresented: Binding(get: { state.easeTarget != nil },
+                                                                   set: { if !$0 { state.easeTarget = nil } }),
+                            titleVisibility: .visible) {
+            Button("まっすぐ") { state.setEase(0, all: false) }
+            Button("Ease In (はじめゆっくり → あと速く)") { state.setEase(1, all: false) }
+            Button("Ease Out (はじめ速く → あとゆっくり)") { state.setEase(2, all: false) }
+            Button("このスライド全部 Ease In") { state.setEase(1, all: true) }
+            Button("このスライド全部 Ease Out") { state.setEase(2, all: true) }
+            Button("このスライド全部まっすぐ", role: .destructive) { state.setEase(0, all: true) }
+            Button("キャンセル", role: .cancel) { state.easeTarget = nil }
+        } message: {
+            Text("見た目だけが変わります (判定の点の位置・時間はそのまま)")
         }
         // 歌詞の入力 (EditorState が lyricEdit を入れたら出す。iOS 15 でも入力欄が出るように UIKit のダイアログで)
         .onReceive(state.$lyricEdit) { e in
@@ -1032,7 +1046,7 @@ struct EditorView: View {
     private static let moreTextX: CGFloat = 54.5
     /// 本家は、メニューの上端が More ボタンの中心より 263pt 上にある
     private static let moreTopAboveButton: CGFloat = 263
-    private static let moreRowCount = 17
+    private static let moreRowCount = 18
 
     /// More メニューの上端の高さ (画面の上端から)。画面の下にはみ出すときだけ、はみ出さない位置まで上げる
     private func moreMenuTop(height: CGFloat) -> CGFloat {
@@ -1107,7 +1121,7 @@ struct EditorView: View {
                         ])
                 }
             }
-          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 6 つも Group にまとめる
+          // ViewBuilder は 1 つのブロックに 10 個までなので、下の 7 つも Group にまとめる
           Group {
             // 歌詞 (始点 → 終点をタップして文字を入れる。区間の中をタップで編集・削除)
             moreItem("Lyrics", icon: .timeRange, active: state.tool == .lyrics) {
@@ -1129,6 +1143,11 @@ struct EditorView: View {
             moreItem("Curve bake", icon: .slideModify, dim: state.selectedIDs.isEmpty) {
                 state.popup = .none
                 state.bakeCurve()
+            }
+            // 区間ごとの曲がり方 (まっすぐ / Ease In / Ease Out。JSON の ease)
+            moreItem("Ease", icon: .slideModify, active: state.tool == .ease) {
+                state.popup = .none
+                state.toggleEaseTool()
             }
           }
         }

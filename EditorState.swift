@@ -8,6 +8,7 @@ enum EditTool: Equatable {
     case note, wipe, slide, remove, lasso, order, plugin, selectRange, slideModify
     case red, hold                       // びーとり: 赤タップ (3 鍵) / ホールド (7 鍵。始点から上へドラッグ)
     case part                            // びーとり: part の区間 (始点 → 終点をタップ。区間の中をタップで削除)
+    case ease                            // びーとり: スライドの区間をタップして、曲がり方 (まっすぐ / Ease In / Ease Out) を選ぶ
     case lyrics                          // びーとり: 歌詞の区間 (始点 → 終点をタップして文字を入れる。区間の中をタップで編集・削除)
 
     /// Note / Red / Hold / Wipe / Slide (配置 + 既存ノーツの選択・移動ができるツール)
@@ -141,6 +142,7 @@ final class EditorState: ObservableObject {
     @Published var selectedIDs: Set<UUID> = []       // 選択中のノーツ (赤く表示)
     @Published var orderIDs: [UUID] = []             // 「順番に選択」(Order) で選んだスライド。タップした順。結合系プラグインがこの順番を使う
     @Published var modifySlideID: UUID? = nil        // Slide modify で編集中のスライド (選ぶと selectedIDs もそのスライドだけになる)
+    @Published var easeTarget: EaseTarget? = nil     // Ease ツールでタップしたスライドの区間 (入ると選ぶダイアログが出る)
     @Published var modifySegIndex: Int? = nil        // Slide modify で掴んでいる点 (seg)。ドラッグ中だけ入る (白い輪で目印を出す)
     @Published var popup: EditPopup = .none
     @Published var gridLines = 16

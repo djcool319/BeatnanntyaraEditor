@@ -445,6 +445,72 @@ extension EditorState {
         return out
     }
 
+    // MARK: 区間ごとの曲がり方 (ease)
+
+    func toggleEaseTool() {
+        editing = true
+        toggleTool(.ease)
+        if tool == .ease {
+            showToast("スライドの帯 (点と点の間) をタップすると、その区間の曲がり方を選べます")
+        }
+    }
+
+    /// Ease ツールでレーンをタップしたとき: 触れた帯の区間を探して、選ぶダイアログを出す
+    func easeTap(at p: CGPoint, g: LaneGeo) {
+        let tb = g.beatOf(p.y)
+        var best: (id: UUID, seg: Int, d: CGFloat)? = nil
+        for n in chart.notes where n.isSlide {
+            let hw = CGFloat(n.w) / 255.0 * g.trackW / 2.0
+            var bs: [Double] = [n.beat.value]
+            var xs: [Double] = [Double(n.x)]
+            for s in n.segs {
+                bs.append(n.beat.value + s.beat.value)
+                xs.append(Double(n.x + s.x))
+            }
+            let es = Beatrix.eases(n)
+            for k in 0..<(bs.count - 1) {
+                let lo = min(bs[k], bs[k + 1])
+                let hi = max(bs[k], bs[k + 1])
+                guard hi - lo > 1e-9, tb >= lo, tb <= hi else { continue }
+                let u = (tb - bs[k]) / (bs[k + 1] - bs[k])
+                let x = xs[k] + (xs[k + 1] - xs[k]) * Beatrix.easeFraction(es[k], u)
+                let d = abs(g.px(x) - p.x)
+                guard d <= hw + 14 else { continue }
+                if best == nil || d < best!.d { best = (n.id, k, d) }
+            }
+        }
+        guard let b = best else {
+            showToast("スライドの帯 (点と点の間) をタップしてください")
+            return
+        }
+        selectedIDs = [b.id]
+        easeTarget = EaseTarget(noteID: b.id, seg: b.seg)
+    }
+
+    /// 選んだ曲がり方を付ける。all = true なら、そのスライドの全区間に
+    func setEase(_ e: Int, all: Bool) {
+        guard let t = easeTarget, let i = chart.notes.firstIndex(where: { $0.id == t.noteID }), chart.notes[i].isSlide else {
+            easeTarget = nil
+            return
+        }
+        easeTarget = nil
+        var es = Beatrix.eases(chart.notes[i])
+        if all {
+            es = es.map { _ in e }
+        } else if t.seg < es.count {
+            es[t.seg] = e
+        }
+        pushUndo()
+        if es.contains(where: { $0 != 0 }) {
+            chart.notes[i].extra[Beatrix.easeKey] = es
+        } else {
+            chart.notes[i].extra.removeValue(forKey: Beatrix.easeKey)
+        }
+        chartChanged()
+        let name = ["まっすぐ", "Ease In", "Ease Out"][max(0, min(2, e))]
+        showToast(all ? "このスライドの全区間を「\(name)」にしました" : "区間 \(t.seg + 1) を「\(name)」にしました")
+    }
+
     // MARK: part
 
     /// Part ツールでレーンをタップしたとき。
@@ -984,4 +1050,11 @@ struct TempoDetectDialog: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+/// Ease ツールでタップしたスライドの区間
+struct EaseTarget: Identifiable {
+    let id = UUID()
+    let noteID: UUID
+    let seg: Int
 }

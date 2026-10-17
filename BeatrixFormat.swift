@@ -11,6 +11,7 @@ import Foundation
 //     "lyrics": [ {"LPB": 4, "num": 560, "text": "歌詞", "parts": [ {"LPB": 4, "num": 576, "parts": []} ]}, ... ],
 //                                                                  // 歌詞 (part と同じ形 + text。始まり〜終わりの間だけ表示)
 //     "curve": [ {"LPB": 4, "num": 128, "block": 3, "type": 2, "nth": 0}, ... ],
+//     "ease": [ {"LPB": 4, "num": 128, "block": 3, "type": 2, "nth": 0, "eases": [0, 2, 1]}, ... ],
 //                  // 曲線スライド。指したスライドの見た目を、経由点をなめらかな曲線でつないだ形にする (判定の位置は経由点のまま)
 //     "dummy": [ {"LPB": 4, "num": 240, "block": 3}, ... ],         // ダミーノーツ。LPB・num・block が完全に一致するノーツ
 //                                                                  // (ホールド・スライドは始点の位置) は、流れてくるけど判定が無い
@@ -69,6 +70,57 @@ enum Beatrix {
     static let dummyKey = "bxDummy"
     /// 曲線スライド ("curve")。true なら、見た目だけ経由点をなめらかな曲線でつなぐ (判定の位置は経由点のまま)
     static let curveKey = "bxCurve"
+
+    /// 区間ごとの曲がり方 ("ease")。[Int] で、k 番目 = 点 k → 点 k+1 の区間 (0 = 始点 → 1 つ目の seg)。
+    /// 0 = まっすぐ / 1 = Ease In (はじめゆっくり → あと速く) / 2 = Ease Out (はじめ速く → あとゆっくり)
+    static let easeKey = "bxEase"
+
+    static func eases(_ n: Note) -> [Int] {
+        let raw = (n.extra[easeKey] as? [Int]) ?? ((n.extra[easeKey] as? [Any])?.compactMap { intValue($0) } ?? [])
+        var out = [Int](repeating: 0, count: n.segs.count)
+        for k in 0..<min(raw.count, out.count) { out[k] = (raw[k] == 1 || raw[k] == 2) ? raw[k] : 0 }
+        return out
+    }
+
+    static func hasEase(_ n: Note) -> Bool {
+        n.isSlide && eases(n).contains { $0 != 0 }
+    }
+
+    /// 区間の中の位置 u (0〜1) で、横にどれだけ進んだか (0〜1)
+    static func easeFraction(_ e: Int, _ u: Double) -> Double {
+        let t = min(1, max(0, u))
+        switch e {
+        case 1: return t * t
+        case 2: return 1 - (1 - t) * (1 - t)
+        default: return t
+        }
+    }
+
+    /// スライドの帯の形 (細かい点の列)。xs = 時刻、ys = 横の位置。
+    /// ease が 1 つでも付いていれば ease の形 (付いていない区間はまっすぐ。curve は使わない)。
+    /// ease が無くて curve なら角を丸めた形。どちらも無ければ点そのまま
+    static func slideShape(_ xs: [Double], _ ys: [Double], eases: [Int], curve: Bool, laneUnit: Double,
+                           samples: Int = 16) -> [(x: Double, y: Double)] {
+        let n = xs.count
+        guard n >= 2, ys.count == n else { return zip(xs, ys).map { (x: $0, y: $1) } }
+        if eases.count == n - 1 && eases.contains(where: { $0 != 0 }) {
+            var out: [(x: Double, y: Double)] = [(x: xs[0], y: ys[0])]
+            for k in 0..<(n - 1) {
+                let h = xs[k + 1] - xs[k]
+                if eases[k] == 0 || h <= 1e-12 || ys[k + 1] == ys[k] {
+                    out.append((x: xs[k + 1], y: ys[k + 1]))
+                    continue
+                }
+                for i in 1...samples {
+                    let u = Double(i) / Double(samples)
+                    out.append((x: xs[k] + h * u, y: ys[k] + (ys[k + 1] - ys[k]) * easeFraction(eases[k], u)))
+                }
+            }
+            return out
+        }
+        if curve { return curvePoints(xs, ys, laneUnit: laneUnit) }
+        return zip(xs, ys).map { (x: $0, y: $1) }
+    }
 
     static func isCurve(_ n: Note) -> Bool {
         (n.extra[curveKey] as? Bool) == true
@@ -571,7 +623,7 @@ extension ChartData {
         }
 
         var b = obj
-        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve"] { b.removeValue(forKey: k) }
+        for k in ["notes", "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve", "ease"] { b.removeValue(forKey: k) }
         let nameInfo = Beatrix.splitName((obj["name"] as? String) ?? "")
         b["name"] = nameInfo.title
         var diff = nameInfo.diff ?? .extreme
@@ -692,6 +744,10 @@ extension ChartData {
             for ni in targets(e) { notes[ni].extra[Beatrix.dummyKey] = true }
         }
         // 曲線スライド
+        for e in (obj["ease"] as? [[String: Any]]) ?? [] {
+            let list = ((e["eases"] as? [Any]) ?? []).map { Beatrix.intValue($0) ?? 0 }
+            for ni in targets(e) where notes[ni].isSlide { notes[ni].extra[Beatrix.easeKey] = list }
+        }
         for e in (obj["curve"] as? [[String: Any]]) ?? [] {
             for ni in targets(e) where notes[ni].isSlide { notes[ni].extra[Beatrix.curveKey] = true }
         }
@@ -740,6 +796,12 @@ extension ChartData {
         out["speeds_each"] = beatrixSpeedsEach()
         out["dummy"] = beatrixDummies()
         out["curve"] = beatrixTargets().filter { $0.note.isSlide && Beatrix.isCurve($0.note) }.map { $0.ref }
+        out["ease"] = beatrixTargets().compactMap { t -> [String: Any]? in
+            guard Beatrix.hasEase(t.note) else { return nil }
+            var d = t.ref
+            d["eases"] = Beatrix.eases(t.note)
+            return d
+        }
         out["appear"] = beatrixAtList(Beatrix.appearKey)
         out["disappear"] = beatrixAtList(Beatrix.vanishKey)
 
@@ -983,8 +1045,8 @@ struct BeatrixKey: Hashable {
 
 enum BeatrixJSONWriter {
     static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
-                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve", "part", "lyrics", "notes"]
-    static let innerOrder = ["LPB", "num", "block", "type", "nth", "bpm", "speed", "atLPB", "atNum", "text", "notes", "parts"]
+                           "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve", "ease", "part", "lyrics", "notes"]
+    static let innerOrder = ["LPB", "num", "block", "type", "nth", "bpm", "speed", "atLPB", "atNum", "eases", "text", "notes", "parts"]
 
     static func data(_ obj: [String: Any]) -> Data {
         var out = ""

@@ -141,6 +141,9 @@ extension EditorState {
         case .lyrics:
             if ended && !moved { lyricsTap(beat: placeBeat(current.y, g)) }
 
+        case .ease:
+            if ended && !moved { easeTap(at: current, g: g) }
+
         case .selectRange:
             if ended && !moved {
                 let b = snapBeat(g.beatOf(current.y))
@@ -278,7 +281,7 @@ extension EditorState {
         case .lasso:
             lassoPoints = [p]                       // なぞり始め。ここから指を離すまでの線で範囲を囲む
             dragMode = .lasso
-        case .remove, .selectRange, .order, .part, .lyrics:
+        case .remove, .selectRange, .order, .part, .lyrics, .ease:
             dragMode = .legacy
         case .plugin:
             dragMode = .plugin

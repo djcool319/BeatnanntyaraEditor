@@ -310,8 +310,9 @@ enum LaneRenderer {
             // 帯の形 (曲線スライドは、経由点をなめらかにつないだ細かい点。ふつうは経由点そのまま)
             var shape: [(b: Double, x: Double)] = [(b: sb, x: Double(n.x))]
             for s in n.segs { shape.append((b: sb + s.beat.value, x: Double(n.x + s.x))) }
-            if Beatrix.isCurve(n) && shape.count >= 3 && zip(shape, shape.dropFirst()).allSatisfy({ $0.b <= $1.b }) {
-                shape = Beatrix.curvePoints(shape.map { $0.b }, shape.map { $0.x }, laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
+            if (Beatrix.isCurve(n) || Beatrix.hasEase(n)) && shape.count >= 2 && zip(shape, shape.dropFirst()).allSatisfy({ $0.b <= $1.b }) {
+                shape = Beatrix.slideShape(shape.map { $0.b }, shape.map { $0.x }, eases: Beatrix.eases(n), curve: Beatrix.isCurve(n),
+                                           laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
             }
             for idx in 1..<max(1, shape.count) {
                 let prevB = shape[idx - 1].b
@@ -540,8 +541,9 @@ enum LaneRenderer {
             // 帯の形 (曲線スライドは、経由点をなめらかにつないだ細かい点。ふつうは経由点そのまま)
             var shape: [(b: Double, x: Double)] = [(b: sb, x: Double(n.x))]
             for s in n.segs { shape.append((b: sb + s.beat.value, x: Double(n.x + s.x))) }
-            if Beatrix.isCurve(n) && shape.count >= 3 && zip(shape, shape.dropFirst()).allSatisfy({ $0.b <= $1.b }) {
-                shape = Beatrix.curvePoints(shape.map { $0.b }, shape.map { $0.x }, laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
+            if (Beatrix.isCurve(n) || Beatrix.hasEase(n)) && shape.count >= 2 && zip(shape, shape.dropFirst()).allSatisfy({ $0.b <= $1.b }) {
+                shape = Beatrix.slideShape(shape.map { $0.b }, shape.map { $0.x }, eases: Beatrix.eases(n), curve: Beatrix.isCurve(n),
+                                           laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
             }
             for idx in 1..<max(1, shape.count) {
                 let prevB = shape[idx - 1].b
