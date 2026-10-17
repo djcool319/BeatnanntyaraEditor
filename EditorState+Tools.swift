@@ -78,7 +78,11 @@ extension EditorState {
                         n.extra[Beatrix.headKey] = 0
                         pushUndo()
                         chart.notes.append(n)
-                        if holdWithHead { chart.notes.append(Note(beat: d.beat, x: d.x, w: Beatrix.tapW, type: nil)) }
+                        if holdWithHead {
+                            var h = Note(beat: d.beat, x: d.x, w: Beatrix.tapW, type: nil)
+                            h.extra[Beatrix.headLinkKey] = n.id.uuidString      // この始点を触ると、ホールドも一緒に選ばれる
+                            chart.notes.append(h)
+                        }
                         chartChanged()
                     } else {
                         showToast("終点は始点より後ろ (上) をタップしてください。始点を取り消しました")
@@ -204,6 +208,8 @@ extension EditorState {
             // 動かさずに離した: 選択中のノーツだったなら、そのノーツだけ選択から外す
             if phase == .ended && dragToggleOnTap && !dragMoved, let id = dragTouchedID {
                 selectedIDs.remove(id)
+                // 結び付いた始点のタップなら、スライドの選択も一緒に外す
+                if let n = chart.notes.first(where: { $0.id == id }), let sid = Beatrix.headLink(n) { selectedIDs.remove(sid) }
             }
         case .segDrag:
             if dragMoved { dragSeg(current: current, g: g) }
@@ -251,6 +257,10 @@ extension EditorState {
                 } else {
                     selectedIDs.insert(id)          // 触れたノーツを選択に追加 (そのまま動かすこともできる)
                     dragToggleOnTap = false
+                }
+                // 結び付いた始点のタップを触ったときは、そのスライド / ホールド (後ろの中継点も全部) も一緒に選ぶ
+                if let sid = Beatrix.headLink(chart.notes[i]), chart.notes.contains(where: { $0.id == sid && $0.isSlide }) {
+                    selectedIDs.insert(sid)
                 }
                 dragMode = .pendingMove
             } else if !selectedIDs.isEmpty {
@@ -757,11 +767,17 @@ extension EditorState {
         let base = snapBeat(currentBeat())
         pushUndo()
         var pasted = Set<UUID>()
+        var newID: [UUID: UUID] = [:]
+        for n in clip { newID[n.id] = UUID() }
         for n in clip {
             var m = n
             m.beat = base + n.beat
             Beatrix.shiftAtBeats(&m, from: n, by: base)       // 出現 / 消えるの拍も、貼り付けた位置に合わせてずらす
-            m.id = UUID()          // 元のノーツと同じ id にならないように付け直す
+            m.id = newID[n.id] ?? UUID()          // 元のノーツと同じ id にならないように付け直す
+            // 始点のタップの結び付きも、貼り付けたスライドに付け直す (スライドを一緒にコピーしていなければ外す)
+            if let sid = Beatrix.headLink(n) {
+                if let ns = newID[sid] { m.extra[Beatrix.headLinkKey] = ns.uuidString } else { m.extra.removeValue(forKey: Beatrix.headLinkKey) }
+            }
             pasted.insert(m.id)
             chart.notes.append(m)
         }
@@ -889,7 +905,11 @@ extension EditorState {
             n.extra[Beatrix.headKey] = 0
             chart.notes.append(n)
             // 「始点あり」のときは、始点の位置に普通のタップを 1 つ足す (始点だけを消したり動かしたりできる)
-            if slideWithHead { chart.notes.append(Note(beat: base.beat, x: base.x, w: Beatrix.tapW, type: nil)) }
+            if slideWithHead {
+                var h = Note(beat: base.beat, x: base.x, w: Beatrix.tapW, type: nil)
+                h.extra[Beatrix.headLinkKey] = n.id.uuidString          // この始点を触ると、スライド (後ろの中継点も全部) も一緒に選ばれる
+                chart.notes.append(h)
+            }
         }
         chartChanged()
     }

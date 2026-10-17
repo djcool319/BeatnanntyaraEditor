@@ -122,6 +122,16 @@ enum Beatrix {
         return zip(xs, ys).map { (x: $0, y: $1) }
     }
 
+    /// 始点のタップ / ワイプが、どのスライド / ホールドの始点か (スライドの id の文字列)。
+    /// 付いているタップを触ると、そのスライド (後ろの中継点も全部) も一緒に選ばれて、一緒に動く。
+    /// 付くのは「始点あり」でスライド / ホールドを置いたときと、JSON の始点の表記から読んだとき。
+    /// 自分で別に置いたタップには付かない (触っても、そのタップだけ)
+    static let headLinkKey = "bxHeadOf"
+
+    static func headLink(_ n: Note) -> UUID? {
+        (n.extra[headLinkKey] as? String).flatMap { UUID(uuidString: $0) }
+    }
+
     static func isCurve(_ n: Note) -> Bool {
         (n.extra[curveKey] as? Bool) == true
     }
@@ -669,6 +679,17 @@ extension ChartData {
             }
             notes.append(n)
             noteRaw.append(s.raw)
+        }
+        // JSON の始点の表記 (LPB・num が 2 倍) から読んだタップ / ワイプは、そのスライドの始点として結び付ける
+        // (触ると、スライドも一緒に選ばれて動く)
+        for (ni, n) in notes.enumerated() where !n.isSlide && (n.type == nil || n.type == 4) && ni < noteRaw.count {
+            let e = rawNotes[noteRaw[ni]]
+            let p = Beatrix.lpbNum(n.beat)
+            let lpb = Beatrix.intValue(e["LPB"]) ?? 0
+            let num = Beatrix.intValue(e["num"]) ?? 0
+            guard lpb == p.lpb * Beatrix.headLPBMul && num == p.num * Beatrix.headLPBMul else { continue }
+            let key = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
+            if let si = slideAt[key] { notes[ni].extra[Beatrix.headLinkKey] = notes[si].id.uuidString }
         }
         // スライド / ホールドの本体は「始点なし」(0)。始点は、上で普通のノーツとして入れてある
         for i in notes.indices where notes[i].isSlide {
