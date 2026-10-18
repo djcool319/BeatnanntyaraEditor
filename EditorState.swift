@@ -239,6 +239,12 @@ final class EditorState: ObservableObject {
         didSet { UserDefaults.standard.set(allowSegVerticalMove, forKey: "editor.allowSegVerticalMove") }
     }
 
+    /// 始点のタップを触ったとき、そのスライド / ホールド (後ろの中継点も全部) も一緒に選ぶか。
+    /// false (初期値) = 始点のタップだけ (始点を外して動かせる) / true = スライドも一緒に選んで一緒に動かす。次回起動時も保存される
+    @Published var linkHeadTap = false {
+        didSet { UserDefaults.standard.set(linkHeadTap, forKey: "editor.linkHeadTap") }
+    }
+
     // MARK: ファイル
     let audio: AudioController?
     /// 譜面 (JSON) を作る・保存するフォルダ。
@@ -372,6 +378,7 @@ final class EditorState: ObservableObject {
             self.allowUnorderedSeg = v          // 前の版の設定「beatがマイナスのsegを置くのを許可する」の値を引き継ぐ
         }
         if let v = ud.object(forKey: "editor.allowSegVerticalMove") as? Bool { self.allowSegVerticalMove = v }
+        if let v = ud.object(forKey: "editor.linkHeadTap") as? Bool { self.linkHeadTap = v }
         if let v = ud.object(forKey: "editor.placeOnLowerLine") as? Bool { self.placeOnLowerLine = v }
         if let v = ud.object(forKey: "editor.slideWithHead") as? Bool { self.slideWithHead = v }
         if let v = ud.object(forKey: "editor.holdDeselectSec") as? Double {

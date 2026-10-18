@@ -789,6 +789,12 @@ private struct SettingWindowContent: View {
 
             SideDivider()
 
+            checkRow(title: "始点のタップを触ったとき、スライドも一緒に選ぶ",
+                     note: "オフのとき (初期値): 始点のタップを触ると、そのタップだけが選ばれます (始点を外して動かせます)。オンにすると、「始点あり」で置いたスライド / ホールドの始点のタップ (読み込んだ譜面の始点も) を触ったとき、スライド (後ろの中継点も全部) も一緒に選ばれて、一緒に動きます。",
+                     isOn: $state.linkHeadTap)
+
+            SideDivider()
+
             // 再生の補正 (前の譜面エディタと合わせるため)
             VStack(alignment: .leading, spacing: 8) {
                 Text("再生の補正: \(state.playbackCorrection) ms 早める")

@@ -209,7 +209,7 @@ extension EditorState {
             if phase == .ended && dragToggleOnTap && !dragMoved, let id = dragTouchedID {
                 selectedIDs.remove(id)
                 // 結び付いた始点のタップなら、スライドの選択も一緒に外す
-                if let n = chart.notes.first(where: { $0.id == id }), let sid = Beatrix.headLink(n) { selectedIDs.remove(sid) }
+                if linkHeadTap, let n = chart.notes.first(where: { $0.id == id }), let sid = Beatrix.headLink(n) { selectedIDs.remove(sid) }
             }
         case .segDrag:
             if dragMoved { dragSeg(current: current, g: g) }
@@ -259,7 +259,7 @@ extension EditorState {
                     dragToggleOnTap = false
                 }
                 // 結び付いた始点のタップを触ったときは、そのスライド / ホールド (後ろの中継点も全部) も一緒に選ぶ
-                if let sid = Beatrix.headLink(chart.notes[i]), chart.notes.contains(where: { $0.id == sid && $0.isSlide }) {
+                if linkHeadTap, let sid = Beatrix.headLink(chart.notes[i]), chart.notes.contains(where: { $0.id == sid && $0.isSlide }) {
                     selectedIDs.insert(sid)
                 }
                 dragMode = .pendingMove
