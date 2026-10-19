@@ -315,31 +315,54 @@ enum LaneRenderer {
                 shape = Beatrix.slideShape(shape.map { $0.b }, shape.map { $0.x }, eases: Beatrix.eases(n), curve: Beatrix.isCurve(n),
                                            laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
             }
-            for idx in 1..<max(1, shape.count) {
-                let prevB = shape[idx - 1].b
-                let prevX = shape[idx - 1].x
-                let curB = shape[idx].b
-                let curX = shape[idx].x
-                if max(prevB, curB) >= lo && min(prevB, curB) <= hi {
-                    var ta = 0.0
-                    var tb = 1.0
-                    let db = curB - prevB
-                    if db != 0 {
-                        let t1 = (lo - prevB) / db
-                        let t2 = (hi - prevB) / db
-                        ta = max(0.0, min(t1, t2))
-                        tb = min(1.0, max(t1, t2))
+            if (Beatrix.isCurve(n) || Beatrix.hasEase(n)) && shape.count >= 2 {
+                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonGeometry.swift)
+                var i0 = shape.count
+                var i1 = -1
+                for idx in 1..<shape.count {
+                    let a = shape[idx - 1].b
+                    let b = shape[idx].b
+                    if max(a, b) >= lo && min(a, b) <= hi {
+                        i0 = min(i0, idx - 1)
+                        i1 = max(i1, idx)
                     }
-                    if tb >= ta {
-                        let pa = CGPoint(x: g.px(prevX + (curX - prevX) * ta), y: g.py(prevB + db * ta))
-                        let pb = CGPoint(x: g.px(prevX + (curX - prevX) * tb), y: g.py(prevB + db * tb))
-                        var q = Path()
-                        q.move(to: CGPoint(x: pa.x - hw, y: pa.y))
-                        q.addLine(to: CGPoint(x: pa.x + hw, y: pa.y))
-                        q.addLine(to: CGPoint(x: pb.x + hw, y: pb.y))
-                        q.addLine(to: CGPoint(x: pb.x - hw, y: pb.y))
-                        q.closeSubpath()
-                        c.fill(q, with: .color(fill.opacity(0.42)))
+                }
+                if i1 >= 0 {
+                    let s0 = max(0, i0 - 1)
+                    let s1 = min(shape.count - 1, i1 + 1)
+                    let pts = (s0...s1).map { CGPoint(x: g.px(shape[$0].x), y: g.py(shape[$0].b)) }
+                    let o = RibbonGeometry.outline(pts, halfWidth: hw)
+                    let cp = CGMutablePath()
+                    RibbonGeometry.addOutline(cp, o.a, o.b)
+                    c.fill(Path(cp), with: .color(fill.opacity(0.42)))
+                }
+            } else {
+                for idx in 1..<max(1, shape.count) {
+                    let prevB = shape[idx - 1].b
+                    let prevX = shape[idx - 1].x
+                    let curB = shape[idx].b
+                    let curX = shape[idx].x
+                    if max(prevB, curB) >= lo && min(prevB, curB) <= hi {
+                        var ta = 0.0
+                        var tb = 1.0
+                        let db = curB - prevB
+                        if db != 0 {
+                            let t1 = (lo - prevB) / db
+                            let t2 = (hi - prevB) / db
+                            ta = max(0.0, min(t1, t2))
+                            tb = min(1.0, max(t1, t2))
+                        }
+                        if tb >= ta {
+                            let pa = CGPoint(x: g.px(prevX + (curX - prevX) * ta), y: g.py(prevB + db * ta))
+                            let pb = CGPoint(x: g.px(prevX + (curX - prevX) * tb), y: g.py(prevB + db * tb))
+                            var q = Path()
+                            q.move(to: CGPoint(x: pa.x - hw, y: pa.y))
+                            q.addLine(to: CGPoint(x: pa.x + hw, y: pa.y))
+                            q.addLine(to: CGPoint(x: pb.x + hw, y: pb.y))
+                            q.addLine(to: CGPoint(x: pb.x - hw, y: pb.y))
+                            q.closeSubpath()
+                            c.fill(q, with: .color(fill.opacity(0.42)))
+                        }
                     }
                 }
             }
@@ -546,33 +569,56 @@ enum LaneRenderer {
                 shape = Beatrix.slideShape(shape.map { $0.b }, shape.map { $0.x }, eases: Beatrix.eases(n), curve: Beatrix.isCurve(n),
                                            laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
             }
-            for idx in 1..<max(1, shape.count) {
-                let prevB = shape[idx - 1].b
-                let prevX = shape[idx - 1].x
-                let curB = shape[idx].b
-                let curX = shape[idx].x
-                if max(prevB, curB) >= lo && min(prevB, curB) <= hi {
-                    var ta = 0.0
-                    var tb = 1.0
-                    let db = curB - prevB
-                    if db != 0 {
-                        let t1 = (lo - prevB) / db
-                        let t2 = (hi - prevB) / db
-                        ta = max(0.0, min(t1, t2))
-                        tb = min(1.0, max(t1, t2))
+            if (Beatrix.isCurve(n) || Beatrix.hasEase(n)) && shape.count >= 2 {
+                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonGeometry.swift)
+                var i0 = shape.count
+                var i1 = -1
+                for idx in 1..<shape.count {
+                    let a = shape[idx - 1].b
+                    let b = shape[idx].b
+                    if max(a, b) >= lo && min(a, b) <= hi {
+                        i0 = min(i0, idx - 1)
+                        i1 = max(i1, idx)
                     }
-                    if tb >= ta {
-                        let pa = CGPoint(x: g.px(prevX + (curX - prevX) * ta), y: g.py(prevB + db * ta))
-                        let pb = CGPoint(x: g.px(prevX + (curX - prevX) * tb), y: g.py(prevB + db * tb))
-                        var q = Path()
-                        q.move(to: CGPoint(x: pa.x - hw, y: pa.y))
-                        q.addLine(to: CGPoint(x: pa.x + hw, y: pa.y))
-                        q.addLine(to: CGPoint(x: pb.x + hw, y: pb.y))
-                        q.addLine(to: CGPoint(x: pb.x - hw, y: pb.y))
-                        q.closeSubpath()
-                        // ダミーは薄く
-                        c.fill(q, with: .color((isSel ? Color.selRibbon : Color.ribbonFill)
-                            .opacity(Beatrix.isDummy(n) ? 0.35 : 1)))
+                }
+                if i1 >= 0 {
+                    let s0 = max(0, i0 - 1)
+                    let s1 = min(shape.count - 1, i1 + 1)
+                    let pts = (s0...s1).map { CGPoint(x: g.px(shape[$0].x), y: g.py(shape[$0].b)) }
+                    let o = RibbonGeometry.outline(pts, halfWidth: hw)
+                    let cp = CGMutablePath()
+                    RibbonGeometry.addOutline(cp, o.a, o.b)
+                    c.fill(Path(cp), with: .color((isSel ? Color.selRibbon : Color.ribbonFill).opacity(Beatrix.isDummy(n) ? 0.35 : 1)))
+                }
+            } else {
+                for idx in 1..<max(1, shape.count) {
+                    let prevB = shape[idx - 1].b
+                    let prevX = shape[idx - 1].x
+                    let curB = shape[idx].b
+                    let curX = shape[idx].x
+                    if max(prevB, curB) >= lo && min(prevB, curB) <= hi {
+                        var ta = 0.0
+                        var tb = 1.0
+                        let db = curB - prevB
+                        if db != 0 {
+                            let t1 = (lo - prevB) / db
+                            let t2 = (hi - prevB) / db
+                            ta = max(0.0, min(t1, t2))
+                            tb = min(1.0, max(t1, t2))
+                        }
+                        if tb >= ta {
+                            let pa = CGPoint(x: g.px(prevX + (curX - prevX) * ta), y: g.py(prevB + db * ta))
+                            let pb = CGPoint(x: g.px(prevX + (curX - prevX) * tb), y: g.py(prevB + db * tb))
+                            var q = Path()
+                            q.move(to: CGPoint(x: pa.x - hw, y: pa.y))
+                            q.addLine(to: CGPoint(x: pa.x + hw, y: pa.y))
+                            q.addLine(to: CGPoint(x: pb.x + hw, y: pb.y))
+                            q.addLine(to: CGPoint(x: pb.x - hw, y: pb.y))
+                            q.closeSubpath()
+                            // ダミーは薄く
+                            c.fill(q, with: .color((isSel ? Color.selRibbon : Color.ribbonFill)
+                                .opacity(Beatrix.isDummy(n) ? 0.35 : 1)))
+                        }
                     }
                 }
             }

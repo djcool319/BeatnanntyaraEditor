@@ -74,3 +74,25 @@ enum TextPrompt {
         return vc
     }
 }
+
+// MARK: - 選ぶだけのダイアログ (UIKit の UIAlertController で出す)
+//   iOS 15 では、Menu の項目を押した直後に SwiftUI の confirmationDialog を出そうとしても出ない (メニューが閉じる途中のため)。
+//   そこで UIKit のダイアログを、メニューが閉じ終わるのを少し待ってから出す
+
+enum ChoicePrompt {
+    struct Action {
+        let title: String
+        var style: UIAlertAction.Style = .default
+        let handler: () -> Void
+    }
+
+    static func show(title: String, message: String?, actions: [Action], delay: Double = 0.35) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let ac = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            for a in actions {
+                ac.addAction(UIAlertAction(title: a.title, style: a.style) { _ in a.handler() })
+            }
+            TextPrompt.topViewController()?.present(ac, animated: true)
+        }
+    }
+}

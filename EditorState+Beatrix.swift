@@ -781,7 +781,6 @@ struct HoldPanelIcon: View {
 /// 画面の上に常に出す「今どの難易度を作っているか」の札。押すと難易度を切り替えられる
 struct DifficultyBadge: View {
     @ObservedObject var state: EditorState
-    @State private var pending: BeatrixDifficulty? = nil
 
     var body: some View {
         let d = state.chart.bxDifficulty
@@ -816,19 +815,6 @@ struct DifficultyBadge: View {
             .background(Color.black.opacity(0.6))
             .overlay(Rectangle().stroke(d.color, lineWidth: 1.5))
         }
-        .confirmationDialog("\(pending?.label ?? "") の譜面はまだありません",
-                            isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
-                            titleVisibility: .visible) {
-            Button("今のノーツをコピーして作る") {
-                if let p = pending { state.switchDifficulty(to: p, copyNotes: true) }
-                pending = nil
-            }
-            Button("空の譜面で作る") {
-                if let p = pending { state.switchDifficulty(to: p, copyNotes: false) }
-                pending = nil
-            }
-            Button("やめる", role: .cancel) { pending = nil }
-        }
     }
 
     private func choose(_ item: BeatrixDifficulty) {
@@ -836,7 +822,12 @@ struct DifficultyBadge: View {
         if state.hasChart(for: item) {
             state.switchDifficulty(to: item, copyNotes: false)
         } else {
-            pending = item
+            // まだ無い難易度: 作り方を選ぶ (iOS 15 でも出るように UIKit のダイアログで。Compat.swift)
+            ChoicePrompt.show(title: "\(item.label) の譜面はまだありません", message: nil, actions: [
+                .init(title: "今のノーツをコピーして作る") { state.switchDifficulty(to: item, copyNotes: true) },
+                .init(title: "空の譜面で作る") { state.switchDifficulty(to: item, copyNotes: false) },
+                .init(title: "やめる", style: .cancel) {},
+            ])
         }
     }
 }
