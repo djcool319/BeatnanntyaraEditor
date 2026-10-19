@@ -6,7 +6,7 @@ import CoreGraphics
 /// 曲線で横に大きく流れる所では、帯が進む向きに対して斜めに切ることになるので、道中が細く見えていた。
 /// ここでは、帯が進む向きに「直角に ±幅」ずらして輪郭を作る (角は向きの平均でつなぐ) ので、太さがどこでも同じに見える。
 /// 始まりと終わりの端だけは、今までどおり横向き (始点・終点の棒と平行) に切る。
-enum RibbonGeometry {
+enum RibbonOutline {
     /// pts: 帯の中心を通る点 (同じ座標系で、縦横の長さの比が見た目と同じもの)。
     /// halfWidth: 帯の太さの半分。返り値: 片側 (a) と、もう片側 (b) の点 (どちらも pts と同じ順・同じ数)
     static func outline(_ pts: [CGPoint], halfWidth hw: CGFloat) -> (a: [CGPoint], b: [CGPoint]) {

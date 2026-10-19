@@ -908,7 +908,7 @@ final class BeatrixGameView: UIView, GameSessionView {
             let path = active ? sActive : sIdle
             let lo = viewTime
             if !s.draw.isEmpty {
-                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonGeometry.swift)。
+                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonOutline.swift)。
                 // 向きは「判定ラインでの見た目の縦横比」の平面 (横 = レーンの幅、奥行き = 判定ラインでの縦の伸び) で考える
                 let W0 = Double(2 * g.halfJ)
                 let D0 = Double(g.judgeY - g.vanishY)
@@ -942,13 +942,13 @@ final class BeatrixGameView: UIView, GameSessionView {
                     plane.append(CGPoint(x: (q.f - 0.5) * W0, y: d * D0))
                 }
                 if plane.count >= 2 {
-                    let o = RibbonGeometry.outline(plane, halfWidth: CGFloat(hw * W0))
+                    let o = RibbonOutline.outline(plane, halfWidth: CGFloat(hw * W0))
                     func toScreen(_ p: CGPoint) -> CGPoint {
                         let f = Double(p.x) / W0 + 0.5
                         let d = max(0, Double(p.y) / D0)
                         return CGPoint(x: g.x(f, d), y: g.y(d))
                     }
-                    RibbonGeometry.addOutline(path, o.a.map(toScreen), o.b.map(toScreen))
+                    RibbonOutline.addOutline(path, o.a.map(toScreen), o.b.map(toScreen))
                 }
                 continue
             }

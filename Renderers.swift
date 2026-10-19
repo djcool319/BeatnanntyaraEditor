@@ -316,7 +316,7 @@ enum LaneRenderer {
                                            laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
             }
             if (Beatrix.isCurve(n) || Beatrix.hasEase(n)) && shape.count >= 2 {
-                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonGeometry.swift)
+                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonOutline.swift)
                 var i0 = shape.count
                 var i1 = -1
                 for idx in 1..<shape.count {
@@ -331,9 +331,9 @@ enum LaneRenderer {
                     let s0 = max(0, i0 - 1)
                     let s1 = min(shape.count - 1, i1 + 1)
                     let pts = (s0...s1).map { CGPoint(x: g.px(shape[$0].x), y: g.py(shape[$0].b)) }
-                    let o = RibbonGeometry.outline(pts, halfWidth: hw)
+                    let o = RibbonOutline.outline(pts, halfWidth: hw)
                     let cp = CGMutablePath()
-                    RibbonGeometry.addOutline(cp, o.a, o.b)
+                    RibbonOutline.addOutline(cp, o.a, o.b)
                     c.fill(Path(cp), with: .color(fill.opacity(0.42)))
                 }
             } else {
@@ -570,7 +570,7 @@ enum LaneRenderer {
                                            laneUnit: 255.0 * 2.0 / 18.0).map { (b: $0.x, x: $0.y) }
             }
             if (Beatrix.isCurve(n) || Beatrix.hasEase(n)) && shape.count >= 2 {
-                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonGeometry.swift)
+                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonOutline.swift)
                 var i0 = shape.count
                 var i1 = -1
                 for idx in 1..<shape.count {
@@ -585,9 +585,9 @@ enum LaneRenderer {
                     let s0 = max(0, i0 - 1)
                     let s1 = min(shape.count - 1, i1 + 1)
                     let pts = (s0...s1).map { CGPoint(x: g.px(shape[$0].x), y: g.py(shape[$0].b)) }
-                    let o = RibbonGeometry.outline(pts, halfWidth: hw)
+                    let o = RibbonOutline.outline(pts, halfWidth: hw)
                     let cp = CGMutablePath()
-                    RibbonGeometry.addOutline(cp, o.a, o.b)
+                    RibbonOutline.addOutline(cp, o.a, o.b)
                     c.fill(Path(cp), with: .color((isSel ? Color.selRibbon : Color.ribbonFill).opacity(Beatrix.isDummy(n) ? 0.35 : 1)))
                 }
             } else {
