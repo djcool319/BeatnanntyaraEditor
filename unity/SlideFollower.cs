@@ -33,6 +33,17 @@ public class SlideFollower : MonoBehaviour
     // ★帯の点を置く時刻(両端を除く)。ソフランの変わり目と、曲線の細かい点を時刻順に並べたもの
     private readonly System.Collections.Generic.List<float> _midTimes = new System.Collections.Generic.List<float>();
 
+    // ★曲線・ease の帯は、LineRenderer の代わりに自前のメッシュで描く (帯が進む向きに直角に太さを付ける。横に流れる所で細く見えないように)
+    //   端 (区間の始まり・終わり) は横向きに切るので、となりの区間ときれいにつながる
+    private bool _useMesh = false;
+    private GameObject _ribbonObj;
+    private MeshFilter _ribbonFilter;
+    private MeshRenderer _ribbonRenderer;
+    private Mesh _ribbonMesh;
+    private Vector3[] _verts;
+    private Vector2[] _pts;                 // 帯の中心 (x, z)
+    private float _halfWidth = 0.05f;
+
     [SerializeField] private GameObject snapIndicator;
 
     //private Color idleColor = new Color(0.192f, 0.231f, 0.403f, 1f);
@@ -103,6 +114,10 @@ public class SlideFollower : MonoBehaviour
         _midTimes.Sort();
         line.positionCount = 2 + _midTimes.Count;
 
+        // ★曲線・ease の区間は、自前のメッシュで描く
+        _useMesh = (_curveSeg >= 0 || ease != 0) && timeB - timeA > 1e-6f;
+        if (_useMesh) SetupRibbonMesh(2 + _midTimes.Count);
+
         _initialized = true;
     }
 
@@ -128,12 +143,23 @@ public class SlideFollower : MonoBehaviour
         // ★ソフラン：途中でソフランが変わるときは、その時刻の位置にも点を置く(無ければ今まで通り2点)
         // ★曲線スライド：曲線の細かい点も置く。横の位置は曲線から(見た目だけ)
         int last = _midTimes.Count + 1;
-        line.SetPosition(0, new Vector3(_curveSeg >= 0 ? DrawX(timeA) : BlockToX(laneA), 0.69f, zA));
-        for (int i = 0; i < _midTimes.Count; i++)
+        if (_useMesh)
         {
-            line.SetPosition(i + 1, new Vector3(DrawX(_midTimes[i]), 0.69f, ZAt(_midTimes[i], now)));
+            // ★曲線・ease: 中心の点を集めて、メッシュの帯を作り直す
+            _pts[0] = new Vector2(DrawX(timeA), zA);
+            for (int i = 0; i < _midTimes.Count; i++) _pts[i + 1] = new Vector2(DrawX(_midTimes[i]), ZAt(_midTimes[i], now));
+            _pts[last] = new Vector2(DrawX(timeB), zB);
+            UpdateRibbonMesh();
         }
-        line.SetPosition(last, new Vector3(_curveSeg >= 0 ? DrawX(timeB) : BlockToX(laneB), 0.69f, zB));
+        else
+        {
+            line.SetPosition(0, new Vector3(_curveSeg >= 0 ? DrawX(timeA) : BlockToX(laneA), 0.69f, zA));
+            for (int i = 0; i < _midTimes.Count; i++)
+            {
+                line.SetPosition(i + 1, new Vector3(DrawX(_midTimes[i]), 0.69f, ZAt(_midTimes[i], now)));
+            }
+            line.SetPosition(last, new Vector3(_curveSeg >= 0 ? DrawX(timeB) : BlockToX(laneB), 0.69f, zB));
+        }
 
         bool withinWindow = (float)now >= timeA && (float)now <= timeB;
         float progress = withinWindow ? Mathf.InverseLerp(timeA, timeB, (float)now) : 0f;
@@ -166,7 +192,12 @@ public class SlideFollower : MonoBehaviour
 
         // ★出現・消える：見えない間は、帯も判定ラインの光も出さない
         bool visible = ChartScroll.IsVisible(showTime, hideTime, now);
-        if (line.enabled != visible) line.enabled = visible;
+        if (_useMesh)
+        {
+            if (line.enabled) line.enabled = false;                       // メッシュで描くので、線は出さない
+            if (_ribbonRenderer != null && _ribbonRenderer.enabled != visible) _ribbonRenderer.enabled = visible;
+        }
+        else if (line.enabled != visible) line.enabled = visible;
         if (!visible) selfActive = false;
 
         if (snapIndicator != null)
@@ -233,6 +264,116 @@ public class SlideFollower : MonoBehaviour
     }
 
     float BlockToX(int block) => -0.337f + block * 0.112333333f;
+
+    // ★曲線・ease の帯のメッシュを用意する (点の数 n は区間の中で変わらないので、三角形は最初に 1 回だけ作る)
+    void SetupRibbonMesh(int n)
+    {
+        _halfWidth = Mathf.Max(0.001f, line.startWidth * 0.5f);         // 線と同じ太さ
+        _pts = new Vector2[n];
+        _verts = new Vector3[n * 2];
+        var normals = new Vector3[n * 2];
+        for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+        // 表と裏の両方に三角形を張る (どちら向きでも見えるように)
+        var tris = new int[(n - 1) * 12];
+        int t = 0;
+        for (int i = 0; i < n - 1; i++)
+        {
+            int a0 = i * 2, b0 = i * 2 + 1, a1 = i * 2 + 2, b1 = i * 2 + 3;
+            tris[t++] = a0; tris[t++] = b0; tris[t++] = a1;
+            tris[t++] = b0; tris[t++] = b1; tris[t++] = a1;
+            tris[t++] = a0; tris[t++] = a1; tris[t++] = b0;
+            tris[t++] = b0; tris[t++] = a1; tris[t++] = b1;
+        }
+        _ribbonMesh = new Mesh();
+        _ribbonMesh.MarkDynamic();
+        _ribbonMesh.vertices = _verts;
+        _ribbonMesh.normals = normals;
+        _ribbonMesh.triangles = tris;
+
+        _ribbonObj = new GameObject("RibbonMesh");
+        _ribbonObj.transform.SetParent(line.transform, false);           // 線と同じ座標 (線がローカル座標のとき)
+        _ribbonFilter = _ribbonObj.AddComponent<MeshFilter>();
+        _ribbonFilter.sharedMesh = _ribbonMesh;
+        _ribbonRenderer = _ribbonObj.AddComponent<MeshRenderer>();
+        _ribbonRenderer.sharedMaterial = _material;                       // 色の切り替え (idle / active) も同じマテリアルで効く
+        _ribbonRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
+        _ribbonRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.BlendProbes;
+        _ribbonRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        _ribbonRenderer.receiveShadows = false;
+        line.enabled = false;
+    }
+
+    // ★帯の輪郭: 進む向きに直角に ±太さ。途中の点は前後の向きの平均で (角で細くならないよう長くする。上限 4 倍)。
+    //   端は横向き (x の向き) に切る。エディタの RibbonOutline.swift と同じ考え方
+    void UpdateRibbonMesh()
+    {
+        int n = _pts.Length;
+        float hw = _halfWidth;
+        for (int i = 0; i < n; i++)
+        {
+            Vector2 p = _pts[i];
+            Vector2 a, b;
+            if (i == 0 || i == n - 1)
+            {
+                Vector2 d = i == 0 ? Dir(0) : Dir(n - 2);
+                Vector2 nm = new Vector2(-d.y, d.x);
+                if (Mathf.Abs(d.y) > 0.25f)
+                {
+                    // 縁の線 (p + nm·hw + t·d) が、端を通る横の線 (z = p.y) と交わる所
+                    Vector2 pa = p + nm * hw;
+                    Vector2 pb = p - nm * hw;
+                    float xa = pa.x + d.x * ((p.y - pa.y) / d.y);
+                    float xb = pb.x + d.x * ((p.y - pb.y) / d.y);
+                    xa = Mathf.Clamp(xa, p.x - 3 * hw, p.x + 3 * hw);
+                    xb = Mathf.Clamp(xb, p.x - 3 * hw, p.x + 3 * hw);
+                    a = new Vector2(xa, p.y);
+                    b = new Vector2(xb, p.y);
+                }
+                else
+                {
+                    float s = nm.x >= 0 ? 1f : -1f;
+                    a = new Vector2(p.x + s * hw, p.y);
+                    b = new Vector2(p.x - s * hw, p.y);
+                }
+            }
+            else
+            {
+                Vector2 n1 = Normal(Dir(i - 1));
+                Vector2 n2 = Normal(Dir(i));
+                Vector2 m = n1 + n2;
+                m = m.sqrMagnitude < 1e-10f ? n1 : m.normalized;
+                float len = hw / Mathf.Max(0.25f, Vector2.Dot(m, n1));
+                a = p + m * len;
+                b = p - m * len;
+            }
+            _verts[i * 2] = ToLocal(new Vector3(a.x, 0.69f, a.y));
+            _verts[i * 2 + 1] = ToLocal(new Vector3(b.x, 0.69f, b.y));
+        }
+        _ribbonMesh.vertices = _verts;
+        _ribbonMesh.RecalculateBounds();
+    }
+
+    // 点 i → 点 i+1 の向き (長さ 1。同じ位置なら前後の向きを使う)
+    Vector2 Dir(int i)
+    {
+        for (int k = 0; k < _pts.Length - 1; k++)
+        {
+            int j0 = Mathf.Clamp(i + (k % 2 == 0 ? k / 2 : -(k / 2 + 1)), 0, _pts.Length - 2);
+            Vector2 d = _pts[j0 + 1] - _pts[j0];
+            if (d.sqrMagnitude > 1e-12f) return d.normalized;
+        }
+        return Vector2.up;
+    }
+
+    static Vector2 Normal(Vector2 d) => new Vector2(-d.y, d.x);
+
+    // 線がワールド座標で点を持っているときは、メッシュ (線の子) のローカル座標に直す
+    Vector3 ToLocal(Vector3 p) => line.useWorldSpace ? _ribbonObj.transform.InverseTransformPoint(p) : p;
+
+    void OnDestroy()
+    {
+        if (_ribbonMesh != null) Destroy(_ribbonMesh);
+    }
 
     // ★曲線スライド：時刻 t での帯の横の位置。曲線なら曲線のレーン(小数)、そうでなければ今まで通り laneA → laneB をまっすぐ
     float DrawX(float t)

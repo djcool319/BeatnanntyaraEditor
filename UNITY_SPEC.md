@@ -198,6 +198,16 @@ public List<LyricEntry> lyrics;
 5. 時間 0 の区間（横に飛ぶ線）と、同じレーンの区間は、今までどおり直線
 6. 帯の点: 区間を 16 等分した時刻（ソフランの変わり目の点も今までどおり入れる）
 
+### 帯の太さ（2026-10-19 追加）
+
+- 曲線（`curve`）と ease の区間は、LineRenderer の代わりに**自前のメッシュ**で帯を描く（`SlideFollower.cs` の SetupRibbonMesh / UpdateRibbonMesh）
+  - 帯が進む向きに**直角**に ±太さ（線と同じ太さ = `line.startWidth`）。横に流れる所で細く見えない
+  - 途中の点は前後の向きの平均の向きにずらす（角で細くならないよう長くする。上限 4 倍）
+  - 区間の端は横向き（x の向き）に切るので、となりの区間ときれいにつながる
+  - メッシュは線の子の GameObject「RibbonMesh」（MeshFilter + MeshRenderer。マテリアルは線と同じ = 色の切り替えもそのまま効く）。表と裏の両方に三角形を張る
+  - まっすぐの区間は今までどおり LineRenderer
+- エディタの RibbonOutline.swift と同じ考え方
+
 ### 実装の手順
 
 1. `SlideCurve.cs` をプロジェクトに入れる。`SlideFollower.cs` をまるごと差し替える

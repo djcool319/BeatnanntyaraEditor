@@ -732,3 +732,4 @@
   - まっすぐのスライドは今までどおり（横に ±太さ）
   - Unity の LineRenderer は、もともと線の向きに直角に太さを付けるので、追加の対応はいらない
 - iOS 15 で、難易度のメニューから「(新規)」の難易度を押しても何も出なかった: Menu の項目から SwiftUI の confirmationDialog を出すと、iOS 15 ではメニューが閉じる途中で出ない。UIKit のダイアログ（Compat.swift の ChoicePrompt、0.35 秒待ってから出す）に変えた
+- Unity: 曲線 / ease の区間は LineRenderer をやめて、自前のメッシュ（進む向きに直角の太さ）で描くようにした（unity/SlideFollower.cs。UNITY_SPEC.md 7-2「帯の太さ」）。LineRenderer でも実機で少し細く・ねじれて見えたため
