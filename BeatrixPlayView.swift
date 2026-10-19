@@ -907,52 +907,7 @@ final class BeatrixGameView: UIView, GameSessionView {
             let active = slideActive(s, at: viewTime, zones: zones)
             let path = active ? sActive : sIdle
             let lo = viewTime
-            if !s.draw.isEmpty {
-                // 曲線 / ease のスライド: 進む向きに直角に太さを付ける (横に流れる所で細く見えないように。RibbonOutline.swift)。
-                // 向きは「判定ラインでの見た目の縦横比」の平面 (横 = レーンの幅、奥行き = 判定ラインでの縦の伸び) で考える
-                let W0 = Double(2 * g.halfJ)
-                let D0 = Double(g.judgeY - g.vanishY)
-                var plane: [CGPoint] = []
-                let dp = s.draw
-                for k in 0..<dp.count {
-                    let q = dp[k]
-                    if q.t < lo {
-                        // 判定ラインより手前は切る (次の点との間を補間して、判定ラインちょうどから始める)
-                        if k + 1 < dp.count, dp[k + 1].t > lo, dp[k + 1].t > q.t {
-                            let u = (lo - q.t) / (dp[k + 1].t - q.t)
-                            let f = q.f + (dp[k + 1].f - q.f) * u
-                            plane.append(CGPoint(x: (f - 0.5) * W0, y: depth(lo, s.sp) * D0))
-                        }
-                        continue
-                    }
-                    let d = depth(q.t, s.sp)
-                    if d > r.top {
-                        // 画面の奥より先は切る
-                        if let last = plane.last, k > 0 {
-                            let pd = Double(last.y) / D0
-                            if d != pd {
-                                let u = (r.top - pd) / (d - pd)
-                                let lf = Double(last.x) / W0 + 0.5
-                                let f = lf + (q.f - lf) * u
-                                plane.append(CGPoint(x: (f - 0.5) * W0, y: r.top * D0))
-                            }
-                        }
-                        break
-                    }
-                    plane.append(CGPoint(x: (q.f - 0.5) * W0, y: d * D0))
-                }
-                if plane.count >= 2 {
-                    let o = RibbonOutline.outline(plane, halfWidth: CGFloat(hw * W0))
-                    func toScreen(_ p: CGPoint) -> CGPoint {
-                        let f = Double(p.x) / W0 + 0.5
-                        let d = max(0, Double(p.y) / D0)
-                        return CGPoint(x: g.x(f, d), y: g.y(d))
-                    }
-                    RibbonOutline.addOutline(path, o.a.map(toScreen), o.b.map(toScreen))
-                }
-                continue
-            }
-            let dp = s.pts.map { BxDrawPoint(t: $0.t, f: Self.laneFrac($0.lane)) }
+            let dp = s.draw.isEmpty ? s.pts.map { BxDrawPoint(t: $0.t, f: Self.laneFrac($0.lane)) } : s.draw
             for k in 0..<(dp.count - 1) {
                 let a = dp[k]
                 let b = dp[k + 1]
