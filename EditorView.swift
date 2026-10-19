@@ -839,7 +839,6 @@ struct EditorView: View {
     /// 歌詞の入力ダイアログを出した lyricEdit (同じものを 2 回出さないため)
     @State private var shownLyricEditID: UUID? = nil
     /// More → Appear / Vanish の選択
-    @State private var showAppearMenu = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -870,30 +869,6 @@ struct EditorView: View {
         .overlay(SidePanelLayer(state: state))           // BPM list / Effect list / Information / SETTING: 右からスライドして出る (トーストより下の層)
         .overlay(TempoDetectDialog(state: state))        // BPM・offset の自動検出
         .overlay(toastLayer, alignment: .bottom)
-        .confirmationDialog("出現 / 消える (再生ラインの拍 \(Beat.nearest(state.viewBeat, den: state.snapDen).label))",
-                            isPresented: $showAppearMenu, titleVisibility: .visible) {
-            Button("この拍で出現する") { state.setAppear(.appear) }
-            Button("この拍で消える") { state.setAppear(.vanish) }
-            Button("この拍の出現 / 消えるを外す") { state.setAppear(.clearHere) }
-            Button("出現 / 消えるを全部解除", role: .destructive) { state.setAppear(.clear) }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍で急に出てくる / 急に消えます。何回でも足せるので、出る→消える→出る… もできます (最初が「出現」なら、それまでは見えません)。選んだノーツだけに付くので、同じ位置のホールドとスライドを入れ替える演出もそのままできます。判定はそのまま (見えなくても判定はある) です")
-        }
-        // 区間の曲がり方 (Ease ツールで帯をタップしたら出す)
-        .confirmationDialog("この区間の曲がり方", isPresented: Binding(get: { state.easeTarget != nil },
-                                                                   set: { if !$0 { state.easeTarget = nil } }),
-                            titleVisibility: .visible) {
-            Button("まっすぐ") { state.setEase(0, all: false) }
-            Button("Ease In (はじめゆっくり → あと速く)") { state.setEase(1, all: false) }
-            Button("Ease Out (はじめ速く → あとゆっくり)") { state.setEase(2, all: false) }
-            Button("このスライド全部 Ease In") { state.setEase(1, all: true) }
-            Button("このスライド全部 Ease Out") { state.setEase(2, all: true) }
-            Button("このスライド全部まっすぐ", role: .destructive) { state.setEase(0, all: true) }
-            Button("キャンセル", role: .cancel) { state.easeTarget = nil }
-        } message: {
-            Text("見た目だけが変わります (判定の点の位置・時間はそのまま)")
-        }
         // 歌詞の入力 (EditorState が lyricEdit を入れたら出す。iOS 15 でも入力欄が出るように UIKit のダイアログで)
         .onReceive(state.$lyricEdit) { e in
             guard let e = e, e.id != shownLyricEditID else { return }
@@ -1096,7 +1071,17 @@ struct EditorView: View {
                 if state.selectedIDs.isEmpty {
                     state.showToast("先にノーツを選択してください")
                 } else {
-                    showAppearMenu = true
+                    // iOS 15 でも出るように UIKit のダイアログで (Compat.swift の ChoicePrompt)
+                    ChoicePrompt.show(
+                        title: "出現 / 消える (再生ラインの拍 \(Beat.nearest(state.viewBeat, den: state.snapDen).label))",
+                        message: "選んだノーツ (ホールド・スライドは帯ごと) が、再生ラインの拍で急に出てくる / 急に消えます。何回でも足せます (最初が「出現」なら、それまでは見えません)。判定はそのままです",
+                        actions: [
+                            .init(title: "この拍で出現する") { state.setAppear(.appear) },
+                            .init(title: "この拍で消える") { state.setAppear(.vanish) },
+                            .init(title: "この拍の出現 / 消えるを外す") { state.setAppear(.clearHere) },
+                            .init(title: "出現 / 消えるを全部解除", style: .destructive) { state.setAppear(.clear) },
+                            .init(title: "キャンセル", style: .cancel) {},
+                        ], delay: 0.05)
                 }
             }
             // ダミー (判定の無いノーツ。JSON の dummy)

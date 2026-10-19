@@ -485,6 +485,16 @@ extension EditorState {
         }
         selectedIDs = [b.id]
         easeTarget = EaseTarget(noteID: b.id, seg: b.seg)
+        // 選ぶダイアログ (iOS 15 でも出るように UIKit で。Compat.swift の ChoicePrompt)
+        ChoicePrompt.show(title: "この区間の曲がり方", message: "見た目だけが変わります (判定の点の位置・時間はそのまま)", actions: [
+            .init(title: "まっすぐ") { [weak self] in self?.setEase(0, all: false) },
+            .init(title: "Ease In (はじめゆっくり → あと速く)") { [weak self] in self?.setEase(1, all: false) },
+            .init(title: "Ease Out (はじめ速く → あとゆっくり)") { [weak self] in self?.setEase(2, all: false) },
+            .init(title: "このスライド全部 Ease In") { [weak self] in self?.setEase(1, all: true) },
+            .init(title: "このスライド全部 Ease Out") { [weak self] in self?.setEase(2, all: true) },
+            .init(title: "このスライド全部まっすぐ", style: .destructive) { [weak self] in self?.setEase(0, all: true) },
+            .init(title: "キャンセル", style: .cancel) { [weak self] in self?.easeTarget = nil },
+        ], delay: 0.05)
     }
 
     /// 選んだ曲がり方を付ける。all = true なら、そのスライドの全区間に
