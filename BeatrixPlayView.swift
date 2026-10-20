@@ -593,6 +593,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         running = false
         link?.isPaused = true
         touchZones.removeAll()
+        fingerTracks.removeAll()
         pendingWipeSounds.removeAll()
         pendingWipeEffects.removeAll()
         BeatrixSounds.shared.setHold(false)
@@ -611,6 +612,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         game = BxGame(chart: source, startTime: firstTime)
         attachSounds()
         touchZones.removeAll()
+        fingerTracks.removeAll()
         pendingWipeSounds.removeAll()
         pendingWipeEffects.removeAll()
         begin(at: firstTime)
@@ -673,11 +675,30 @@ final class BeatrixGameView: UIView, GameSessionView {
 
     // MARK: 入力
 
+    // くっついた指の連打対策 (本家の TouchLaneDetector と同じ。縦連のときだけ):
+    //   指と指がすごく近いと、iOS は「指 B が触れた」を新しいタッチとして送らず「指 A が動いた」として送ってくることがある。
+    //   そこで、縦連のノーツが近くにあるときだけ、指の位置が最後に数えた場所から 0.4cm 以上ずれたら、新しいタップとして数える
+    //   (縦連専用のタップ = 縦連の PERFECT しか取らない)
+    private struct FingerTrack {
+        var anchor: CGPoint
+        var countedAt: Double
+    }
+    private var fingerTracks: [ObjectIdentifier: FingerTrack] = [:]
+    private static let jumpTapCm: CGFloat = 0.4
+    private static let jumpCooldownSec = 0.04
+    /// 0.4cm を pt に (iPhone は 1 インチ ≒ 163pt、iPad ≒ 132pt)
+    private var jumpTapPt: CGFloat {
+        let ppi: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 132 : 163
+        return Self.jumpTapCm / 2.54 * ppi
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard running else { return }
         for tc in touches {
-            let z = zone(at: tc.location(in: self))
+            let p = tc.location(in: self)
+            let z = zone(at: p)
             touchZones[ObjectIdentifier(tc)] = z
+            fingerTracks[ObjectIdentifier(tc)] = FingerTrack(anchor: p, countedAt: tc.timestamp)
             game.press(zone: z, at: chartTime(at: tc.timestamp))
         }
     }
@@ -685,12 +706,32 @@ final class BeatrixGameView: UIView, GameSessionView {
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard running else { return }
         for tc in touches {
-            touchZones[ObjectIdentifier(tc)] = zone(at: tc.location(in: self))
+            let key = ObjectIdentifier(tc)
+            let p = tc.location(in: self)
+            let z = zone(at: p)
+            touchZones[key] = z
+            guard var tr = fingerTracks[key] else {
+                fingerTracks[key] = FingerTrack(anchor: p, countedAt: tc.timestamp)
+                continue
+            }
+            if tc.timestamp - tr.countedAt < Self.jumpCooldownSec { continue }      // 数えた直後のブレは数えない
+            if hypot(p.x - tr.anchor.x, p.y - tr.anchor.y) < jumpTapPt { continue }
+            let now = chartTime(at: tc.timestamp)
+            if game.hasTaterenNear(zone: z, at: now) {
+                game.pressTaterenOnly(zone: z, at: now)                              // ずれた瞬間 = 新しい指が触れた瞬間
+                tr = FingerTrack(anchor: p, countedAt: tc.timestamp)
+            } else {
+                tr.anchor = p                                                        // 縦連じゃない所 (なぞっている等): 場所だけ覚え直す
+            }
+            fingerTracks[key] = tr
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for tc in touches { touchZones[ObjectIdentifier(tc)] = nil }
+        for tc in touches {
+            touchZones[ObjectIdentifier(tc)] = nil
+            fingerTracks[ObjectIdentifier(tc)] = nil
+        }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {

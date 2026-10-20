@@ -41,6 +41,7 @@ struct BxNote {
     var vis: [[BxVisEvent]] = []           // 出現 / 消える。どれか 1 つの列で見えていれば見える (空なら いつも見える)
     var suppressed = false
     var tateren = false                    // 縦連 (本家の NotesGenerate.MarkTaterenNotes と同じ印)
+    var lightTateren = false               // 軽い縦連 (BPM140 の 16 分 + 2ms 以内。指のずれから拾ったタップでも取れるだけ)
     var done = false
     var missed = false                     // 見逃した (本家と同じく、判定ラインを過ぎても流れ続ける)
 }
@@ -360,6 +361,11 @@ struct BxPlayChart {
             for k in 1..<n where linked[k - 1] {
                 for i in groups[k] { notes[i].tateren = true }
             }
+            // 軽い縦連: 縦連じゃないところで、前のノーツとの間隔が BPM140 の 16 分 + 2ms 以内 (最初の 1 個は外す)
+            let lightGap = 60.0 / 140.0 / 4.0 + 0.002
+            for k in 1..<n where !linked[k - 1] && times[k] - times[k - 1] <= lightGap {
+                for i in groups[k] where !notes[i].tateren { notes[i].lightTateren = true }
+            }
         }
     }
 
@@ -533,6 +539,45 @@ final class BxGame {
                 advance()
                 return
             }
+        }
+    }
+
+    /// そのボタンの範囲に、今の前後 window 秒以内の (まだ取っていない) 縦連・軽い縦連のノーツがあるか (本家の HasTaterenNear)
+    func hasTaterenNear(zone: Int, at now: Double, window: Double = 0.15) -> Bool {
+        guard zone >= 0 && zone < Self.tapZones.count else { return false }
+        let lanes = Self.tapZones[zone]
+        var i = first
+        while i < notes.count {
+            let n = notes[i]
+            if n.t - now > window { break }
+            if !n.done && !n.dummy && (n.tateren || n.lightTateren) && lanes.contains(n.lane) && abs(n.t - now) <= window { return true }
+            i += 1
+        }
+        return false
+    }
+
+    /// 指のずれから拾った「縦連専用のタップ」(本家の CheckTaterenOnly): いちばん近い縦連・軽い縦連のノーツが
+    /// ±0.05 秒の中にあるときだけ、それを判定する。ほかのノーツ・ダミーには一切さわらない
+    func pressTaterenOnly(zone: Int, at now: Double) {
+        guard zone >= 0 && zone < Self.tapZones.count else { return }
+        let lanes = Self.tapZones[zone]
+        var best: Int? = nil
+        var bestLag = Double.infinity
+        var i = first
+        while i < notes.count {
+            let n = notes[i]
+            if n.t - now > 0.07 { break }
+            if !n.done && !n.dummy && (n.tateren || n.lightTateren) && (1...3).contains(n.type) && lanes.contains(n.lane) {
+                let a = abs(now - n.t)
+                if a <= 0.05 && a < bestLag { bestLag = a; best = i }
+            }
+            i += 1
+        }
+        guard let b = best else { return }
+        let n = notes[b]
+        if judgeTap(b, lag: now - n.t) {
+            if n.tateren { lastLaneHit[n.lane] = now }
+            lastAnyHit = now
         }
     }
 
