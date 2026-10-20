@@ -3121,12 +3121,50 @@ struct PauseOverlay: View {
                 set: { session.offsetMs = min(max($0.rounded(), -300), 300) })
     }
     
+    /// ポーズの画面を隠して、止まっているプレイ画面を見られるようにする (もう一度押すと出る。コンティニューすると元に戻る)
+    @State private var hidden = false
+
     var body: some View {
+        if hidden {
+            // 隠している間: 右下の小さいボタンだけ出す (プレイ画面はそのまま見える)
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button { hidden = false } label: {
+                        Label("PAUSE を表示", systemImage: "eye")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(Color.black.opacity(0.6)))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.5), lineWidth: 1))
+                    }
+                    .padding(20)
+                }
+            }
+        } else {
+            panel
+        }
+    }
+
+    private var panel: some View {
         ZStack {
             Color.black.opacity(0.7).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 18) {
-                    Text("PAUSE").font(.title.bold())
+                    ZStack(alignment: .trailing) {
+                        Text("PAUSE").font(.title.bold())
+                            .frame(maxWidth: .infinity)
+                        Button { hidden = true } label: {
+                            Label("隠す", systemImage: "eye.slash")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(Color.white.opacity(0.15)))
+                        }
+                    }
                     if !session.pauseInfo.isEmpty {
                         Text(session.pauseInfo)
                             .font(.caption2.monospacedDigit())
