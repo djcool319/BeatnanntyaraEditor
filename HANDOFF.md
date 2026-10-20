@@ -735,3 +735,12 @@
 - Unity: 曲線 / ease の区間は LineRenderer をやめて、自前のメッシュ（進む向きに直角の太さ）で描くようにした（unity/SlideFollower.cs。UNITY_SPEC.md 7-2「帯の太さ」）。LineRenderer でも実機で少し細く・ねじれて見えたため
 - （2026-10-19）↑ 帯を直角の太さにした変更（エディタ・テストプレイの RibbonOutline と、Unity の SlideFollower のメッシュ）は、ギザギザの曲線で大きな三角形が出るバグになったので取り消した。今は前と同じ「横に ±太さ」。iOS 15 の難易度のダイアログの直しは残している
 - （2026-10-19）iOS 15 では、同じ画面に SwiftUI の confirmationDialog を複数付けると片方が出ない・メニューから出すと出ない。なので、ダイアログは全部 UIKit（Compat.swift の ChoicePrompt / TextPrompt）にした: 難易度の新規作成、Appear / Vanish、Ease の区間の曲がり方。SwiftUI の confirmationDialog / alert はもう使っていない（新しく足すときも ChoicePrompt を使う）
+
+## 24. テストプレイの判定を本家（keyjudge.cs / NotesGenerate.cs 2026-10-20 版）に合わせた
+
+- 縦連の印（BxPlayChart.markTateren = MarkTaterenNotes）: 同じレーンで間隔 77ms 以内が核、核の前後へ「核の最小間隔 × 1.5 + 3ms」以内まで広げる。前とつながっているノーツが縦連（最初の 1 個は普通）。白・始点・赤（ダミー除く）、同じ時刻は 1 つ
+- 縦連のノーツ: ±0.06 まで PERFECT+。GREAT / MISS の幅で押しても何もしない（スルー）。見逃しは今までどおり MISS
+- 押した瞬間（BxGame.press = CheckJudgementCore）: ±0.15 秒の中から、ダミー判定 → 本物を「PERFECT の幅の中（時刻の早い順）→ それ以外（近い順）」で判定。縦連の PERFECT の幅の外 / 同じレーンの縦連を取って 0.1 秒以内で PERFECT の幅の外 / 何か取って 0.1 秒以内の白・始点の早押し MISS（−0.11 より早い）は、そこで終わり（何もしない）
+- 赤タップは ±0.075 で PERFECT+（前は ±0.06）。ダミーの赤も ±0.075
+- コンボ: 本家と同じく、タップ・始点・赤・ワイプ・判定点（ホールドの半拍ごと / スライドの始点と経由点）を全部 1 つずつ数える（前から同じ）
+- まだ入れていないもの: 端と中央の間のゾーン（tap0mArea / tap3mArea。button.cs が無いので範囲が分からない）、指のずれから拾う縦連専用のタップ、子の無い type 2（擦り）、判定の時計の +22ms（JudgeTime。テストプレイの補正で合わせる）

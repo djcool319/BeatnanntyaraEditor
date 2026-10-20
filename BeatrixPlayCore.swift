@@ -15,7 +15,15 @@ import Foundation
 //   判定の幅 (秒、ずれ = 押した時刻 − ノーツの時刻)
 //     白タップ: ±0.03 PERFECT+ / ±0.06 PERFECT / −0.11〜+0.09 GREAT / ±0.13 MISS
 //     始点タップ: ±0.06 PERFECT+ / −0.11〜+0.09 GREAT / ±0.13 MISS
-//     赤タップ: ±0.06 PERFECT+ (それ以外は押しても取れない)
+//     赤タップ: ±0.075 PERFECT+ (それ以外は押しても取れない)
+//     縦連 (同じレーンの速い連打。下の markTateren): ±0.06 まで PERFECT+。GREAT / MISS の幅で押しても何もしない (スルー)
+//   押した瞬間は、本家の CheckJudgementCore と同じ順番で判定する (2026-10-20 本家に合わせた):
+//     1) PERFECT の幅のダミーが本物より近ければ、ダミーを消すだけ
+//     2) 本物の候補 (白・始点 ±0.13 / 赤 ±0.075) を「PERFECT の幅に入っているもの (時刻の早い順) → それ以外 (近い順)」に並べて、順に判定
+//        ・縦連で PERFECT の幅の外 → ここで終わり (何もしない)
+//        ・同じレーンの縦連を取ってから 0.1 秒以内で、PERFECT の幅の外 → 終わり (多重反応の対策)
+//        ・何かを取ってから 0.1 秒以内で、白・始点を 0.11 秒より早く押した (MISS になる所) → 終わり (多重反応の対策)
+//     3) 本物が何も取れなかったら、範囲の中のダミーを 1 つ消す
 //     ワイプ・判定点: 押している間に ±0.12 で PERFECT+
 //     見逃し: タップ系は +0.09、ワイプ・判定点は +0.12 を過ぎたら MISS
 //   ※ 時刻は BPM 変化 (bpms) も入れて計算する (エディタと同じ)。本家の NotesGenerate は今 BPM だけで計算している
@@ -32,6 +40,7 @@ struct BxNote {
     var dummy = false                      // ダミー (判定なし。取れば消えるだけ)
     var vis: [[BxVisEvent]] = []           // 出現 / 消える。どれか 1 つの列で見えていれば見える (空なら いつも見える)
     var suppressed = false
+    var tateren = false                    // 縦連 (本家の NotesGenerate.MarkTaterenNotes と同じ印)
     var done = false
     var missed = false                     // 見逃した (本家と同じく、判定ラインを過ぎても流れ続ける)
 }
@@ -263,6 +272,8 @@ struct BxPlayChart {
             }
         }
 
+        markTateren(&out.notes)
+
         // 同時押しの線 (判定点は除く)
         //   (ノーツ個別の速さが違うノーツどうしは、流れてくる位置が違うので線を引かない)
         //   線の時刻は、丸めた値ではなくノーツの時刻そのものを使う (ソフランが強いと、丸めの差でも線がずれて見えるため)。
@@ -300,6 +311,56 @@ struct BxPlayChart {
         out.parts = chart.bxParts.map { (start: tm.sec(atBeat: $0.start.value), end: tm.sec(atBeat: $0.end.value)) }
         out.lyrics = chart.bxLyrics.map { (start: tm.sec(atBeat: $0.start.value), end: tm.sec(atBeat: $0.end.value), text: $0.text) }
         return out
+    }
+
+    /// 縦連の印 (本家の NotesGenerate.MarkTaterenNotes と同じ)
+    ///   1) 同じレーンで、隣との間隔が BPM200 の 16 分 (75ms) + 2ms 以内 → 縦連の核
+    ///   2) 核の前後へ、間隔が「核のいちばん狭い間隔 × 1.5 + 3ms」以内のあいだ広げる
+    ///   3) つながりの中で「前とつながっているノーツ」が縦連 (いちばん最初の 1 個は普通のノーツ扱い)
+    ///   対象は白タップ・始点・赤タップ (ダミーは除く)。同じレーン・同じ時刻のノーツは 1 つとして数える
+    static func markTateren(_ notes: inout [BxNote]) {
+        let gapSec = 60.0 / 200.0 / 4.0 + 0.002
+        for lane in 0..<7 {
+            var idx: [Int] = []
+            for i in notes.indices where notes[i].lane == lane && (1...3).contains(notes[i].type) && !notes[i].dummy {
+                idx.append(i)
+            }
+            if idx.count < 2 { continue }
+            idx.sort { notes[$0].t < notes[$1].t }
+            var times: [Double] = []
+            var groups: [[Int]] = []
+            for i in idx {
+                if let last = times.last, notes[i].t - last <= 0.0005 {
+                    groups[groups.count - 1].append(i)
+                    continue
+                }
+                times.append(notes[i].t)
+                groups.append([i])
+            }
+            let n = times.count
+            if n < 2 { continue }
+            var linked = [Bool](repeating: false, count: n - 1)
+            var a0 = 0
+            while a0 < n - 1 {
+                if times[a0 + 1] - times[a0] > gapSec { a0 += 1; continue }
+                var b0 = a0
+                var minGap = times[a0 + 1] - times[a0]
+                while b0 + 1 < n - 1 && times[b0 + 2] - times[b0 + 1] <= gapSec {
+                    b0 += 1
+                    minGap = min(minGap, times[b0 + 1] - times[b0])
+                }
+                for k in a0...b0 { linked[k] = true }
+                let limit = minGap * 1.5 + 0.003
+                var k = a0 - 1
+                while k >= 0 && times[k + 1] - times[k] <= limit { linked[k] = true; k -= 1 }
+                k = b0 + 1
+                while k < n - 1 && times[k + 1] - times[k] <= limit { linked[k] = true; k += 1 }
+                a0 = b0 + 1
+            }
+            for k in 1..<n where linked[k - 1] {
+                for i in groups[k] { notes[i].tateren = true }
+            }
+        }
     }
 
     static func sameZone(_ a: Int, _ b: Int) -> Bool {
@@ -390,63 +451,88 @@ final class BxGame {
         while first < notes.count && notes[first].done { first += 1 }
     }
 
-    /// ボタンを押した瞬間。判定のあるノーツを先に見て、取れなかったときだけダミーを消す
-    /// (ダミーが本物のノーツの入力を横取りしないように)
+    // 多重反応の対策 (本家の keyjudge と同じ)
+    private static let doubleTapGuardSec = 0.1
+    private var lastLaneHit = [Double](repeating: -999, count: 7)    // そのレーンの縦連を取った時刻
+    private var lastAnyHit = -999.0                                    // 何かを取った時刻
+
+    /// PERFECT の幅: 白・始点 ±0.06 / 赤 ±0.075
+    private func perfectWindow(_ n: BxNote) -> Double { n.type == 3 ? 0.075 : 0.06 }
+
+    /// ボタンを押した瞬間 (本家の CheckJudgementCore と同じ順番)
     func press(zone: Int, at now: Double) {
         guard zone >= 0 && zone < Self.tapZones.count else { return }
         let lanes = Self.tapZones[zone]
-        // ダミーを PERFECT のタイミング (±0.06 秒) で押したときは、本物よりダミーのほうが近ければ、ダミーを消すだけにする
-        // (縦連の中のダミーを押したとき、後ろの本物が巻き込まれて早い GREAT / MISS にならないように)
-        var bestDummy: Int? = nil
-        var bestDummyLag = Double.infinity
-        var nearestReal = Double.infinity
+        // 押した時刻の ±0.15 秒の中の、白・始点・赤
+        var win: [Int] = []
         var j = first
         while j < notes.count {
             let n = notes[j]
-            if n.t - now > 0.2 { break }
-            if !n.done && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
-                let a = abs(now - n.t)
-                if n.dummy {
-                    if a <= 0.06 && a < bestDummyLag {
-                        bestDummyLag = a
-                        bestDummy = j
-                    }
-                } else {
-                    nearestReal = min(nearestReal, a)
-                }
-            }
+            if n.t - now > 0.15 { break }
+            if !n.done && (1...3).contains(n.type) && lanes.contains(n.lane) && now - n.t <= 0.15 { win.append(j) }
             j += 1
         }
-        if let d = bestDummy, bestDummyLag <= nearestReal {
+
+        // 1) PERFECT のタイミング (±0.06) のダミーが、本物より近い (同じも含む) なら、ダミーを消すだけ
+        var bestDummy: Int? = nil
+        var bestDummyLag = Double.infinity
+        var bestRealLag = Double.infinity
+        for i in win {
+            let n = notes[i]
+            let a = abs(now - n.t)
+            if n.dummy {
+                if a <= 0.06 && a < bestDummyLag { bestDummyLag = a; bestDummy = i }
+            } else {
+                let range = n.tateren ? perfectWindow(n) : (n.type == 3 ? 0.075 : 0.13)
+                if a <= range && a < bestRealLag { bestRealLag = a }
+            }
+        }
+        if let d = bestDummy, bestDummyLag <= bestRealLag {
             onSound?(notes[d].type, notes[d].t)
             notes[d].done = true
             advance()
             return
         }
-        var i = first
-        while i < notes.count {
-            let n = notes[i]
-            if n.t - now > 0.2 { break }
-            if !n.done && !n.dummy && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
-                if judgeTap(i, lag: now - n.t) { return }
-            }
-            i += 1
+
+        // 2) 本物: PERFECT の幅に入っているもの (時刻の早い順) → それ以外 (押した時刻に近い順)
+        var cand: [(i: Int, lag: Double)] = []
+        for i in win where !notes[i].dummy {
+            let a = abs(now - notes[i].t)
+            if a <= (notes[i].type == 3 ? 0.075 : 0.13) { cand.append((i, a)) }
         }
-        // ダミー: 本物と同じ幅 (白タップ・始点は ±0.13 秒、赤タップは ±0.06 秒) の中なら、消えるだけ (判定・エフェクト・数えなし)
-        i = first
-        while i < notes.count {
-            let n = notes[i]
-            if n.t - now > 0.2 { break }
-            if !n.done && n.dummy && (n.type == 1 || n.type == 2 || n.type == 3) && lanes.contains(n.lane) {
-                let a = abs(now - n.t)
-                if a <= (n.type == 3 ? 0.06 : 0.13) {
-                    onSound?(n.type, n.t)
-                    notes[i].done = true
-                    advance()
-                    return
-                }
+        cand.sort { x, y in
+            let px = x.lag <= perfectWindow(notes[x.i])
+            let py = y.lag <= perfectWindow(notes[y.i])
+            if px != py { return px }
+            if px {
+                if notes[x.i].t != notes[y.i].t { return notes[x.i].t < notes[y.i].t }
+                return x.i < y.i
             }
-            i += 1
+            return x.lag != y.lag ? x.lag < y.lag : x.i < y.i
+        }
+        for c in cand {
+            let n = notes[c.i]
+            let lag = now - n.t
+            if n.tateren && c.lag > perfectWindow(n) { break }                                   // 縦連: スルー
+            if now - lastLaneHit[n.lane] < Self.doubleTapGuardSec && c.lag > perfectWindow(n) { break }   // 縦連を取った直後の同じレーン
+            let since = now - lastAnyHit
+            if since >= -0.05 && since < Self.doubleTapGuardSec && (n.type == 1 || n.type == 2) && lag < -0.11 { break }   // 取った直後の多重で早押し MISS にしない
+            if judgeTap(c.i, lag: lag) {
+                if n.tateren { lastLaneHit[n.lane] = now }
+                lastAnyHit = now
+                return
+            }
+        }
+
+        // 3) 本物が何も取れなかったら、範囲の中のダミーを 1 つ消す (白・始点 ±0.13 / 赤 ±0.075)
+        for i in win where notes[i].dummy {
+            let n = notes[i]
+            if abs(now - n.t) <= (n.type == 3 ? 0.075 : 0.13) {
+                onSound?(n.type, n.t)
+                notes[i].done = true
+                advance()
+                return
+            }
         }
     }
 
@@ -515,16 +601,17 @@ final class BxGame {
         let a = abs(lag)
         switch n.type {
         case 1:
-            if a <= 0.03 {
+            let suppressed = n.suppressed || n.tateren          // 縦連は GREAT / MISS の幅で押しても何もしない
+            if a <= 0.03 || (n.tateren && a <= 0.06) {
                 onSound?(n.type, n.t)
                 record(i, .perfectPlus, early: nil)
             } else if a <= 0.06 {
                 onSound?(n.type, n.t)
                 record(i, .perfect, early: lag < 0)
-            } else if !n.suppressed && lag <= 0.09 && lag >= -0.11 {
+            } else if !suppressed && lag <= 0.09 && lag >= -0.11 {
                 onSound?(n.type, n.t)
                 record(i, .great, early: lag < 0)
-            } else if !n.suppressed && a <= 0.13 {
+            } else if !suppressed && a <= 0.13 {
                 record(i, .miss, early: lag < 0)          // 押したときの MISS (早い / 遅い)
             } else {
                 return false
@@ -533,16 +620,16 @@ final class BxGame {
             if a <= 0.06 {
                 onSound?(n.type, n.t)
                 record(i, .perfectPlus, early: nil)
-            } else if lag <= 0.09 && lag >= -0.11 {
+            } else if !n.tateren && lag <= 0.09 && lag >= -0.11 {
                 onSound?(n.type, n.t)
                 record(i, .great, early: lag < 0)
-            } else if a <= 0.13 {
+            } else if !n.tateren && a <= 0.13 {
                 record(i, .miss, early: lag < 0)          // 押したときの MISS (早い / 遅い)
             } else {
                 return false
             }
         case 3:
-            if a <= 0.06 {
+            if a <= 0.075 {
                 onSound?(n.type, n.t)
                 record(i, .perfectPlus, early: nil)
             } else {
