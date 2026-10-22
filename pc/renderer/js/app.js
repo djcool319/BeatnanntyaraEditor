@@ -508,13 +508,23 @@
     $('zoom').value = ed.ppb;
     needDraw = true;
   }
-  const SNAPS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
-  function setSnap(d) {
+  // 分割は iPad 版と同じく「1 拍を何分割するか」(1/4 = 1 拍を 4 分割)。一覧に無い数は入力欄で 1〜1024
+  const SNAPS = [1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32, 48, 64];
+  function renderSnapList(d) {
+    const sel = $('snap');
+    const list = SNAPS.includes(d) ? SNAPS : SNAPS.concat([d]).sort((a, b) => a - b);
+    sel.innerHTML = list.map(v => '<option value="' + v + '">1/' + v + '</option>').join('');
+    sel.value = String(d);
+    if (document.activeElement !== $('snapIn')) $('snapIn').value = d;
+  }
+  function setSnap(d, quiet) {
+    d = Math.round(Number(d));
+    if (!(d >= 1 && d <= 1024)) { toast('分割は 1〜1024 の整数で入れてください'); renderSnapList(ed.snapDen); return; }
     ed.snapDen = d;
     setPref('snapDen', d);
-    $('snap').value = String(d);
+    renderSnapList(d);
     needDraw = true;
-    toast('分割: 1/' + (d * 4) + ' (1 拍を ' + d + ' 分割)');
+    if (!quiet) toast('分割を 1/' + d + ' にしました (1 拍を ' + d + ' 分割)');
   }
 
   function frame() {
@@ -715,9 +725,11 @@
     $('wheelStops').onchange = e => { wheelStops = e.target.checked; setPref('wheelStops', wheelStops); };
 
     const snap = $('snap');
-    snap.innerHTML = SNAPS.map(d => '<option value="' + d + '">1/' + (d * 4) + '  (1 拍 ' + d + ' 分割)</option>').join('');
-    snap.value = String(ed.snapDen);
+    renderSnapList(ed.snapDen);
     snap.onchange = () => setSnap(Number(snap.value));
+    const snapIn = $('snapIn');
+    snapIn.onchange = () => setSnap(snapIn.value);
+    snapIn.onkeydown = e => { if (e.key === 'Enter') { setSnap(snapIn.value); snapIn.blur(); } };
     $('zoom').value = ed.ppb;
     $('zoom').oninput = e => setZoom(Number(e.target.value));
 
@@ -883,8 +895,8 @@
         case 'PageDown': scrollBy(-4); break;
         case 'Home': stop(); ed.viewBeat = 0; needDraw = true; break;
         case 'End': stop(); ed.viewBeat = ed.lastBeat(); needDraw = true; break;
-        case '[': { const i = SNAPS.indexOf(ed.snapDen); setSnap(SNAPS[Math.max(0, (i < 0 ? 3 : i) - 1)]); break; }
-        case ']': { const i = SNAPS.indexOf(ed.snapDen); setSnap(SNAPS[Math.min(SNAPS.length - 1, (i < 0 ? 3 : i) + 1)]); break; }
+        case '[': { const lower = SNAPS.filter(v => v < ed.snapDen); setSnap(lower.length ? lower[lower.length - 1] : SNAPS[0]); break; }
+        case ']': { const upper = SNAPS.filter(v => v > ed.snapDen); setSnap(upper.length ? upper[0] : ed.snapDen); break; }
         case '+': case '=': case ';': setZoom(ed.ppb * 1.2); break;
         case '-': setZoom(ed.ppb / 1.2); break;
         case 'm': ed.flip(); break;
