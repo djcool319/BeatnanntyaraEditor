@@ -28,13 +28,11 @@
     <button class="tool" data-tool="tap" title="白タップ (1)"><i class="ic tap"></i><span>タップ</span><kbd>1</kbd></button>
     <button class="tool" data-tool="red" title="赤タップ (2)"><i class="ic red"></i><span>赤タップ</span><kbd>2</kbd></button>
     <button class="tool" data-tool="wipe" title="ワイプ (3)"><i class="ic wipe"></i><span>ワイプ</span><kbd>3</kbd></button>
-    <button class="tool" data-tool="hold" title="ホールド (4)"><i class="ic hold"></i><span>ホールド</span><kbd>4</kbd></button>
-    <button class="tool" data-tool="slide" title="スライド (5)"><i class="ic slide"></i><span>スライド</span><kbd>5</kbd></button>
-    <button class="tool" data-tool="modify" title="中継点の編集 (6)"><i class="ic modify"></i><span>中継点</span><kbd>6</kbd></button>
-    <button class="tool" data-tool="ease" title="区間の曲がり方 (7)"><i class="ic ease"></i><span>Ease</span><kbd>7</kbd></button>
-    <button class="tool" data-tool="erase" title="消しゴム (8)"><i class="ic erase"></i><span>消す</span><kbd>8</kbd></button>
+    <button class="tool" data-tool="slide" title="スライド / ホールド (4)"><i class="ic slide"></i><span>スライド</span><kbd>4</kbd></button>
+    <button class="tool" data-tool="modify" title="中継点の編集 (5)"><i class="ic modify"></i><span>中継点</span><kbd>5</kbd></button>
+    <button class="tool" data-tool="ease" title="区間の曲がり方 (6)"><i class="ic ease"></i><span>Ease</span><kbd>6</kbd></button>
+    <button class="tool" data-tool="erase" title="消しゴム (7)"><i class="ic erase"></i><span>消す</span><kbd>7</kbd></button>
     <div class="group-label">始点</div>
-    <label class="chk"><input type="checkbox" id="holdHead"> ホールドに始点</label>
     <label class="chk"><input type="checkbox" id="slideHead"> スライドに始点</label>
     <div class="group-label">分割</div>
     <select id="snap"></select>
@@ -154,6 +152,7 @@
       <label class="chk"><input type="checkbox" id="seOn"> 再生中にノーツ音を鳴らす</label>
       <label>曲の音量<input type="range" id="volMusic" min="0" max="1" step="0.01"></label>
       <label>ノーツ音の音量<input type="range" id="volSE" min="0" max="1" step="0.01"></label>
+      <label class="chk"><input type="checkbox" id="wheelStops"> 再生中にホイールを回したら止める</label>
       <label>再生の速さ
         <select id="rate"><option value="1">×1.0</option><option value="0.75">×0.75 (音程も下がる)</option><option value="0.5">×0.5 (音程も下がる)</option></select>
       </label>

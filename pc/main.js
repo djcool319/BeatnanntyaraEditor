@@ -1,6 +1,7 @@
 // BeatTriX Editor (PC 版) の本体 (Electron のメインプロセス)
 //   ・ファイルの読み書きはここだけで行う (画面側からは preload.js 経由で呼ぶ)
-//   ・保存: 前の中身を「〇〇.json.bak」に残す + アプリのフォルダにも日時付きで控えを残す (最新 100 個)
+//   ・保存: 前の中身を、アプリのフォルダ (ヘルプ → バックアップのフォルダ) に日時付きで残す (最新 300 個)。
+//           譜面のフォルダ (Unity の ChartsRaw など) には何も増やさない
 //           → 一時ファイルに書いてから置き換える → 読み直して中身が同じか確かめる
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron');
 const path = require('path');
@@ -103,16 +104,16 @@ function stamp() {
 }
 
 function keepBackup(filePath) {
-  // 1) 同じフォルダに「〇〇.json.bak」(ひとつ前の中身)
-  fs.copyFileSync(filePath, filePath + '.bak');
-  // 2) アプリのフォルダに日時付きで (最新 100 個だけ残す)
+  // アプリのフォルダに日時付きで (最新 300 個だけ残す)。譜面のフォルダには .bak を作らない
   const d = backupDir();
   const name = stamp() + '_' + path.basename(filePath);
-  fs.copyFileSync(filePath, path.join(d, name));
+  const dest = path.join(d, name);
+  fs.copyFileSync(filePath, dest);
   const list = fs.readdirSync(d).filter(f => f.endsWith('.json')).sort();
-  while (list.length > 100) {
+  while (list.length > 300) {
     try { fs.unlinkSync(path.join(d, list.shift())); } catch (e) { break; }
   }
+  return dest;
 }
 
 function writeSafely(filePath, text) {
@@ -121,8 +122,7 @@ function writeSafely(filePath, text) {
   if (fs.existsSync(filePath)) {
     const old = fs.readFileSync(filePath);
     if (old.equals(data)) return { ok: true, unchanged: true };
-    keepBackup(filePath);
-    backedUp = true;
+    backedUp = keepBackup(filePath);
   }
   const tmp = filePath + '.tmp-' + process.pid;
   const fd = fs.openSync(tmp, 'w');
@@ -262,6 +262,30 @@ ipcMain.handle('file:import-audio', async (_e, src, destDir, mode) => {
     return { ok: false, error: String(err && err.message || err) };
   }
 });
+/// 譜面のフォルダの譜面の一覧 (下のフォルダも 2 段まで): [{path, base, name, difficulty}]
+ipcMain.handle('charts:index', async (_e, dir) => {
+  const out = [];
+  const walk = (d, lv) => {
+    let ents;
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of ents) {
+      if (out.length >= 3000) return;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (lv < 2 && !e.name.startsWith('.')) walk(p, lv + 1); continue; }
+      if (path.extname(e.name).toLowerCase() !== '.json') continue;
+      let name = '', difficulty = null;
+      try {
+        const o = JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
+        if (!o || !Array.isArray(o.notes)) continue;
+        name = typeof o.name === 'string' ? o.name : '';
+        difficulty = typeof o.difficulty === 'number' ? o.difficulty : null;
+      } catch (err) { continue; }
+      out.push({ path: p, base: path.basename(e.name, path.extname(e.name)), name, difficulty });
+    }
+  };
+  if (dir) walk(dir, 0);
+  return out;
+});
 ipcMain.handle('path:inside', async (_e, child, parent) => !!(child && parent) && isInside(child, parent));
 ipcMain.handle('path:info', async (_e, p) => ({ dir: path.dirname(p), base: path.basename(p), sep: path.sep }));
 ipcMain.handle('path:join', async (_e, a, b) => path.join(a, b));
@@ -284,14 +308,14 @@ function smokeTest() {
   };
   setTimeout(() => { log.push('timeout'); finish(false); }, 60000);
   try {
-    // 保存の仕組み: 書く → 書き換える (.bak ができる) → 中身が同じなら書かない
+    // 保存の仕組み: 書く → 書き換える (控えができる / .bak は作らない) → 中身が同じなら書かない
     const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'bx-smoke-'));
     const f = path.join(dir, 'test(EX).json');
     writeSafely(f, '{"a": 1}\n');
     const r2 = writeSafely(f, '{"a": 2}\n');
     const r3 = writeSafely(f, '{"a": 2}\n');
-    const bak = fs.readFileSync(f + '.bak', 'utf8');
-    const okSave = r2.backup === true && r3.unchanged === true && bak === '{"a": 1}\n' && fs.readFileSync(f, 'utf8') === '{"a": 2}\n';
+    const bak = fs.readFileSync(r2.backup, 'utf8');
+    const okSave = typeof r2.backup === 'string' && !fs.existsSync(f + '.bak') && r3.unchanged === true && bak === '{"a": 1}\n' && fs.readFileSync(f, 'utf8') === '{"a": 2}\n';
     log.push('save/backup: ' + (okSave ? 'ok' : 'NG'));
     if (!okSave) { finish(false); return; }
   } catch (e) {

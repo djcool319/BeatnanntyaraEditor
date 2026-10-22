@@ -91,7 +91,7 @@
     return r === 'discard';
   }
 
-  async function openPath(p) {
+  async function openPath(p, songPath) {
     if (!host) return;
     stop();
     let chart;
@@ -108,7 +108,7 @@
     setPref('lastDir', chartDir);
     await refreshSiblings();
     // 同じ曲名 (難易度の切り替えなど) なら、いま読んでいる曲をそのまま使う
-    await autoAudio(audio.music && audioPath && prevTitle === (chart.bx.name || '') ? audioPath : null);
+    await autoAudio(songPath || (audio.music && audioPath && prevTitle === (chart.bx.name || '') ? audioPath : null));
     toast('開きました: ' + p.split(/[\\/]/).pop() + ' (ノーツ ' + chart.notes.length + ' 個)');
     fitView();
     return true;
@@ -154,7 +154,7 @@
     if (audioPath) rememberAudio();
     await refreshSiblings();
     updateTitle();
-    toast(r.unchanged ? '変更はありませんでした (保存済み)' : '保存しました' + (r.backup ? ' (前の中身は .bak に残しました)' : ''));
+    toast(r.unchanged ? '変更はありませんでした (保存済み)' : '保存しました' + (r.backup ? ' (前の中身はバックアップのフォルダに残しました)' : ''));
     return true;
   }
 
@@ -291,29 +291,80 @@
     }
   }
   /// 外から選んだ曲を、曲フォルダにコピーしてから読む (曲フォルダが決まっていて、まだその中に無いとき)
-  async function importAndLoad(p) {
+  /// 外から選んだ曲を、曲フォルダにコピーする (曲フォルダが決まっていて、まだその中に無いとき)。使うパスを返す (やめたら null)
+  async function importSong(p) {
     const songDir = folders.songs;
-    if (!songDir || !host.importAudio) { await loadAudio(p); return; }
+    if (!autoImport || !songDir || !host.importAudio) return p;
     let r = await host.importAudio(p, songDir);
     if (r && r.conflict) {
       const name = r.path.split(/[\\/]/).pop();
       const c = await modal('同じ名前の曲があります', '<p>曲フォルダに「' + esc(name) + '」がすでにあり、中身が違います。</p>',
         [{ label: '別の名前でコピー', primary: true, value: 'rename' }, { label: '上書きする', danger: true, value: 'overwrite' },
           { label: 'コピーしないで使う', value: 'skip' }, { label: 'キャンセル', value: null }]);
-      if (!c) return;
-      if (c === 'skip') { await loadAudio(p); return; }
+      if (!c) return null;
+      if (c === 'skip') return p;
       r = await host.importAudio(p, songDir, c);
     }
-    if (!r || !r.ok) {
-      toast('曲フォルダにコピーできませんでした: ' + (r && r.error || ''));
-      await loadAudio(p);
+    if (!r || !r.ok) { toast('曲フォルダにコピーできませんでした: ' + (r && r.error || '')); return p; }
+    if (r.copied) toast('曲フォルダにコピーしました: ' + r.path.split(/[\\/]/).pop());
+    if (!audioFilesInDir.includes(r.path)) audioFilesInDir.push(r.path);
+    return r.path;
+  }
+
+  // 曲名の比べ方: 全角半角・大文字小文字・空白や記号の違いは無視する
+  function normName(s) {
+    return String(s || '').normalize('NFKC').toLowerCase().replace(/\((bs|hd|ex|in)\)$/i, '')
+      .replace(/[\s_\-‐－—~〜・.,!！?？'"’”()\[\]{}（）「」『』【】]/g, '');
+  }
+  function chartMatchesSong(name, base, songKey) {
+    const a = normName(name), b = normName(base);
+    return (a && a === songKey) || (b && b === songKey);
+  }
+
+  /// 曲を選んだとき: その曲の譜面を譜面のフォルダから探して開く (曲と譜面がずれないように)
+  async function userPickSong(p0) {
+    if (!host) return;
+    const p = await importSong(p0);
+    if (!p) return;
+    const songKey = normName(stemOf(p));
+    // 今の譜面がこの曲のものなら、曲だけ替える
+    const curFileBase = ed.filePath ? ed.filePath.split(/[\\/]/).pop().replace(/\.json$/i, '') : '';
+    if (chartMatchesSong(ed.chart.bx.name, curFileBase, songKey) || (ed.filePath && audioMap()[ed.filePath] === p)) { await loadAudio(p); return; }
+    const dir = folders.charts || chartDir;
+    let found = [];
+    if (dir && host.chartIndex) {
+      const idx = await host.chartIndex(dir);
+      found = idx.filter(c => chartMatchesSong(c.name, c.base, songKey));
+      if (!found.length) {
+        found = idx.filter(c => { const n = normName(c.name) || normName(c.base); return songKey.length >= 3 && n.length >= 3 && (n.includes(songKey) || songKey.includes(n)); });
+      }
+    }
+    if (found.length) {
+      const cur = F.intValue(ed.chart.bx.difficulty);
+      const pick = found.find(c => c.difficulty === cur) || found.find(c => c.difficulty === 2) || found[0];
+      if (!(await confirmDiscard())) return;
+      const m = audioMap(); m[pick.path] = p; setPref('audioFor', m);     // この譜面の曲として覚える
+      await openPath(pick.path, p);
       return;
     }
-    if (r.copied) toast('曲フォルダにコピーしました: ' + r.path.split(/[\\/]/).pop());
-    else if (r.existed) toast('曲フォルダにある同じ曲を使います');
-    if (!audioFilesInDir.includes(r.path)) audioFilesInDir.push(r.path);
-    await loadAudio(r.path);
+    const r = await modal('この曲の譜面が見つかりません',
+      '<p>「' + esc(stemOf(p)) + '」と同じ曲名の譜面が、譜面のフォルダにありません。</p>',
+      [{ label: 'この曲で新しい譜面を作る', primary: true, value: 'new' }, { label: '今の譜面にこの曲を使う', value: 'use' }, { label: 'キャンセル', value: null }]);
+    if (r === 'use') { await loadAudio(p); return; }
+    if (r === 'new') {
+      if (!(await confirmDiscard())) return;
+      stop();
+      const title = p.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+      const c = F.newChart(title, 120, F.intValue(ed.chart.bx.difficulty) === null ? 2 : F.intValue(ed.chart.bx.difficulty));
+      ed.loadChart(c, null);
+      ed.dirty = true;
+      siblingExists = {};
+      await loadAudio(p);
+      updateTitle(); renderDiffs(); syncUI();
+      toast('新しい譜面を作りました。BPM と offset を「曲の情報」「BPM・速さ」で入れてください');
+    }
   }
+
   async function loadAudio(p) {
     stop();
     try {
@@ -389,29 +440,50 @@
   function chartBaseDir() { return folders.charts || chartDir || pref('lastDir', ''); }
 
   // ------------------------------------------------------------ 再生
-  function play() {
-    if (audio.playing) return;
-    if (ed.slideDraft) ed.finishSlide();
-    ed.holdDraft = null;
-    ed.ghost = null;
-    ed.isPlaying = true;
+  let seeking = false;              // 再生中にホイールなどで動かしている途中 (少し止まってから、その位置から鳴らし直す)
+  let seekTimer = null;
+  function playingNow() { return audio.playing || seeking; }
+  function startAudio() {
     audio.rate = Number($('rate').value) || 1;
     const startBeat = Math.max(0, ed.viewBeat);
     ed.playStartBeat = startBeat;
     audio.play(ed.secOfBeat(startBeat), ed.offsetSec(), ed.keySounds());
+  }
+  function play() {
+    if (playingNow()) return;
+    // 置いている途中のスライドは、そのまま続けられるように残しておく (止めたあと続きの点を置ける)
+    ed.ghost = null;
+    ed.isPlaying = true;
+    startAudio();
     $('btnPlay').textContent = '❚❚';
     $('btnPlay').classList.add('on');
   }
   function stop() {
-    if (!audio.playing) { ed.isPlaying = false; return; }
+    clearTimeout(seekTimer);
+    const was = playingNow();
+    seeking = false;
     audio.stop();
     ed.isPlaying = false;
+    if (!was) return;
     $('btnPlay').textContent = '▶';
     $('btnPlay').classList.remove('on');
     needDraw = true;
     scheduleUI();
   }
-  function togglePlay() { if (audio.playing) stop(); else play(); }
+  function togglePlay() { if (playingNow()) stop(); else play(); }
+  /// 再生中に位置を動かす: 設定が「止める」なら止める。そうでなければ、動かし終わってから新しい位置で鳴らし直す
+  function seekTo(beat) {
+    if (!playingNow() || wheelStops) {
+      if (playingNow()) stop();
+      ed.viewBeat = beat;
+      return;
+    }
+    ed.viewBeat = Math.max(0, beat);
+    if (!seeking) { seeking = true; audio.stop(); }
+    clearTimeout(seekTimer);
+    seekTimer = setTimeout(() => { if (seeking) { seeking = false; startAudio(); } }, 110);
+  }
+  let wheelStops = pref('wheelStops', false);
 
   // ------------------------------------------------------------ 表示
   function fitView() {
@@ -419,8 +491,7 @@
     needDraw = true;
   }
   function scrollBy(beats) {
-    ed.viewBeat = Math.max(-2, ed.viewBeat + beats);
-    if (audio.playing) { stop(); }
+    seekTo(Math.max(-2, ed.viewBeat + beats));
     needDraw = true;
     scheduleUI();
     if (lastMouse && geo) ed.updateGhost(lastMouse, geo);
@@ -497,9 +568,8 @@
     const r = overviewRange();
     const H = rect.height;
     const s = r.from + (H - 6 - (ev.clientY - rect.top)) / (H - 12) * (r.to - r.from);
-    const wasPlaying = audio.playing;
-    if (wasPlaying) stop();
-    ed.viewBeat = Math.max(0, ed.beatOfSec(Math.max(r.from, Math.min(r.to, s))));
+    const wasPlaying = playingNow();
+    seekTo(Math.max(0, ed.beatOfSec(Math.max(r.from, Math.min(r.to, s)))));
     needDraw = true;
     scheduleUI();
     return wasPlaying;
@@ -575,7 +645,6 @@
     setVal('noteSpeed', sel.length ? ed.selectedSpeedText() : '');
 
     for (const b of document.querySelectorAll('.tool')) b.classList.toggle('active', b.dataset.tool === ed.tool);
-    $('holdHead').checked = ed.holdWithHead;
     $('slideHead').checked = ed.slideWithHead;
     $('linkHead').checked = ed.linkHeadTap;
     $('segVertical').checked = ed.allowSegVertical;
@@ -589,8 +658,7 @@
     tap: 'クリックで白タップ (3 鍵)。ノーツを掴むと移動。右クリックで消す。',
     red: 'クリックで赤タップ (3 鍵)。',
     wipe: 'クリックでワイプ (7 鍵)。',
-    hold: '始点を押して終点までドラッグ。または 始点クリック → 終点クリック。',
-    slide: '始点 → 中継点を順にクリック。Enter / 右クリックで完了。',
+    slide: '始点 → 中継点を順にクリック (全部同じ鍵ならホールド)。始点から押したままドラッグでも置ける。Enter / 右クリックで完了。',
     modify: 'スライドを選んで、点をドラッグで動かす。空いた所をクリックで点を足す。',
     ease: 'スライドの帯 (点と点の間) をクリックして、曲がり方を選ぶ。',
     erase: 'クリックで消す。スライドは近い中継点から後ろを消す。',
@@ -631,7 +699,6 @@
         for (const p of document.querySelectorAll('.pane')) p.classList.toggle('active', p.id === 'pane-' + t.dataset.tab);
       };
     }
-    $('holdHead').onchange = e => ed.setPref('holdWithHead', e.target.checked);
     $('slideHead').onchange = e => ed.setPref('slideWithHead', e.target.checked);
     $('linkHead').onchange = e => ed.setPref('linkHeadTap', e.target.checked);
     $('segVertical').onchange = e => ed.setPref('allowSegVertical', e.target.checked);
@@ -643,7 +710,9 @@
     $('volSE').oninput = e => { audio.seVolume = Number(e.target.value); setPref('volSE', audio.seVolume); audio.applyVolumes(); };
     $('latency').value = latencyMs;
     $('latency').onchange = e => { latencyMs = Number(e.target.value) || 0; setPref('latencyMs', latencyMs); };
-    $('rate').onchange = () => { if (audio.playing) { stop(); play(); } };
+    $('rate').onchange = () => { if (audio.playing) { audio.stop(); startAudio(); } };
+    $('wheelStops').checked = wheelStops;
+    $('wheelStops').onchange = e => { wheelStops = e.target.checked; setPref('wheelStops', wheelStops); };
 
     const snap = $('snap');
     snap.innerHTML = SNAPS.map(d => '<option value="' + d + '">1/' + (d * 4) + '  (1 拍 ' + d + ' 分割)</option>').join('');
@@ -658,9 +727,9 @@
     $('btnAudio').onclick = async () => {
       if (!host) return;
       const p = await host.audioDialog(folders.songs || chartDir || pref('lastDir', undefined));
-      if (p) { if (autoImport) await importAndLoad(p); else await loadAudio(p); }
+      if (p) await userPickSong(p);
     };
-    $('audioSel').onchange = async e => { if (e.target.value) await loadAudio(e.target.value); };
+    $('audioSel').onchange = async e => { if (e.target.value) await userPickSong(e.target.value); refreshAudioSelect(); };
     $('fChartsPick').onclick = () => pickFolder('charts');
     $('fSongsPick').onclick = () => pickFolder('songs');
     $('fChartsOpen').onclick = () => { if (folders.charts) host.openFolder(folders.charts); };
@@ -704,13 +773,13 @@
 
   function showHelp() {
     const rows = [
-      ['Space', '再生 / 停止'], ['ホイール', 'スクロール (Shift で速く)'], ['Ctrl + ホイール', 'ズーム'], ['[  ]', '分割を粗く / 細かく'],
-      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜8', 'タップ / 赤 / ワイプ / ホールド / スライド / 中継点 / Ease / 消す'],
+      ['Space', '再生 / 停止'], ['ホイール', 'スクロール (Shift で速く。再生中は再生したまま移動)'], ['Ctrl + ホイール', 'ズーム'], ['[  ]', '分割を粗く / 細かく'],
+      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜7', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す'],
       ['Enter', 'スライドを完了'], ['右クリック', 'ノーツを消す (スライド作成中は完了)'],
       ['Ctrl+Z / Ctrl+Y', '元に戻す / やり直す'], ['Ctrl+C / X / V', 'コピー / 切り取り / 再生ラインに貼り付け'], ['Ctrl+A', '全部選ぶ'], ['Delete', '選択中を消す'],
       ['↑ ↓', '選択中を 1 分割ずつ動かす (選択なしならスクロール)'], ['← →', '選択中を横に動かす'], ['PageUp / PageDown', '1 小節ずつスクロール'], ['Home / End', '最初 / 最後のノーツへ'],
       ['M', '左右反転'], ['R', '白 ⇔ 赤タップ'], ['H', '始点 タップ / ワイプ / なし'], ['C', '曲線 (見た目)'], ['B', 'Curve bake'],
-      ['Ctrl+S', '保存 (前の中身は .bak に残る)'], ['Ctrl+O / Ctrl+N', '開く / 新しい譜面'], ['F1', 'この一覧'],
+      ['Ctrl+S', '保存 (前の中身はバックアップのフォルダに残る)'], ['Ctrl+O / Ctrl+N', '開く / 新しい譜面'], ['F1', 'この一覧'],
     ];
     modal('ショートカット', '<div class="keys">' + rows.map(r => '<kbd>' + esc(r[0]) + '</kbd><span>' + esc(r[1]) + '</span>').join('') + '</div>', [{ label: '閉じる', primary: true }]);
   }
@@ -767,7 +836,7 @@
     if (!f || !host) return;
     const p = host.pathOfFile(f);
     if (/\.json$/i.test(p)) { if (await confirmDiscard()) await openPath(p); }
-    else if (/\.(ogg|mp3|wav|m4a|flac|aac|opus)$/i.test(p)) { if (autoImport) await importAndLoad(p); else await loadAudio(p); }
+    else if (/\.(ogg|mp3|wav|m4a|flac|aac|opus)$/i.test(p)) await userPickSong(p);
     else toast('JSON (譜面) か 曲のファイルを落としてください');
   });
 
@@ -794,14 +863,13 @@
         default: handled = false;
       }
     } else {
-      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'hold', '5': 'slide', '6': 'modify', '7': 'ease', '8': 'erase', 'q': 'select' };
+      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', 'q': 'select' };
       const lk = k.length === 1 ? k.toLowerCase() : k;
       if (toolKeys[lk]) ed.setTool(toolKeys[lk]);
       else switch (lk) {
         case ' ': togglePlay(); break;
         case 'Escape':
           if (ed.slideDraft) ed.finishSlide();
-          else if (ed.holdDraft) { ed.holdDraft = null; ed.ghost = null; ed.emit(); }
           else if (ed.tool !== 'select') ed.setTool('select');
           else ed.clearSelection();
           break;

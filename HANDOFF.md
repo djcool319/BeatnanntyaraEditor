@@ -753,7 +753,7 @@
 - 譜面の読み書きは `pc/renderer/js/format.js`。BeatrixFormat.swift の parseBeatrix / beatrixData / beatrixEntries / beatrixTargets / BeatrixJSONWriter をそのまま JS にしたもの（キーの順番・数の書き方・始点の表記・nth の数え方も同じ）
   - **形式を変えるときは、Swift と JS の両方を同じに直すこと**。`pc/test/roundtrip.js` で確認できる（`node test/roundtrip.js 譜面.json`）
   - エディタの中のノーツの持ち方（beat / x / w / type / segs / extra の bxHead など）も iPad 版と同じ。id は文字列
-- 保存: `.bak`（1 つ前）+ アプリのフォルダに日時付きの控え（100 個）。書き出しを読み直して同じになるか確認 → 一時ファイル → 置き換え → 読み直して一致確認
+- 保存: アプリのフォルダに日時付きの控え（300 個）。譜面のフォルダに .bak は作らない（2026-10-22 に変更。ChartsRaw に増えるのが困るため）。書き出しを読み直して同じになるか確認 → 一時ファイル → 置き換え → 読み直して一致確認
 - 再生: Web Audio。曲とノーツ音を同じ AudioContext の時刻に予約する（iPad 版の C++ ミキサーと同じ考え方）。鳴らす音の決め方は EditorState.rebuildKeyTimes と同じ
 - 描画: Renderers.swift の drawNotes と同じ色分け（始点の位置のタップは水色、多重はピンク、ダミーは薄く）。棒は拍の線の真ん中に描く（iPad 版の barLift は 0）
 - 始点のタップを触ったときにスライドも選ぶか（linkHeadTap）は、iPad 版と同じく初期値オフ（設定タブ）
@@ -763,3 +763,6 @@
 - （2026-10-22）PC 版に「譜面のフォルダ」「曲のフォルダ」の設定（設定タブ。localStorage の bx.chartFolder / bx.songFolder）。初回は `ホーム\BeatTriX-shin-PlayFab(3k)\Assets\ChartsRaw` / `Assets\Resources` があればそれ（main.js の app:default-folders）
   - 曲は曲のフォルダ（下 4 段まで）と譜面と同じフォルダから、曲名 / ファイル名が同じ（または含む）ものを自動で読む。譜面ごとに選んだ曲を覚える（bx.audioFor）
   - 外から選んだ / ドラッグした曲は、曲のフォルダにコピーしてから使う（file:import-audio。同名で中身が違えば 別名 / 上書き / コピーしない を選ぶ）
+- （2026-10-22）ホールドのツールをやめて、スライドだけに（全部同じ鍵 = ホールド。始点から押したままドラッグで 1 つ目の中継点）。キーは 1 タップ / 2 赤 / 3 ワイプ / 4 スライド / 5 中継点 / 6 Ease / 7 消す
+- （2026-10-22）曲を選ぶと、その曲の譜面（曲名が同じ。charts:index で譜面のフォルダの JSON の name を見る）を開く。曲と譜面がずれないように
+- （2026-10-22）再生しても置いている途中のスライドを終わらせない。再生中のホイール / 右の帯のクリックは、再生したまま移動（110ms 止まってから鳴らし直す）。設定「再生中にホイールを回したら止める」（初期値オフ）

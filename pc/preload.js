@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('bxHost', {
   folderDialog: (title, dir) => ipcRenderer.invoke('dialog:folder', title, dir),
   defaultFolders: () => ipcRenderer.invoke('app:default-folders'),
   importAudio: (src, destDir, mode) => ipcRenderer.invoke('file:import-audio', src, destDir, mode),
+  chartIndex: (dir) => ipcRenderer.invoke('charts:index', dir),
   isInside: (child, parent) => ipcRenderer.invoke('path:inside', child, parent),
   pathInfo: (p) => ipcRenderer.invoke('path:info', p),
   join: (a, b) => ipcRenderer.invoke('path:join', a, b),

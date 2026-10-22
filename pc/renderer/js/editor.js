@@ -8,7 +8,7 @@
   }
   function savePref(key, v) { try { localStorage.setItem('bx.' + key, JSON.stringify(v)); } catch (e) { /* なくても動く */ } }
 
-  const TOOLS = ['select', 'tap', 'red', 'wipe', 'hold', 'slide', 'modify', 'ease', 'erase'];
+  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase'];   // ホールドは「全部同じ鍵のスライド」
 
   class Editor {
     constructor() {
@@ -17,7 +17,6 @@
       this.dirty = false;
       this.selected = new Set();
       this.tool = 'select';
-      this.holdWithHead = loadPref('holdWithHead', true);
       this.slideWithHead = loadPref('slideWithHead', true);
       this.linkHeadTap = loadPref('linkHeadTap', false);   // iPad 版と同じく初期値はオフ
       this.allowSegVertical = loadPref('allowSegVertical', true);
@@ -27,7 +26,6 @@
       this.undoStack = [];
       this.redoStack = [];
       this.clip = [];
-      this.holdDraft = null;             // {beat, x}
       this.slideDraft = null;            // {noteId, beat, x, w}
       this.modifyId = null;              // Slide modify で選んでいるスライド
       this.ghost = null;
@@ -51,7 +49,6 @@
       this.selected = new Set();
       this.undoStack = [];
       this.redoStack = [];
-      this.holdDraft = null;
       this.slideDraft = null;
       this.modifyId = null;
       this.ghost = null;
@@ -81,7 +78,7 @@
       if (this.isPlaying) return;
       if (!this.undoStack.length) { this.toast('これ以上戻せません'); return; }
       this.redoStack.push(this.snapshot());
-      this.slideDraft = null; this.holdDraft = null;
+      this.slideDraft = null;
       this.restore(this.undoStack.pop());
     }
     redo() {
@@ -132,7 +129,6 @@
     setTool(t) {
       if (!TOOLS.includes(t)) return;
       if (this.slideDraft) this.finishSlide();
-      this.holdDraft = null;
       this.ghost = null;
       if (t !== 'modify') this.modifyId = null;
       this.tool = t;
@@ -222,8 +218,8 @@
         }
         return;
       }
-      const placing = ['tap', 'red', 'wipe', 'hold', 'slide'].includes(t);
-      if ((t === 'slide' && this.slideDraft) || (t === 'hold' && this.holdDraft)) {
+      const placing = ['tap', 'red', 'wipe', 'slide'].includes(t);
+      if (t === 'slide' && this.slideDraft) {
         this.drag = { kind: 'place', start: p };
         return;
       }
@@ -257,11 +253,11 @@
       if (placing) {
         if (this.selected.size) { this.selected = new Set(); }
         this.drag = { kind: 'place', start: p };
-        if (t === 'hold') {
-          // 押した所が始点。離した所が後ろの拍なら、そのままホールドになる (同じ所で離したら、次のクリックが終点)
+        if (t === 'slide') {
+          // 押した所が始点。そのまま後ろの拍までドラッグして離すと、そこが 1 つ目の中継点 (同じ鍵ならホールド)
           const b = this.snapBeat(g.beatOf(p.y));
           const q = this.snapX(g.xOf(p.x));
-          this.holdDraft = { beat: b, x: q.x, pressed: true };
+          this.slideDraft = { noteId: F.newId(), beat: b, x: q.x, w: q.w, pressed: true };
         }
         this.emit();
       }
@@ -310,29 +306,24 @@
     rightClick(p, g) {
       if (this.isPlaying) return;
       if (this.slideDraft) { this.finishSlide(); return; }
-      if (this.holdDraft) { this.holdDraft = null; this.ghost = null; this.toast('ホールドの始点を取り消しました'); this.emit(); return; }
       const n = this.hitNote(p, g);
       if (n) this.removeAt(n, p, g);
     }
 
     updateGhost(p, g) {
       const t = this.tool;
-      if (!['tap', 'red', 'wipe', 'hold', 'slide'].includes(t) || this.isPlaying || p === null) {
+      if (!['tap', 'red', 'wipe', 'slide'].includes(t) || this.isPlaying || p === null) {
         if (this.ghost) { this.ghost = null; this.emit(); }
         return;
       }
       const b = this.snapBeat(g.beatOf(p.y));
       const q = this.snapX(g.xOf(p.x));
       let gh;
-      if (t === 'hold' && this.holdDraft) {
-        gh = Beat.cmp(this.holdDraft.beat, b) < 0
-          ? { tool: t, beat: this.holdDraft.beat, x: this.holdDraft.x, w: BX.sideW, endBeat: b, endX: this.holdDraft.x, noHead: !this.holdWithHead }
-          : { tool: t, beat: this.holdDraft.beat, x: this.holdDraft.x, w: BX.sideW, noHead: !this.holdWithHead };
-      } else if (t === 'slide' && this.slideDraft) {
+      if (t === 'slide' && this.slideDraft) {
         const last = this.slideDraftLast();
         gh = Beat.cmp(b, last.beat) < 0 ? null : { tool: t, beat: last.beat, x: last.x, w: BX.sideW, endBeat: b, endX: q.x };
       } else {
-        gh = { tool: t, beat: b, x: q.x, w: q.w, noHead: t === 'hold' ? !this.holdWithHead : (t === 'slide' ? !this.slideWithHead : false) };
+        gh = { tool: t, beat: b, x: q.x, w: q.w, noHead: t === 'slide' ? !this.slideWithHead : false };
       }
       this.ghost = gh;
       this.emit();
@@ -349,37 +340,19 @@
         this.addNote(n);
         return;
       }
-      if (t === 'hold') {
-        const d = this.holdDraft;
+      if (t === 'slide') {
+        const d = this.slideDraft;
         if (!d) return;
         if (d.pressed) {
+          // 始点を押して離したところ
           d.pressed = false;
           if (!moved || Beat.cmp(b, d.beat) <= 0) {
-            this.toast('始点を置きました。終点をクリックしてください (右クリックで取り消し)');
+            this.toast('始点を置きました。続けて中継点をクリック (同じ鍵ならホールド。Enter / 右クリックで完了)');
             this.updateGhost(p, g);
             return;
           }
-        }
-        this.holdDraft = null;
-        this.ghost = null;
-        if (Beat.cmp(d.beat, b) >= 0) { this.toast('終点は始点より後ろ (上) をクリックしてください。始点を取り消しました'); this.emit(); return; }
-        const n = F.makeNote(d.beat, d.x, BX.sideW, null, [{ beat: Beat.sub(b, d.beat), x: 0 }]);
-        n.extra[BX.headKey] = 0;
-        this.pushUndo();
-        this.chart.notes.push(n);
-        if (this.holdWithHead) {
-          const h = F.makeNote(d.beat, d.x, BX.tapW, null);
-          h.extra[BX.headLinkKey] = n.id;
-          this.chart.notes.push(h);
-        }
-        this.changed();
-        return;
-      }
-      if (t === 'slide') {
-        if (!this.slideDraft) {
-          this.slideDraft = { noteId: F.newId(), beat: b, x: q.x, w: q.w };
-          this.toast('始点を置きました。続けて中継点をクリック (Enter / 右クリックで完了)');
-          this.emit();
+          this.appendDraftSeg(b, q.x);       // ドラッグで置いた 1 つ目の中継点
+          this.toast('続けて中継点をクリック (Enter / 右クリックで完了)');
           return;
         }
         const last = this.slideDraftLast();

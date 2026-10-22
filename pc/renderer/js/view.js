@@ -280,13 +280,6 @@
       c.fillText('×' + fmt(sp.value), g.trackL + g.trackW + 8, y + 8);
     }
 
-    // ホールドの始点 (置いている途中)
-    if (ed.holdDraft) {
-      const y = g.py(Beat.val(ed.holdDraft.beat));
-      c.strokeStyle = 'rgba(255,170,60,0.9)'; c.lineWidth = 2;
-      c.beginPath(); c.arc(g.px(ed.holdDraft.x), y, 9, 0, Math.PI * 2); c.stroke();
-    }
-
     drawNotes(c, g, chart.notes, ed.selected);
     drawMarks(c, g, chart.notes);
 
@@ -317,7 +310,6 @@
       const type = gh.tool === 'wipe' ? 4 : (gh.tool === 'red' ? 3 : null);
       const n = { id: '_ghost', beat: gh.beat, x: gh.x, w: gh.w, type, segs, extra: {} };
       if (gh.noHead) n.extra[BX.headKey] = 0;
-      if (gh.tool === 'hold' && !segs.length) n.segs = [{ beat: Beat.make(1, 8), x: 0 }];
       drawNotes(c, g, [n], new Set(), 0.55);
     }
 
