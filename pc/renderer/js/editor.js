@@ -199,6 +199,8 @@
       if (mods.button === 2) { this.rightClick(p, g); return; }
       if (this.isPlaying) { this.toast('再生中は編集できません。止めてから操作してください'); return; }
       const t = this.tool;
+      // レーンの外 (左右の黒い所) では、ノーツを置かない。ノーツに触れていれば選ぶ・選択ツールの囲みは始められる
+      if (!this.inLane(p, g) && t !== 'select' && !this.hitNote(p, g)) { this.clearGhost(); return; }
       if (t === 'erase') {
         const n = this.hitNote(p, g);
         if (n) this.removeAt(n, p, g);
@@ -323,9 +325,10 @@
       if (n) this.removeAt(n, p, g);
     }
 
+    inLane(p, g) { return p && p.x >= g.trackL - 2 && p.x <= g.trackL + g.trackW + 2; }
     updateGhost(p, g) {
       const t = this.tool;
-      if (!['tap', 'red', 'wipe', 'slide'].includes(t) || this.isPlaying || p === null || this.drag && this.drag.kind !== 'place') {
+      if (!this.inLane(p, g) ||!['tap', 'red', 'wipe', 'slide'].includes(t) || this.isPlaying || p === null || this.drag && this.drag.kind !== 'place') {
         if (this.ghost) { this.ghost = null; this.emit(); }
         return;
       }

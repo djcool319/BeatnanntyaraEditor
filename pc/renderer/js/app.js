@@ -597,6 +597,8 @@
     if (document.activeElement === el) return;
     el.value = v === undefined || v === null ? '' : v;
   }
+  /// その欄の数字を打っている途中か (打っている途中は一覧を作り直さない)
+  function editingIn(box) { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && box.contains(a); }
   function syncUI() {
     const bx = ed.chart.bx;
     setVal('mTitle', bx.name || '');
@@ -617,7 +619,10 @@
     const times = ed.chart.times;
     setVal('bpmBase', times[0] ? times[0].bpm : 120);
     const bl = $('bpmList');
-    if (!bl.contains(document.activeElement)) {
+    // 中身が変わったときだけ作り直す (マウスを動かすたびに作り直すと、✕ を押している途中でボタンが入れ替わって押せないことがあった)
+    const bpmSig = JSON.stringify(times);
+    if (!editingIn(bl) && bl.dataset.sig !== bpmSig) {
+      bl.dataset.sig = bpmSig;
       bl.innerHTML = '';
       if (times.length <= 1) bl.innerHTML = '<div class="empty">途中の BPM 変化はありません</div>';
       times.forEach((t, i) => {
@@ -628,12 +633,14 @@
         const [inp, go, del] = [row.children[1], row.children[2], row.children[3]];
         inp.onchange = () => { const v = Number(inp.value); if (v > 0) ed.addOrReplaceBPM(t.beat, v); };
         go.onclick = () => { stop(); ed.viewBeat = Beat.val(t.beat); needDraw = true; };
-        del.onclick = () => ed.removeBPM(i);
+        del.onclick = () => { del.blur(); ed.removeBPM(i); };
         bl.appendChild(row);
       });
     }
     const sl = $('spdList');
-    if (!sl.contains(document.activeElement)) {
+    const spdSig = JSON.stringify(ed.chart.speeds);
+    if (!editingIn(sl) && sl.dataset.sig !== spdSig) {
+      sl.dataset.sig = spdSig;
       sl.innerHTML = '';
       if (!ed.chart.speeds.length) sl.innerHTML = '<div class="empty">ソフランはありません</div>';
       ed.chart.speeds.forEach((t, i) => {
@@ -643,7 +650,7 @@
         const [inp, go, del] = [row.children[1], row.children[2], row.children[3]];
         inp.onchange = () => { const v = Number(inp.value); if (isFinite(v)) ed.addOrReplaceSpeed(t.beat, v); };
         go.onclick = () => { stop(); ed.viewBeat = Beat.val(t.beat); needDraw = true; };
-        del.onclick = () => ed.removeSpeed(i);
+        del.onclick = () => { del.blur(); ed.removeSpeed(i); };
         sl.appendChild(row);
       });
     }
