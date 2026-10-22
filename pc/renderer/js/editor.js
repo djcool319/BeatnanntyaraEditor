@@ -8,7 +8,7 @@
   }
   function savePref(key, v) { try { localStorage.setItem('bx.' + key, JSON.stringify(v)); } catch (e) { /* なくても動く */ } }
 
-  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase'];   // ホールドは「全部同じ鍵のスライド」
+  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase', 'part'];   // ホールドは「全部同じ鍵のスライド」
 
   class Editor {
     constructor() {
@@ -131,6 +131,7 @@
       if (this.slideDraft) this.finishSlide();
       this.ghost = null;
       if (t !== 'modify') this.modifyId = null;
+      this.partStart = null;
       this.tool = t;
       this.emit();
     }
@@ -200,13 +201,14 @@
       if (this.isPlaying) { this.toast('再生中は編集できません。止めてから操作してください'); return; }
       const t = this.tool;
       // レーンの外 (左右の黒い所) では、ノーツを置かない。ノーツに触れていれば選ぶ・選択ツールの囲みは始められる
-      if (!this.inLane(p, g) && t !== 'select' && !this.hitNote(p, g)) { this.clearGhost(); return; }
+      if (!this.inLane(p, g) && t !== 'select' && t !== 'part' && !this.hitNote(p, g)) { this.clearGhost(); return; }
       if (t === 'erase') {
         const n = this.hitNote(p, g);
         if (n) this.removeAt(n, p, g);
         return;
       }
       if (t === 'ease') { this.easePick(p, g); return; }
+      if (t === 'part') { this.partClick(this.snapBeat(g.beatOf(p.y))); return; }
       if (t === 'modify') {
         const h = this.hitSegAny(p, g);
         if (h) {
@@ -805,6 +807,60 @@
       this.changed();
       const name = ['まっすぐ', 'Ease In', 'Ease Out'][e];
       this.toast(all ? 'このスライドの全区間を「' + name + '」にしました' : '区間 ' + (seg + 1) + ' を「' + name + '」にしました');
+    }
+
+    // ------------------------------------------------------------ part (iPad 版 bxParts / partTap と同じ)
+    //   JSON: "part": [ {"LPB": 4, "num": 560, "parts": [ {"LPB": 4, "num": 688, "parts": []} ]} ]  外側が始まり、parts[0] が終わり
+    getParts() {
+      const out = [];
+      for (const p of Array.isArray(this.chart.bx.part) ? this.chart.bx.part : []) {
+        const e = Array.isArray(p.parts) && p.parts[0];
+        if (!e) continue;
+        const s = F.beatOf(p), en = F.beatOf(e);
+        if (Beat.cmp(s, en) < 0) out.push({ start: s, end: en });
+      }
+      return out.sort((a, b) => Beat.cmp(a.start, b.start));
+    }
+    setParts(list) {
+      this.chart.bx.part = list.slice().sort((a, b) => Beat.cmp(a.start, b.start)).map(p => {
+        const s = F.lpbNum(p.start), e = F.lpbNum(p.end);
+        return { LPB: s.lpb, num: s.num, parts: [{ LPB: e.lpb, num: e.num, parts: [] }] };
+      });
+    }
+    /// 既にある区間の中をクリック → その区間を消す / それ以外 → 1 回目が始点、2 回目が終点
+    partClick(b) {
+      if (this.guardPlaying()) return;
+      const parts = this.getParts();
+      if (this.partStart) {
+        const s = this.partStart;
+        this.partStart = null;
+        if (Beat.eq(s, b)) { this.toast('始点と同じ位置です。もう一度、始点からクリックしてください'); this.emit(); return; }
+        const lo = Beat.cmp(s, b) < 0 ? s : b, hi = Beat.cmp(s, b) < 0 ? b : s;
+        let start = lo, end = hi;
+        const kept = [];
+        for (const p of parts) {
+          if (Beat.cmp(p.end, lo) < 0 || Beat.cmp(p.start, hi) > 0) kept.push(p);
+          else { if (Beat.cmp(p.start, start) < 0) start = p.start; if (Beat.cmp(p.end, end) > 0) end = p.end; }
+        }
+        kept.push({ start, end });
+        this.pushUndo();
+        this.setParts(kept);
+        this.changed();
+        this.toast('part を置きました (' + Beat.label(start) + ' 〜 ' + Beat.label(end) + ')');
+        return;
+      }
+      const i = parts.findIndex(p => Beat.cmp(p.start, b) <= 0 && Beat.cmp(b, p.end) <= 0);
+      if (i >= 0) {
+        this.pushUndo();
+        parts.splice(i, 1);
+        this.setParts(parts);
+        this.changed();
+        this.toast('part を消しました');
+        return;
+      }
+      this.partStart = b;
+      this.toast('part の始点を置きました。終点の拍をクリックしてください (中をクリックで消す)');
+      this.emit();
     }
 
     // ------------------------------------------------------------ Curve bake

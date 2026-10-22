@@ -678,6 +678,7 @@
     slide: '始点 → 中継点を順にクリック (全部同じ鍵ならホールド)。始点から押したままドラッグでも置ける。Enter / 右クリックで完了。',
     modify: 'スライドを選んで、点をドラッグで動かす。空いた所をクリックで点を足す。',
     ease: 'スライドの帯 (点と点の間) をクリックして、曲がり方を選ぶ。',
+    part: '始点の拍 → 終点の拍をクリックで part の区間。区間の中をクリックで消す。重なる区間は 1 つにまとまる。',
     erase: 'クリックで消す。スライドは近い中継点から後ろを消す。',
   };
 
@@ -793,7 +794,7 @@
   function showHelp() {
     const rows = [
       ['Space', '再生 / 停止'], ['ホイール', 'スクロール (Shift で速く。再生中は再生したまま移動)'], ['Ctrl + ホイール', 'ズーム'], ['[  ]', '分割を粗く / 細かく'],
-      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜7', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す'],
+      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜8', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す / Part'],
       ['Shift + クリック', '置くツールのままスライドを置く (Shift を離すと完了)'], ['Enter', 'スライドを完了'], ['右クリック', 'ノーツを消す (スライド作成中は完了)'],
       ['Ctrl+Z / Ctrl+Y', '元に戻す / やり直す'], ['Ctrl+C / X / V', 'コピー / 切り取り / 再生ラインに貼り付け'], ['Ctrl+A', '全部選ぶ'], ['Delete', '選択中を消す'],
       ['↑ ↓', '選択中を 1 分割ずつ動かす (選択なしならスクロール)'], ['← →', '選択中を横に動かす'], ['PageUp / PageDown', '1 小節ずつスクロール'], ['Home / End', '最初 / 最後のノーツへ'],
@@ -882,13 +883,14 @@
         default: handled = false;
       }
     } else {
-      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', 'q': 'select' };
+      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', '8': 'part', 'q': 'select' };
       const lk = k.length === 1 ? k.toLowerCase() : k;
       if (toolKeys[lk]) ed.setTool(toolKeys[lk]);
       else switch (lk) {
         case ' ': togglePlay(); break;
         case 'Escape':
           if (ed.slideDraft) ed.finishSlide();
+          else if (ed.partStart) { ed.partStart = null; ed.emit(); }
           else if (ed.tool !== 'select') ed.setTool('select');
           else ed.clearSelection();
           break;

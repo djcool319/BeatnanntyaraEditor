@@ -280,6 +280,14 @@
       c.fillText('×' + fmt(sp.value), g.trackL + g.trackW + 8, y + 8);
     }
 
+    // part の始点 (置いている途中)
+    if (ed.partStart) {
+      const y = g.py(Beat.val(ed.partStart));
+      c.fillStyle = 'rgba(255,255,255,0.9)';
+      c.fillRect(g.trackL - 6, y - 1.5, g.trackW + 12, 3);
+      c.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
+      c.fillText('PART 始点', g.trackL + 6, y - 8);
+    }
     drawNotes(c, g, chart.notes, ed.selected);
     drawMarks(c, g, chart.notes);
 
@@ -350,10 +358,18 @@
       if (y0 < 0 || y1 > g.H) {
         if (Math.max(y0, y1) < 0 || Math.min(y0, y1) > g.H) continue;
       }
+      // iPad 版と同じく、区間はレーンの両端を太い白線に
       c.fillStyle = 'rgba(255,255,255,0.05)';
       c.fillRect(g.trackL, y1, g.trackW, y0 - y1);
-      c.fillStyle = 'rgba(255,255,255,0.35)';
-      c.fillRect(g.trackL - 6, y1, 3, y0 - y1);
+      c.fillStyle = 'rgba(255,255,255,0.85)';
+      c.fillRect(g.trackL - 4, y1, 4, y0 - y1);
+      c.fillRect(g.trackL + g.trackW, y1, 4, y0 - y1);
+      c.fillRect(g.trackL - 4, y0 - 1, 14, 2);
+      c.fillRect(g.trackL - 4, y1 - 1, 14, 2);
+      c.fillRect(g.trackL + g.trackW - 10, y0 - 1, 14, 2);
+      c.fillRect(g.trackL + g.trackW - 10, y1 - 1, 14, 2);
+      c.font = '900 11px "Segoe UI", system-ui, sans-serif';
+      c.fillText('PART', g.trackL - 34, Math.min(g.H - 8, Math.max(12, y0 - 8)));
     }
     const lyrics = Array.isArray(chart.bx.lyrics) ? chart.bx.lyrics : [];
     c.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
