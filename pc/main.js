@@ -195,16 +195,78 @@ ipcMain.handle('file:save', async (_e, p, text) => {
     return { ok: false, error: String(err && err.message || err) };
   }
 });
-ipcMain.handle('dir:audio-files', async (_e, dir) => {
+/// フォルダの中の曲 (下のフォルダも 4 段まで。最大 3000 個)。フルパスで返す
+function listAudio(dir, depth) {
+  const out = [];
+  const walk = (d, lv) => {
+    let ents;
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of ents) {
+      if (out.length >= 3000) return;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (lv < depth && !e.name.startsWith('.')) walk(p, lv + 1); }
+      else if (AUDIO_EXT.includes(path.extname(e.name).toLowerCase())) out.push(p);
+    }
+  };
+  if (dir) walk(dir, 0);
+  return out.sort((a, b) => a.localeCompare(b));
+}
+ipcMain.handle('dir:audio-files', async (_e, dir, deep) => listAudio(dir, deep ? 4 : 0));
+
+ipcMain.handle('dialog:folder', async (_e, title, defaultDir) => {
+  const r = await dialog.showOpenDialog(win, {
+    title: title || 'フォルダを選ぶ',
+    defaultPath: defaultDir || undefined,
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (r.canceled || !r.filePaths.length) return null;
+  return r.filePaths[0];
+});
+
+/// 初めて起動したときのフォルダの候補 (あるものだけ)
+ipcMain.handle('app:default-folders', async () => {
+  const root = path.join(app.getPath('home'), 'BeatTriX-shin-PlayFab(3k)', 'Assets');
+  const charts = path.join(root, 'ChartsRaw');
+  const songs = path.join(root, 'Resources');
+  return { charts: fs.existsSync(charts) ? charts : null, songs: fs.existsSync(songs) ? songs : null };
+});
+
+function isInside(child, parent) {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/// 曲を曲フォルダにコピーする。
+///   すでに曲フォルダの中 → そのまま / 同じ名前で同じ中身がある → それを使う /
+///   同じ名前で中身が違う → mode が無ければ {conflict} を返す。'overwrite' で上書き、'rename' で「名前 (2).ogg」
+ipcMain.handle('file:import-audio', async (_e, src, destDir, mode) => {
   try {
-    return fs.readdirSync(dir).filter(f => AUDIO_EXT.includes(path.extname(f).toLowerCase())).sort();
-  } catch (e) {
-    return [];
+    if (isInside(src, destDir)) return { ok: true, path: src, already: true };
+    fs.mkdirSync(destDir, { recursive: true });
+    let dest = path.join(destDir, path.basename(src));
+    if (fs.existsSync(dest)) {
+      const a = fs.readFileSync(src), b = fs.readFileSync(dest);
+      if (a.equals(b)) return { ok: true, path: dest, existed: true };
+      if (!mode) return { ok: false, conflict: true, path: dest };
+      if (mode === 'rename') {
+        const ext = path.extname(src), stem = path.basename(src, ext);
+        let i = 2;
+        while (fs.existsSync(dest)) dest = path.join(destDir, stem + ' (' + (i++) + ')' + ext);
+      }
+    }
+    const tmp = dest + '.tmp-' + process.pid;
+    fs.copyFileSync(src, tmp);
+    fs.renameSync(tmp, dest);
+    return { ok: true, path: dest, copied: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
   }
 });
+ipcMain.handle('path:inside', async (_e, child, parent) => !!(child && parent) && isInside(child, parent));
 ipcMain.handle('path:info', async (_e, p) => ({ dir: path.dirname(p), base: path.basename(p), sep: path.sep }));
 ipcMain.handle('path:join', async (_e, a, b) => path.join(a, b));
 ipcMain.handle('shell:reveal', async (_e, p) => { if (p) shell.showItemInFolder(p); });
+ipcMain.handle('shell:open-folder', async (_e, p) => { if (p) await shell.openPath(p); });
 ipcMain.on('app:dirty', (_e, v) => { dirty = !!v; });
 ipcMain.on('app:title', (_e, t) => { if (win) win.setTitle(t); });
 ipcMain.on('app:close-now', () => { forceClose = true; if (win) win.close(); });

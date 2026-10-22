@@ -760,3 +760,6 @@
 - ビルド: `.github/workflows/build-pc.yml`（windows-latest）。npm test → electron-packager → `--smoke` で exe を起動して確認 → zip を Releases の `pc-latest` に載せる
   - ipa のワークフローは `pc/**` だけの変更では動かない（paths-ignore）。Package.swift（Playgrounds 用・Actions 用の両方）は `pc` を exclude
 - まだ: テストプレイ（D F J K。button.cs: D=tap0 左 / F=tap1 / J=tap2 / K=tap3 右）、BPM 自動検出、part / 歌詞の編集
+- （2026-10-22）PC 版に「譜面のフォルダ」「曲のフォルダ」の設定（設定タブ。localStorage の bx.chartFolder / bx.songFolder）。初回は `ホーム\BeatTriX-shin-PlayFab(3k)\Assets\ChartsRaw` / `Assets\Resources` があればそれ（main.js の app:default-folders）
+  - 曲は曲のフォルダ（下 4 段まで）と譜面と同じフォルダから、曲名 / ファイル名が同じ（または含む）ものを自動で読む。譜面ごとに選んだ曲を覚える（bx.audioFor）
+  - 外から選んだ / ドラッグした曲は、曲のフォルダにコピーしてから使う（file:import-audio。同名で中身が違えば 別名 / 上書き / コピーしない を選ぶ）

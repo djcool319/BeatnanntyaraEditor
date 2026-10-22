@@ -102,13 +102,13 @@
       await modal('開けませんでした', '<p>' + esc(p) + '</p><p class="muted">' + esc(e.message || e) + '</p>', [{ label: 'OK', primary: true }]);
       return false;
     }
-    const prevDir = chartDir;
+    const prevTitle = ed.chart.bx.name || '';
     ed.loadChart(chart, p);
     chartDir = await dirOf(p);
     setPref('lastDir', chartDir);
     await refreshSiblings();
-    if (chartDir !== prevDir || !audio.music) await autoAudio();
-    else refreshAudioSelect();
+    // 同じ曲名 (難易度の切り替えなど) なら、いま読んでいる曲をそのまま使う
+    await autoAudio(audio.music && audioPath && prevTitle === (chart.bx.name || '') ? audioPath : null);
     toast('開きました: ' + p.split(/[\\/]/).pop() + ' (ノーツ ' + chart.notes.length + ' 個)');
     fitView();
     return true;
@@ -117,7 +117,7 @@
   async function openDialog() {
     if (!host) return;
     if (!(await confirmDiscard())) return;
-    const p = await host.openDialog(chartDir || pref('lastDir', undefined));
+    const p = await host.openDialog(chartDir || folders.charts || pref('lastDir', undefined));
     if (p) await openPath(p);
   }
 
@@ -127,7 +127,7 @@
     if (ed.slideDraft) ed.finishSlide();
     let p = ed.filePath;
     if (!p || forceAs) {
-      const base = chartDir || pref('lastDir', '');
+      const base = (ed.filePath ? chartDir : null) || chartBaseDir();
       const def = base ? await joinPath(base, F.fileName(ed.chart)) : F.fileName(ed.chart);
       p = await host.saveDialog(def);
       if (!p) return false;
@@ -255,20 +255,64 @@
     if (keys.length > 300) delete m[keys[0]];
     setPref('audioFor', m);
   }
-  async function autoAudio() {
-    audioFilesInDir = chartDir ? await host.audioFiles(chartDir) : [];
-    let pick = null;
+  // 曲フォルダ (Unity の Resources など) と、譜面と同じフォルダの曲を集める (フルパス)
+  async function listAudioCandidates() {
+    const out = [];
+    const songDir = folders.songs;
+    if (songDir) for (const f of await host.audioFiles(songDir, true)) out.push(f);
+    if (chartDir) for (const f of await host.audioFiles(chartDir, false)) if (!out.includes(f)) out.push(f);
+    return out;
+  }
+  function stemOf(p) { return p.split(/[\\/]/).pop().replace(/\.[^.]+$/, '').toLowerCase().trim(); }
+  async function autoAudio(keep) {
+    audioFilesInDir = await listAudioCandidates();
+    let pick = keep || null;
     const remembered = ed.filePath ? audioMap()[ed.filePath] : null;
-    if (remembered && await host.exists(remembered)) pick = remembered;
+    if (!pick && remembered && await host.exists(remembered)) pick = remembered;
     if (!pick && audioFilesInDir.length) {
-      const title = (ed.chart.bx.name || '').toLowerCase();
-      const base = ed.filePath ? ed.filePath.split(/[\\/]/).pop().replace(/\(..\)\.json$/i, '').replace(/\.json$/i, '').toLowerCase() : '';
-      const byName = audioFilesInDir.find(f => { const s = f.toLowerCase().replace(/\.[^.]+$/, ''); return (title && s === title) || (base && s === base); })
-        || audioFilesInDir.find(f => /\.ogg$/i.test(f)) || audioFilesInDir[0];
-      pick = await joinPath(chartDir, byName);
+      const title = (ed.chart.bx.name || '').toLowerCase().trim();
+      const base = ed.filePath ? ed.filePath.split(/[\\/]/).pop().replace(/\(..\)\.json$/i, '').replace(/\.json$/i, '').toLowerCase().trim() : '';
+      const keys = [title, base].filter(k => k);
+      pick = audioFilesInDir.find(f => keys.includes(stemOf(f)))
+        || audioFilesInDir.find(f => { const s = stemOf(f); return keys.some(k => k.length >= 3 && s.length >= 3 && (s.includes(k) || k.includes(s))); })
+        || null;
+      // 名前で見つからないときは、譜面と同じフォルダに曲が 1 つだけならそれ (曲フォルダからは当てずっぽうで選ばない)
+      if (!pick && chartDir) {
+        const local = audioFilesInDir.filter(f => f.slice(0, chartDir.length) === chartDir && !/[\\/]/.test(f.slice(chartDir.length + 1)));
+        if (local.length === 1) pick = local[0];
+      }
     }
-    if (pick) await loadAudio(pick);
-    else { audioPath = null; audio.music = null; refreshAudioSelect(); }
+    if (pick) {
+      if (pick !== audioPath || !audio.music) await loadAudio(pick);
+      else { rememberAudio(); refreshAudioSelect(); }
+    } else {
+      audioPath = null; audio.music = null; refreshAudioSelect();
+      if (audioFilesInDir.length) toast('曲が自動で見つかりませんでした。「曲の情報」の一覧から選んでください');
+    }
+  }
+  /// 外から選んだ曲を、曲フォルダにコピーしてから読む (曲フォルダが決まっていて、まだその中に無いとき)
+  async function importAndLoad(p) {
+    const songDir = folders.songs;
+    if (!songDir || !host.importAudio) { await loadAudio(p); return; }
+    let r = await host.importAudio(p, songDir);
+    if (r && r.conflict) {
+      const name = r.path.split(/[\\/]/).pop();
+      const c = await modal('同じ名前の曲があります', '<p>曲フォルダに「' + esc(name) + '」がすでにあり、中身が違います。</p>',
+        [{ label: '別の名前でコピー', primary: true, value: 'rename' }, { label: '上書きする', danger: true, value: 'overwrite' },
+          { label: 'コピーしないで使う', value: 'skip' }, { label: 'キャンセル', value: null }]);
+      if (!c) return;
+      if (c === 'skip') { await loadAudio(p); return; }
+      r = await host.importAudio(p, songDir, c);
+    }
+    if (!r || !r.ok) {
+      toast('曲フォルダにコピーできませんでした: ' + (r && r.error || ''));
+      await loadAudio(p);
+      return;
+    }
+    if (r.copied) toast('曲フォルダにコピーしました: ' + r.path.split(/[\\/]/).pop());
+    else if (r.existed) toast('曲フォルダにある同じ曲を使います');
+    if (!audioFilesInDir.includes(r.path)) audioFilesInDir.push(r.path);
+    await loadAudio(r.path);
   }
   async function loadAudio(p) {
     stop();
@@ -278,6 +322,7 @@
       audioPath = p;
       rememberAudio();
       $('audioInfo').textContent = audio.musicName + ' (' + V.fmtTime(dur) + ')';
+      $('audioInfo').title = p;
     } catch (e) {
       audioPath = null;
       audio.music = null;
@@ -287,21 +332,61 @@
     refreshAudioSelect();
     needDraw = true;
   }
+  function audioLabel(p) {
+    for (const d of [folders.songs, chartDir]) {
+      if (d && p.slice(0, d.length) === d && /[\\/]/.test(p.charAt(d.length))) return p.slice(d.length + 1);
+    }
+    return p.split(/[\\/]/).pop();
+  }
   function refreshAudioSelect() {
     const sel = $('audioSel');
     sel.innerHTML = '';
-    const cur = audioPath ? audioPath.split(/[\\/]/).pop() : null;
-    const names = audioFilesInDir.slice();
-    if (cur && !names.includes(cur)) names.unshift(cur);
-    if (!names.length) sel.innerHTML = '<option value="">(フォルダに曲がありません)</option>';
-    for (const n of names) {
+    const list = audioFilesInDir.slice();
+    if (audioPath && !list.includes(audioPath)) list.unshift(audioPath);
+    const head = document.createElement('option');
+    head.value = '';
+    head.textContent = list.length ? '(曲を選ぶ)' : '(曲フォルダに曲がありません)';
+    sel.appendChild(head);
+    for (const p of list) {
       const o = document.createElement('option');
-      o.value = n; o.textContent = n;
-      if (n === cur) o.selected = true;
+      o.value = p; o.textContent = audioLabel(p);
+      if (p === audioPath) o.selected = true;
       sel.appendChild(o);
     }
     if (!audioPath) $('audioInfo').textContent = '曲が読み込まれていません (ノーツ音だけで再生します)';
   }
+
+  // ------------------------------------------------------------ フォルダ (譜面 / 曲)
+  const folders = { charts: pref('chartFolder', null), songs: pref('songFolder', null) };
+  async function initFolders() {
+    if (!host || !host.defaultFolders) return;
+    if (!pref('foldersInit', false)) {
+      const d = await host.defaultFolders();
+      if (!folders.charts && d.charts) { folders.charts = d.charts; setPref('chartFolder', d.charts); }
+      if (!folders.songs && d.songs) { folders.songs = d.songs; setPref('songFolder', d.songs); }
+      setPref('foldersInit', true);
+    }
+    renderFolders();
+    if (!audio.music) { audioFilesInDir = await listAudioCandidates(); refreshAudioSelect(); }
+  }
+  function renderFolders() {
+    $('fCharts').textContent = folders.charts || '(決めていません)';
+    $('fCharts').title = folders.charts || '';
+    $('fSongs').textContent = folders.songs || '(決めていません)';
+    $('fSongs').title = folders.songs || '';
+    $('autoImport').checked = autoImport;
+  }
+  let autoImport = pref('autoImport', true);
+  async function pickFolder(kind) {
+    const title = kind === 'charts' ? '譜面 (JSON) を置くフォルダ' : '曲を置くフォルダ (Unity の Resources など)';
+    const p = await host.folderDialog(title, folders[kind] || chartDir || undefined);
+    if (!p) return;
+    folders[kind] = p;
+    setPref(kind === 'charts' ? 'chartFolder' : 'songFolder', p);
+    renderFolders();
+    if (kind === 'songs') { audioFilesInDir = await listAudioCandidates(); refreshAudioSelect(); }
+  }
+  function chartBaseDir() { return folders.charts || chartDir || pref('lastDir', ''); }
 
   // ------------------------------------------------------------ 再生
   function play() {
@@ -572,10 +657,15 @@
     $('btnSave').onclick = () => save();
     $('btnAudio').onclick = async () => {
       if (!host) return;
-      const p = await host.audioDialog(chartDir || pref('lastDir', undefined));
-      if (p) await loadAudio(p);
+      const p = await host.audioDialog(folders.songs || chartDir || pref('lastDir', undefined));
+      if (p) { if (autoImport) await importAndLoad(p); else await loadAudio(p); }
     };
-    $('audioSel').onchange = async e => { if (e.target.value && chartDir) await loadAudio(await joinPath(chartDir, e.target.value)); };
+    $('audioSel').onchange = async e => { if (e.target.value) await loadAudio(e.target.value); };
+    $('fChartsPick').onclick = () => pickFolder('charts');
+    $('fSongsPick').onclick = () => pickFolder('songs');
+    $('fChartsOpen').onclick = () => { if (folders.charts) host.openFolder(folders.charts); };
+    $('fSongsOpen').onclick = () => { if (folders.songs) host.openFolder(folders.songs); };
+    $('autoImport').onchange = e => { autoImport = e.target.checked; setPref('autoImport', autoImport); };
   }
 
   function action(a) {
@@ -677,7 +767,7 @@
     if (!f || !host) return;
     const p = host.pathOfFile(f);
     if (/\.json$/i.test(p)) { if (await confirmDiscard()) await openPath(p); }
-    else if (/\.(ogg|mp3|wav|m4a|flac|aac|opus)$/i.test(p)) await loadAudio(p);
+    else if (/\.(ogg|mp3|wav|m4a|flac|aac|opus)$/i.test(p)) { if (autoImport) await importAndLoad(p); else await loadAudio(p); }
     else toast('JSON (譜面) か 曲のファイルを落としてください');
   });
 
@@ -760,6 +850,7 @@
 
   bindMeta();
   syncUI();
+  initFolders();
   requestAnimationFrame(frame);
   window.__bx = { ed, audio, openPath, save };       // 動作確認用
 })();

@@ -135,6 +135,20 @@
     </section>
 
     <section class="pane" id="pane-set">
+      <div class="sub first">フォルダ</div>
+      <div class="folder">
+        <div class="flabel">譜面 (JSON)</div>
+        <div class="fpath" id="fCharts"></div>
+        <div class="fbtns"><button id="fChartsPick" class="ghost small">変える…</button><button id="fChartsOpen" class="ghost small">開く</button></div>
+      </div>
+      <div class="folder">
+        <div class="flabel">曲 (Unity の Resources など)</div>
+        <div class="fpath" id="fSongs"></div>
+        <div class="fbtns"><button id="fSongsPick" class="ghost small">変える…</button><button id="fSongsOpen" class="ghost small">開く</button></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="autoImport"> 外から選んだ曲は、曲のフォルダにコピーして使う</label>
+      <p class="muted">新しい譜面は譜面のフォルダに保存。曲は、曲のフォルダ (下のフォルダも) から、曲名やファイル名が同じものを自動で読みます。</p>
+      <div class="sub">編集・再生</div>
       <label class="chk"><input type="checkbox" id="linkHead"> 始点のタップを触ったとき、スライドも一緒に選ぶ</label>
       <label class="chk"><input type="checkbox" id="segVertical"> 中継点を縦 (時間) にも動かす</label>
       <label class="chk"><input type="checkbox" id="seOn"> 再生中にノーツ音を鳴らす</label>
