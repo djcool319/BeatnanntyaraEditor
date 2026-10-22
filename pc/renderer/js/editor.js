@@ -219,7 +219,17 @@
         return;
       }
       const placing = ['tap', 'red', 'wipe', 'slide'].includes(t);
-      if (t === 'slide' && this.slideDraft) {
+      // 置くツールで Shift を押しながらクリック: スライドを置く (Shift を離すと完了。前のエディターと同じ癖)
+      if (placing && mods.shift && !mods.ctrl && !this.slideDraft) {
+        if (this.selected.size) this.selected = new Set();
+        const b = this.snapBeat(g.beatOf(p.y));
+        const q = { x: F.centerX(F.blockOfX(g.xOf(p.x))), w: BX.sideW };
+        this.slideDraft = { noteId: F.newId(), beat: b, x: q.x, w: q.w, pressed: true, byShift: true };
+        this.drag = { kind: 'place', start: p };
+        this.emit();
+        return;
+      }
+      if (this.slideDraft && (t === 'slide' || this.slideDraft.byShift)) {
         this.drag = { kind: 'place', start: p };
         return;
       }
@@ -243,7 +253,7 @@
         this.emit();
         return;
       }
-      if (t === 'select' || mods.shift || mods.ctrl) {
+      if (t === 'select' || mods.ctrl || (mods.shift && !placing)) {
         if (!(mods.shift || mods.ctrl)) this.selected = new Set();
         this.drag = { kind: 'lasso', start: p, base: new Set(this.selected) };
         this.lasso = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
@@ -300,7 +310,10 @@
       }
       if (d.kind === 'lasso') { this.lasso = null; this.emit(); return; }
       if (d.kind === 'seg') { if (d.pushed) this.changed(); else this.emit(); return; }
-      if (d.kind === 'place') { this.place(p, g, moved); }
+      if (d.kind === 'place') {
+        this.place(p, g, moved);
+        if (this.slideDraft && this.slideDraft.byShift && !this.shiftHeld && !this.slideDraft.pressed) this.finishSlide();
+      }
     }
 
     rightClick(p, g) {
@@ -312,16 +325,19 @@
 
     updateGhost(p, g) {
       const t = this.tool;
-      if (!['tap', 'red', 'wipe', 'slide'].includes(t) || this.isPlaying || p === null) {
+      if (!['tap', 'red', 'wipe', 'slide'].includes(t) || this.isPlaying || p === null || this.drag && this.drag.kind !== 'place') {
         if (this.ghost) { this.ghost = null; this.emit(); }
         return;
       }
       const b = this.snapBeat(g.beatOf(p.y));
-      const q = this.snapX(g.xOf(p.x));
+      const slideMode = this.slideDraft || this.shiftHeld;     // Shift の間はスライドの見本
+      const q = slideMode ? { x: F.centerX(F.blockOfX(g.xOf(p.x))), w: BX.sideW } : this.snapX(g.xOf(p.x));
       let gh;
-      if (t === 'slide' && this.slideDraft) {
+      if (this.slideDraft) {
         const last = this.slideDraftLast();
         gh = Beat.cmp(b, last.beat) < 0 ? null : { tool: t, beat: last.beat, x: last.x, w: BX.sideW, endBeat: b, endX: q.x };
+      } else if (slideMode) {
+        gh = { tool: 'slide', beat: b, x: q.x, w: q.w, noHead: !this.slideWithHead };
       } else {
         gh = { tool: t, beat: b, x: q.x, w: q.w, noHead: t === 'slide' ? !this.slideWithHead : false };
       }
@@ -334,20 +350,20 @@
     place(p, g, moved) {
       const t = this.tool;
       const b = this.snapBeat(g.beatOf(p.y));
-      const q = this.snapX(g.xOf(p.x));
-      if (t === 'tap' || t === 'red' || t === 'wipe') {
+      const slideMode = !!this.slideDraft;
+      const q = slideMode ? { x: F.centerX(F.blockOfX(g.xOf(p.x))), w: BX.sideW } : this.snapX(g.xOf(p.x));
+      if (!slideMode && (t === 'tap' || t === 'red' || t === 'wipe')) {
         const n = F.makeNote(b, q.x, q.w, t === 'wipe' ? 4 : (t === 'red' ? 3 : null));
         this.addNote(n);
         return;
       }
-      if (t === 'slide') {
+      if (slideMode) {
         const d = this.slideDraft;
-        if (!d) return;
         if (d.pressed) {
           // 始点を押して離したところ
           d.pressed = false;
           if (!moved || Beat.cmp(b, d.beat) <= 0) {
-            this.toast('始点を置きました。続けて中継点をクリック (同じ鍵ならホールド。Enter / 右クリックで完了)');
+            this.toast(d.byShift ? '始点を置きました。Shift を押したまま中継点をクリック (離すと完了)' : '始点を置きました。続けて中継点をクリック (同じ鍵ならホールド。Enter / 右クリックで完了)');
             this.updateGhost(p, g);
             return;
           }
@@ -395,9 +411,15 @@
         m.extra[BX.headKey] = 0;
         this.chart.notes.push(m);
         if (this.slideWithHead) {
-          const h = F.makeNote(d.beat, d.x, BX.tapW, null);
-          h.extra[BX.headLinkKey] = m.id;
-          this.chart.notes.push(h);
+          // 始点にもうタップがあれば、それを始点にする (同じ所にタップを 2 つ置かない)
+          const key = F.keyOf(d.beat, F.blockOfX(d.x));
+          const old = this.chart.notes.find(e => !F.isSlide(e) && e.type === null && !e.extra[BX.headLinkKey] && F.keyOf(e.beat, F.blockOfX(e.x)) === key);
+          if (old) old.extra[BX.headLinkKey] = m.id;
+          else {
+            const h = F.makeNote(d.beat, d.x, BX.tapW, null);
+            h.extra[BX.headLinkKey] = m.id;
+            this.chart.notes.push(h);
+          }
         }
       }
       this.changed();

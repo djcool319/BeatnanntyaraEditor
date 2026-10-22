@@ -665,7 +665,7 @@
 
   const TOOL_HINT = {
     select: 'クリックで選択 / ドラッグで移動 / 空いた所をドラッグで囲んで選択。Ctrl / Shift で追加。',
-    tap: 'クリックで白タップ (3 鍵)。ノーツを掴むと移動。右クリックで消す。',
+    tap: 'クリックで白タップ (3 鍵)。Shift+クリックでスライド。ノーツを掴むと移動。右クリックで消す。',
     red: 'クリックで赤タップ (3 鍵)。',
     wipe: 'クリックでワイプ (7 鍵)。',
     slide: '始点 → 中継点を順にクリック (全部同じ鍵ならホールド)。始点から押したままドラッグでも置ける。Enter / 右クリックで完了。',
@@ -787,7 +787,7 @@
     const rows = [
       ['Space', '再生 / 停止'], ['ホイール', 'スクロール (Shift で速く。再生中は再生したまま移動)'], ['Ctrl + ホイール', 'ズーム'], ['[  ]', '分割を粗く / 細かく'],
       ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜7', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す'],
-      ['Enter', 'スライドを完了'], ['右クリック', 'ノーツを消す (スライド作成中は完了)'],
+      ['Shift + クリック', '置くツールのままスライドを置く (Shift を離すと完了)'], ['Enter', 'スライドを完了'], ['右クリック', 'ノーツを消す (スライド作成中は完了)'],
       ['Ctrl+Z / Ctrl+Y', '元に戻す / やり直す'], ['Ctrl+C / X / V', 'コピー / 切り取り / 再生ラインに貼り付け'], ['Ctrl+A', '全部選ぶ'], ['Delete', '選択中を消す'],
       ['↑ ↓', '選択中を 1 分割ずつ動かす (選択なしならスクロール)'], ['← →', '選択中を横に動かす'], ['PageUp / PageDown', '1 小節ずつスクロール'], ['Home / End', '最初 / 最後のノーツへ'],
       ['M', '左右反転'], ['R', '白 ⇔ 赤タップ'], ['H', '始点 タップ / ワイプ / なし'], ['C', '曲線 (見た目)'], ['B', 'Curve bake'],
@@ -912,6 +912,17 @@
   });
 
   window.addEventListener('resize', () => { needDraw = true; });
+
+  // Shift: 押している間は、置くツールでもスライドを置く。離したら、Shift で置いていたスライドを完了
+  function setShift(on) {
+    if (ed.shiftHeld === on) return;
+    ed.shiftHeld = on;
+    if (!on && ed.slideDraft && ed.slideDraft.byShift && !(ed.drag && ed.drag.kind === 'place')) ed.finishSlide();
+    if (lastMouse && geo) ed.updateGhost(lastMouse, geo);
+  }
+  window.addEventListener('keydown', e => { if (e.key === 'Shift') setShift(true); });
+  window.addEventListener('keyup', e => { if (e.key === 'Shift') setShift(false); });
+  window.addEventListener('blur', () => setShift(false));
 
   // ------------------------------------------------------------ メニュー (Electron)
   if (host) {
