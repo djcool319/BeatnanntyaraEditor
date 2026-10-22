@@ -86,6 +86,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     // ノーツの下側の暗い縁 (厚み)
     private let tapShadow = CAShapeLayer()
     private let headShadow = CAShapeLayer()
+    private let multiLayer = CAShapeLayer()       // 多重 (ピンク)
+    private let multiShadow = CAShapeLayer()
     private let redShadow = CAShapeLayer()
     private let wipeShadow = CAShapeLayer()
     // 背景
@@ -183,6 +185,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         add(tapLayer, fill: .white)
         add(headShadow, fill: UIColor(red: 0.35, green: 0.6, blue: 0.85, alpha: 1))
         add(headLayer, fill: UIColor(red: 0.55, green: 0.8, blue: 1.0, alpha: 1))
+        add(multiShadow, fill: UIColor(red: 0.75, green: 0.3, blue: 0.6, alpha: 1))
+        add(multiLayer, fill: UIColor(red: 1.0, green: 0.56, blue: 0.85, alpha: 1))
         add(redShadow, fill: UIColor(red: 0.6, green: 0.08, blue: 0.14, alpha: 1))
         add(redLayer, fill: UIColor(red: 0.93, green: 0.2, blue: 0.27, alpha: 1))
         add(wipeShadow, fill: UIColor(red: 0.72, green: 0.68, blue: 0.12, alpha: 1))
@@ -466,7 +470,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         let h = bounds.height
         for l in [bgLines, bgRing, floorLayer, partFillLayer, partEdgeLayer, beatLayer, edgeLayer, dividerLayer, zoneLayer,
                   holdIdleLayer, holdActiveLayer, slideIdleLayer, slideActiveLayer, simLayer,
-                  tapShadow, tapLayer, headShadow, headLayer, redShadow, redLayer, wipeShadow, wipeLayer, judgeLayer,
+                  tapShadow, tapLayer, headShadow, headLayer, multiShadow, multiLayer, redShadow, redLayer, wipeShadow, wipeLayer, judgeLayer,
                   scoreBar, titlePanel, diffTag, rankDiamond] {
             l.frame = bounds
         }
@@ -1047,6 +1051,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
         let tapP = CGMutablePath(), tapS = CGMutablePath()
         let headP = CGMutablePath(), headS = CGMutablePath()
+        let multiP = CGMutablePath(), multiS = CGMutablePath()
         let redP = CGMutablePath(), redS = CGMutablePath()
         let wipeP = CGMutablePath(), wipeS = CGMutablePath()
         var i = lo
@@ -1061,6 +1066,11 @@ final class BeatrixGameView: UIView, GameSessionView {
             let d = depth(n.t, n.sp)
             if d < r.bot - 0.1 || d > r.top + 0.1 { continue }
             let f = Self.laneFrac(n.lane)
+            if n.multi && (n.type == 1 || n.type == 2) {
+                let w = n.type == 2 ? sideWidth : tapWidth
+                addPill(multiP, multiS, g, f0: f - w / 2, f1: f + w / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
+                continue
+            }
             switch n.type {
             case 2:
                 addPill(headP, headS, g, f0: f - sideWidth / 2, f1: f + sideWidth / 2, d0: d - tapDepth / 2, d1: d + tapDepth / 2)
@@ -1076,6 +1086,8 @@ final class BeatrixGameView: UIView, GameSessionView {
         tapShadow.path = tapS
         headLayer.path = headP
         headShadow.path = headS
+        multiLayer.path = multiP
+        multiShadow.path = multiS
         redLayer.path = redP
         redShadow.path = redS
         wipeLayer.path = wipeP

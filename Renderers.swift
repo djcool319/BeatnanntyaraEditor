@@ -18,6 +18,11 @@ extension Color {
     static let headMid = Color(red: 0.200, green: 0.520, blue: 0.780)
     static let headCore = Color(red: 0.820, green: 0.950, blue: 1.000)
     static let headGlow = Color(red: 0.400, green: 0.800, blue: 1.000)
+    // 多重 (同じ拍・同じレーンに白タップ / タップの始点が 2 個以上): ピンク
+    static let multiOuter = Color(red: 1.000, green: 0.560, blue: 0.850)
+    static let multiMid = Color(red: 0.700, green: 0.200, blue: 0.520)
+    static let multiCore = Color(red: 1.000, green: 0.820, blue: 0.950)
+    static let multiGlow = Color(red: 1.000, green: 0.450, blue: 0.800)
     // ウィップ: 黄色の縁 → オリーブ色の帯 → 中心の淡い黄色
     static let wipeOuter = Color(red: 0.969, green: 0.992, blue: 0.290)
     static let wipeMid = Color(red: 0.580, green: 0.588, blue: 0.290)
@@ -597,6 +602,18 @@ enum LaneRenderer {
             let b = n.beat.value
             if b >= lo && b <= hi { headKeys.insert(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) }
         }
+        // 多重: 同じ拍・同じ block に「白タップ」と「タップの始点 (スライド / ホールドの始点がタップのもの)」が合わせて 2 個以上 → ピンク
+        var tapCount: [BeatrixKey: Int] = [:]
+        for n in notes {
+            let b = n.beat.value
+            if b < lo || b > hi { continue }
+            let key = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
+            if n.isSlide {
+                if Beatrix.headType(n) == 1 && !redKeys.contains(key) { tapCount[key, default: 0] += 1 }
+            } else if n.type == nil || n.type == 1 {
+                tapCount[key, default: 0] += 1
+            }
+        }
         // 2) タップ / 赤タップ / ウィップの棒。びーとりのスライド / ホールドには始点があるので、始点の棒も描く
         //    (始点は水色のタップか、ワイプ。どちらにするかは More の「Head Tap / Wipe」)
         for n in notes {
@@ -617,8 +634,12 @@ enum LaneRenderer {
             } else {
                 let rect = CGRect(x: cx - hw, y: y - tapH / 2, width: hw * 2, height: tapH)
                 var tint: TapTint = n.isSlide ? .slideHead : (kind == 3 ? .red : .normal)
-                if tint == .normal && headKeys.contains(BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))) {
+                let key = BeatrixKey(beat: n.beat, block: Beatrix.block(ofX: Double(n.x)))
+                if tint == .normal && headKeys.contains(key) {
                     tint = .slideHead                 // ホールド / スライドの始点に置いてあるタップ
+                }
+                if tint != .red && (tapCount[key] ?? 0) >= 2 {
+                    tint = .multi                     // 多重 (同じ位置にタップが 2 個以上)
                 }
                 drawTap(&cc, rect: rect, selected: isSel, tint: tint)
             }
@@ -634,7 +655,7 @@ enum LaneRenderer {
     /// タップ: 明るい水色の縁 → 濃い青緑の帯 → 白に近い水色の芯 (角は丸い)。外側に弱い水色のにじみ
     /// タップの色の種類 (通常 = 白 / 赤タップ / スライド・ホールドの始点 = 水色)
     enum TapTint {
-        case normal, red, slideHead
+        case normal, red, slideHead, multi
     }
 
     private static func drawTap(_ c: inout GraphicsContext, rect: CGRect, selected: Bool, tint: TapTint = .normal) {
@@ -655,6 +676,11 @@ enum LaneRenderer {
             mid = Color.headMid
             core = Color.headCore
             glow = Color.headGlow
+        case .multi:
+            outer = Color.multiOuter
+            mid = Color.multiMid
+            core = Color.multiCore
+            glow = Color.multiGlow
         }
         if selected {
             outer = Color.selTapOuter

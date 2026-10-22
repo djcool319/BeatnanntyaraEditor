@@ -41,7 +41,8 @@ struct BxNote {
     var vis: [[BxVisEvent]] = []           // 出現 / 消える。どれか 1 つの列で見えていれば見える (空なら いつも見える)
     var suppressed = false
     var tateren = false                    // 縦連 (本家の NotesGenerate.MarkTaterenNotes と同じ印)
-    var lightTateren = false               // 軽い縦連 (BPM140 の 16 分 + 2ms 以内。指のずれから拾ったタップでも取れるだけ)
+    var lightTateren = false
+    var multi = false                      // 多重 (同じ時刻・同じレーンに白タップ / タップの始点が 2 個以上)。ピンクで描く               // 軽い縦連 (BPM140 の 16 分 + 2ms 以内。指のずれから拾ったタップでも取れるだけ)
     var done = false
     var missed = false                     // 見逃した (本家と同じく、判定ラインを過ぎても流れ続ける)
 }
@@ -274,6 +275,15 @@ struct BxPlayChart {
         }
 
         markTateren(&out.notes)
+
+        // 多重: 同じ時刻 (1ms 以内)・同じレーンの白タップ / タップの始点が 2 個以上
+        var multiCount: [String: [Int]] = [:]
+        for (i, n) in out.notes.enumerated() where n.type == 1 || n.type == 2 {
+            multiCount["\(Int((n.t * 1000).rounded()))-\(n.lane)", default: []].append(i)
+        }
+        for (_, idx) in multiCount where idx.count >= 2 {
+            for i in idx { out.notes[i].multi = true }
+        }
 
         // 同時押しの線 (判定点は除く)
         //   (ノーツ個別の速さが違うノーツどうしは、流れてくる位置が違うので線を引かない)
