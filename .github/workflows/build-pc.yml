@@ -1,0 +1,79 @@
+# PC 版 (Windows) の BeatTriX Editor を GitHub の Windows で自動ビルドする設定ファイルです。
+#
+# 動くタイミング:
+#   1) main ブランチの pc フォルダ (またはこのファイル) を変えたとき  2) Actions タブの「Run workflow」ボタンを押したとき
+# 結果:
+#   リポジトリの Releases に「pc-latest」が作られ、その中に BeatTriXEditor-win-x64.zip が入ります。
+#   zip を展開して、中の BeatTriXEditor.exe をダブルクリックすると起動します (インストール不要)。
+
+name: PC版を作る (Windows)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pc/**'
+      - '.github/workflows/build-pc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write        # Releases に zip を載せるために必要
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: pc
+
+    steps:
+      - name: ソースを取ってくる
+        uses: actions/checkout@v4
+
+      - name: Node.js を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Electron などを入れる
+        run: npm install --no-audit --no-fund
+
+      - name: 譜面の読み書きを確認する
+        run: npm test
+
+      - name: exe を作る
+        run: npm run pack:win
+
+      - name: 作った exe が起動するか確認する
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "dist/BeatTriXEditor-win32-x64/BeatTriXEditor.exe"
+          $out = Join-Path $env:RUNNER_TEMP "bx-smoke.txt"
+          $p = Start-Process -FilePath $exe -ArgumentList @("--smoke", "`"$out`"") -Wait -PassThru
+          if (Test-Path $out) { Get-Content $out }
+          if ($p.ExitCode -ne 0) { throw "起動の確認に失敗しました (exit $($p.ExitCode))" }
+
+      - name: zip にまとめる
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/BeatTriXEditor-win32-x64/*" -DestinationPath "BeatTriXEditor-win-x64.zip" -Force
+          Get-Item "BeatTriXEditor-win-x64.zip" | Select-Object Name, Length
+
+      - name: Releases に載せる (zip を直接ダウンロードできるようにする)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete pc-latest --yes --cleanup-tag || true
+          gh release create pc-latest BeatTriXEditor-win-x64.zip \
+            --target "$GITHUB_SHA" \
+            --title "PC版 (Windows) 最新ビルド" \
+            --notes "zip を展開して、中の BeatTriXEditor.exe をダブルクリックすると起動します (インストール不要)。初回は Windows の「PC を保護しました」が出ることがあります → 詳細情報 → 実行。" \
+            --latest=false
+
+      - name: zip を Actions の成果物としても保存 (予備)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeatTriXEditor-win-x64
+          path: pc/BeatTriXEditor-win-x64.zip

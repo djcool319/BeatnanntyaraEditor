@@ -1,0 +1,17 @@
+{
+  "name": "beatrix-editor-pc",
+  "productName": "BeatTriX Editor",
+  "version": "0.1.0",
+  "description": "BeatTriX chart editor for Windows (reads/writes the same JSON as the iPad app)",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/roundtrip.js",
+    "pack:win": "electron-packager . BeatTriXEditor --platform=win32 --arch=x64 --out=dist --overwrite --icon=build/icon.ico --asar --ignore=^/dist --ignore=^/test --app-copyright=BeatTriX"
+  },
+  "devDependencies": {
+    "@electron/packager": "18.3.6",
+    "electron": "33.2.1"
+  }
+}

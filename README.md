@@ -2,6 +2,8 @@
 
 友達の Malody Slide Editor を土台にした、びーとり用の譜面エディターです。読み書きは **びーとりの JSON** (`曲名(EX).json`)。
 
+**PC 版 (Windows)** もあります → [`pc/README.md`](pc/README.md)。同じ JSON をそのまま読み書きできます (Releases の「PC版 (Windows) 最新ビルド」から zip をダウンロード)。
+
 ## 使い方
 1. Swift Playgrounds で開いて「アプリを実行」(または GitHub Actions で ipa を作って SideStore で入れる)
 2. 起動画面で **譜面 (.json)** と **音源** を選んで「エディタを開く」。譜面を選ばずに BPM を入れて「新規作成」もできる

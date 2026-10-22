@@ -37,7 +37,7 @@ let package = Package(
         .executableTarget(
             name: "AppModule",
             path: ".",
-            exclude: ["AppIcon", "Vendor", "unity"]
+            exclude: ["AppIcon", "Vendor", "unity", "pc"]
         )
     ]
 )

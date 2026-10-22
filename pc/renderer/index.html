@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: data:; img-src 'self' data:">
+<title>BeatTriX Editor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand">BeatTriX <span>Editor</span></div>
+  <div id="fileName" class="file">新しい譜面</div>
+  <div id="diffs" class="diffs"></div>
+  <div class="spacer"></div>
+  <div class="play">
+    <button id="btnPlay" class="playbtn" title="再生 / 停止 (Space)">▶</button>
+    <div class="clock"><div id="clockTime">0:00.000</div><div id="clockBeat">0:0/1</div></div>
+  </div>
+  <div class="spacer"></div>
+  <button id="btnOpen" class="ghost" title="開く (Ctrl+O)">開く</button>
+  <button id="btnSave" class="accent" title="保存 (Ctrl+S)">保存</button>
+</header>
+
+<div id="main">
+  <nav id="tools">
+    <div class="group-label">ツール</div>
+    <button class="tool" data-tool="select" title="選択・移動 (Q / Esc)"><i class="ic sel"></i><span>選択</span><kbd>Q</kbd></button>
+    <button class="tool" data-tool="tap" title="白タップ (1)"><i class="ic tap"></i><span>タップ</span><kbd>1</kbd></button>
+    <button class="tool" data-tool="red" title="赤タップ (2)"><i class="ic red"></i><span>赤タップ</span><kbd>2</kbd></button>
+    <button class="tool" data-tool="wipe" title="ワイプ (3)"><i class="ic wipe"></i><span>ワイプ</span><kbd>3</kbd></button>
+    <button class="tool" data-tool="hold" title="ホールド (4)"><i class="ic hold"></i><span>ホールド</span><kbd>4</kbd></button>
+    <button class="tool" data-tool="slide" title="スライド (5)"><i class="ic slide"></i><span>スライド</span><kbd>5</kbd></button>
+    <button class="tool" data-tool="modify" title="中継点の編集 (6)"><i class="ic modify"></i><span>中継点</span><kbd>6</kbd></button>
+    <button class="tool" data-tool="ease" title="区間の曲がり方 (7)"><i class="ic ease"></i><span>Ease</span><kbd>7</kbd></button>
+    <button class="tool" data-tool="erase" title="消しゴム (8)"><i class="ic erase"></i><span>消す</span><kbd>8</kbd></button>
+    <div class="group-label">始点</div>
+    <label class="chk"><input type="checkbox" id="holdHead"> ホールドに始点</label>
+    <label class="chk"><input type="checkbox" id="slideHead"> スライドに始点</label>
+    <div class="group-label">分割</div>
+    <select id="snap"></select>
+    <div class="group-label">ズーム</div>
+    <input type="range" id="zoom" min="40" max="900" step="10">
+    <div class="hint" id="toolHint"></div>
+  </nav>
+
+  <div id="laneWrap">
+    <canvas id="lane"></canvas>
+    <canvas id="overview" title="クリック / ドラッグで移動"></canvas>
+    <div id="drop" class="drop hidden">JSON をここに落とすと開きます</div>
+  </div>
+
+  <aside id="side">
+    <div class="tabs">
+      <button class="tab active" data-tab="info">曲の情報</button>
+      <button class="tab" data-tab="tempo">BPM・速さ</button>
+      <button class="tab" data-tab="sel">選択</button>
+      <button class="tab" data-tab="set">設定</button>
+    </div>
+
+    <section class="pane active" id="pane-info">
+      <label>曲名<input id="mTitle" type="text"></label>
+      <label>アーティスト<input id="mArtist" type="text"></label>
+      <div class="row2">
+        <label>LEVEL<input id="mLevel" type="number" step="0.1" min="0"></label>
+        <div class="rank"><span>ランク</span><b id="mRank">F</b></div>
+      </div>
+      <div class="row2">
+        <label>offset (ms)<input id="mOffset" type="number" step="1"></label>
+        <label>preview (秒)<input id="mPreview" type="number" step="0.1"></label>
+      </div>
+      <div class="row2">
+        <label>ver<input id="mVer" type="number" step="1" placeholder="なし"></label>
+        <label>maxBlock<input id="mMaxBlock" type="number" step="1" disabled></label>
+      </div>
+      <div class="sub">曲のファイル</div>
+      <div class="audio-row">
+        <select id="audioSel"></select>
+        <button id="btnAudio" class="ghost small">選ぶ…</button>
+      </div>
+      <div class="muted" id="audioInfo">曲が読み込まれていません</div>
+      <div class="sub">ノーツ数</div>
+      <div id="stats" class="stats"></div>
+    </section>
+
+    <section class="pane" id="pane-tempo">
+      <div class="sub">BPM</div>
+      <div class="row2">
+        <label>はじめの BPM<input id="bpmBase" type="number" step="0.01" min="1"></label>
+      </div>
+      <div id="bpmList" class="list"></div>
+      <div class="add-row">
+        <input id="bpmNew" type="number" step="0.01" min="1" placeholder="BPM">
+        <button id="bpmAdd" class="ghost small">再生ラインに追加</button>
+      </div>
+      <div class="sub">ソフラン (speeds)</div>
+      <div id="spdList" class="list"></div>
+      <div class="add-row">
+        <input id="spdNew" type="number" step="0.05" placeholder="×1.0">
+        <button id="spdAdd" class="ghost small">再生ラインに追加</button>
+      </div>
+      <p class="muted">「再生ライン」はシアンの横線。いちばん近い分割の線の拍に入ります。</p>
+    </section>
+
+    <section class="pane" id="pane-sel">
+      <div id="selCount" class="selcount">選択なし</div>
+      <div class="btns">
+        <button data-act="flip" title="M">左右反転</button>
+        <button data-act="red" title="R">白 ⇔ 赤</button>
+        <button data-act="head" title="H">始点 タップ/ワイプ/なし</button>
+        <button data-act="dummy">ダミー</button>
+        <button data-act="curve" title="C">曲線 (見た目)</button>
+        <button data-act="bake" title="B">Curve bake</button>
+        <button data-act="s2w">Slide → Wipe</button>
+        <button data-act="w2s">Wipe → Slide</button>
+      </div>
+      <div class="sub">ノーツ個別の速さ (speeds_each)</div>
+      <div class="add-row">
+        <input id="noteSpeed" type="text" placeholder="1 (なし)">
+        <button id="noteSpeedApply" class="ghost small">付ける</button>
+      </div>
+      <div class="sub">出現 / 消える (再生ラインの拍で)</div>
+      <div class="btns">
+        <button data-act="appear">出現</button>
+        <button data-act="vanish">消える</button>
+        <button data-act="clearHere">この拍を外す</button>
+        <button data-act="clearAll">全部外す</button>
+      </div>
+      <div class="sub">コピー</div>
+      <div class="btns">
+        <button data-act="copy">コピー</button>
+        <button data-act="cut">切り取り</button>
+        <button data-act="paste">貼り付け</button>
+        <button data-act="delete" class="danger">消す</button>
+      </div>
+    </section>
+
+    <section class="pane" id="pane-set">
+      <label class="chk"><input type="checkbox" id="linkHead"> 始点のタップを触ったとき、スライドも一緒に選ぶ</label>
+      <label class="chk"><input type="checkbox" id="segVertical"> 中継点を縦 (時間) にも動かす</label>
+      <label class="chk"><input type="checkbox" id="seOn"> 再生中にノーツ音を鳴らす</label>
+      <label>曲の音量<input type="range" id="volMusic" min="0" max="1" step="0.01"></label>
+      <label>ノーツ音の音量<input type="range" id="volSE" min="0" max="1" step="0.01"></label>
+      <label>再生の速さ
+        <select id="rate"><option value="1">×1.0</option><option value="0.75">×0.75 (音程も下がる)</option><option value="0.5">×0.5 (音程も下がる)</option></select>
+      </label>
+      <label>画面の遅れの補正 (ms)<input type="number" id="latency" step="1"></label>
+      <p class="muted">保存すると、前の中身が「〇〇.json.bak」に残ります。日時付きの控えは ヘルプ → バックアップのフォルダ。</p>
+    </section>
+  </aside>
+</div>
+
+<footer id="status">
+  <span id="statusText">F1 でショートカット一覧</span>
+  <span class="spacer"></span>
+  <span id="dirtyMark"></span>
+</footer>
+
+<div id="toast" class="toast hidden"></div>
+
+<div id="modal" class="modal hidden">
+  <div class="dialog">
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody"></div>
+    <div id="modalBtns" class="dialog-btns"></div>
+  </div>
+</div>
+
+<script src="js/sounddata.js"></script>
+<script src="js/format.js"></script>
+<script src="js/shapes.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/view.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

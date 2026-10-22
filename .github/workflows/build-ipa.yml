@@ -11,6 +11,9 @@ name: ipaを作る
 on:
   push:
     branches: [main]
+    paths-ignore:            # PC 版 (pc フォルダ) だけを変えたときは、ipa は作り直さない
+      - 'pc/**'
+      - '.github/workflows/build-pc.yml'
   workflow_dispatch:
 
 permissions:
@@ -81,7 +84,7 @@ jobs:
                       name: "AppModule",
                       dependencies: ["CRubberBand", "CBxAudio"],
                       path: ".",
-                      exclude: ["Vendor", "AppIcon", "unity"]
+                      exclude: ["Vendor", "AppIcon", "unity", "pc"]
                   ),
                   // 曲とノーツ音を 1 本の音の流れで混ぜる C++ のミキサー (Vendor/CBxAudio。リポジトリに入っている)
                   .target(

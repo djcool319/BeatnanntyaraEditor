@@ -746,3 +746,17 @@
 - まだ入れていないもの: 端と中央の間のゾーン（tap0mArea / tap3mArea。button.cs が無いので範囲が分からない）、指のずれから拾う縦連専用のタップ、子の無い type 2（擦り）、判定の時計の +22ms（JudgeTime。テストプレイの補正で合わせる）
 - （続き）TouchLaneDetector.cs のくっついた指の連打対策も入れた: 縦連・軽い縦連（BPM140 の 16 分 + 2ms 以内）のノーツがそのボタンの範囲の前後 0.15 秒にあるとき、指が最後に数えた場所から 0.4cm（iPhone 163pt/inch・iPad 132pt/inch で換算）以上ずれたら（前に数えてから 0.04 秒以上）、縦連専用のタップとして数える（BxGame.pressTaterenOnly = CheckTaterenOnly: 縦連・軽い縦連のノーツが ±0.05 秒にあるときだけ判定）
 - 端と中央の間のゾーン（tap0mArea / tap3mArea）は、範囲が Unity のシーン（RectTransform）にしか無いので、まだ入れていない
+
+## 25. PC 版 (Windows) エディター（2026-10-22）
+
+- 同じリポジトリの `pc/` に Electron 版を作った。詳しくは `pc/README.md`
+- 譜面の読み書きは `pc/renderer/js/format.js`。BeatrixFormat.swift の parseBeatrix / beatrixData / beatrixEntries / beatrixTargets / BeatrixJSONWriter をそのまま JS にしたもの（キーの順番・数の書き方・始点の表記・nth の数え方も同じ）
+  - **形式を変えるときは、Swift と JS の両方を同じに直すこと**。`pc/test/roundtrip.js` で確認できる（`node test/roundtrip.js 譜面.json`）
+  - エディタの中のノーツの持ち方（beat / x / w / type / segs / extra の bxHead など）も iPad 版と同じ。id は文字列
+- 保存: `.bak`（1 つ前）+ アプリのフォルダに日時付きの控え（100 個）。書き出しを読み直して同じになるか確認 → 一時ファイル → 置き換え → 読み直して一致確認
+- 再生: Web Audio。曲とノーツ音を同じ AudioContext の時刻に予約する（iPad 版の C++ ミキサーと同じ考え方）。鳴らす音の決め方は EditorState.rebuildKeyTimes と同じ
+- 描画: Renderers.swift の drawNotes と同じ色分け（始点の位置のタップは水色、多重はピンク、ダミーは薄く）。棒は拍の線の真ん中に描く（iPad 版の barLift は 0）
+- 始点のタップを触ったときにスライドも選ぶか（linkHeadTap）は、iPad 版と同じく初期値オフ（設定タブ）
+- ビルド: `.github/workflows/build-pc.yml`（windows-latest）。npm test → electron-packager → `--smoke` で exe を起動して確認 → zip を Releases の `pc-latest` に載せる
+  - ipa のワークフローは `pc/**` だけの変更では動かない（paths-ignore）。Package.swift（Playgrounds 用・Actions 用の両方）は `pc` を exclude
+- まだ: テストプレイ（D F J K。button.cs: D=tap0 左 / F=tap1 / J=tap2 / K=tap3 右）、BPM 自動検出、part / 歌詞の編集
