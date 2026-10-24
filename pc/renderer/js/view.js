@@ -280,6 +280,15 @@
       c.fillText('×' + fmt(sp.value), g.trackL + g.trackW + 8, y + 8);
     }
 
+    // Time range
+    if (ed.rangeStart) {
+      const y0 = g.py(Beat.val(ed.rangeStart));
+      const y1 = ed.rangeEnd ? g.py(Beat.val(ed.rangeEnd)) : y0;
+      c.fillStyle = 'rgba(255,165,0,0.14)';
+      c.fillRect(g.trackL, Math.min(y0, y1), g.trackW, Math.max(2, Math.abs(y0 - y1)));
+      c.fillStyle = 'rgba(255,165,0,0.9)';
+      for (const y of [y0, y1]) c.fillRect(g.trackL, y - 1, g.trackW, 2);
+    }
     // part の始点 (置いている途中)
     if (ed.partStart) {
       const y = g.py(Beat.val(ed.partStart));

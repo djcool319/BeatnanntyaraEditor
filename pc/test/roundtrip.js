@@ -40,6 +40,18 @@ check('知らない type が残る', j.notes.some(n => n.type === 7));
 check('数の書き方 (整数に小数点を付けない / 小数は短く)', /"BPM": 180,/.test(o1) && /"bpm": 90\.5/.test(o1) && /"speed": 0\.75/.test(o1));
 check('キーの順番', o1.indexOf('"name"') < o1.indexOf('"maxBlock"') && o1.indexOf('"ease"') < o1.indexOf('"part"') && o1.indexOf('"lyrics"') < o1.indexOf('"notes"') && o1.indexOf('"mystery"') > o1.indexOf('"notes"'));
 
+// テストプレイ: オートで全部取ると AP+ (1,111,111)、何も押さないと全部 MISS
+const P = require('../renderer/js/playcore.js');
+{
+  const pc = P.makeChart(c);
+  const g = new P.Game(pc, -10);
+  g.auto(1e9);
+  check('テストプレイ: オートで AP+', g.score === 1111111 && g.maxCombo === g.total && g.total > 0, 'notes ' + g.total);
+  const g2 = new P.Game(pc, -10);
+  g2.update(1e9);
+  check('テストプレイ: 何もしないと全部 MISS', g2.miss === g2.total && g2.score === 0);
+}
+
 function sortKeys(v) {
   if (Array.isArray(v)) return v.map(sortKeys);
   if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v).sort()) o[k] = sortKeys(v[k]); return o; }

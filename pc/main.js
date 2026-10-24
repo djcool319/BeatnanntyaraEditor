@@ -335,11 +335,11 @@ function smokeTest() {
         const h = F.makeNote(B(1), F.centerX(1), 77, null); h.extra.bxHeadOf = s.id;
         c.notes.push(s, h, F.makeNote(B(2), F.centerX(3), 77, 3), F.makeNote(B(3), F.centerX(5), 72, 4));
         const a = F.stringify(c), b = F.stringify(F.parse(a));
-        return JSON.stringify({ same: a === b, notes: JSON.parse(a).notes.length, ui: typeof window.__bx === 'object', audio: typeof window.BXAudio === 'function' });
+        return JSON.stringify({ same: a === b, notes: JSON.parse(a).notes.length, ui: typeof window.__bx === 'object', audio: typeof window.BXAudio === 'function', play: typeof window.BXPlayScreen === 'function' && typeof window.BXPlay.makeChart === 'function' });
       })()`);
       log.push('renderer: ' + res);
       const o = JSON.parse(res);
-      finish(o.same && o.notes === 4 && o.ui && o.audio);
+      finish(o.same && o.notes === 4 && o.ui && o.audio && o.play);
     } catch (e) {
       log.push('renderer error: ' + e.message);
       finish(false);

@@ -679,6 +679,7 @@
     modify: 'スライドを選んで、点をドラッグで動かす。空いた所をクリックで点を足す。',
     ease: 'スライドの帯 (点と点の間) をクリックして、曲がり方を選ぶ。',
     part: '始点の拍 → 終点の拍をクリックで part の区間。区間の中をクリックで消す。重なる区間は 1 つにまとまる。',
+    range: '始点の拍 → 終点の拍をクリックで、その間のノーツを全部選ぶ (iPad の Time range)。そのあと Ctrl+C / Delete / ↑↓ など。',
     erase: 'クリックで消す。スライドは近い中継点から後ろを消す。',
   };
 
@@ -742,6 +743,7 @@
     $('zoom').oninput = e => setZoom(Number(e.target.value));
 
     $('btnPlay').onclick = togglePlay;
+    $('btnTest').onclick = startTest;
     $('btnOpen').onclick = openDialog;
     $('btnSave').onclick = () => save();
     $('btnAudio').onclick = async () => {
@@ -794,7 +796,7 @@
   function showHelp() {
     const rows = [
       ['Space', '再生 / 停止'], ['ホイール', 'スクロール (Shift で速く。再生中は再生したまま移動)'], ['Ctrl + ホイール', 'ズーム'], ['[  ]', '分割を粗く / 細かく'],
-      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜8', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す / Part'],
+      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜9', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す / Part / 範囲選択'], ['P', 'テストプレイ (再生ラインから。D F J K で遊ぶ)'],
       ['Shift + クリック', '置くツールのままスライドを置く (Shift を離すと完了)'], ['Enter', 'スライドを完了'], ['右クリック', 'ノーツを消す (スライド作成中は完了)'],
       ['Ctrl+Z / Ctrl+Y', '元に戻す / やり直す'], ['Ctrl+C / X / V', 'コピー / 切り取り / 再生ラインに貼り付け'], ['Ctrl+A', '全部選ぶ'], ['Delete', '選択中を消す'],
       ['↑ ↓', '選択中を 1 分割ずつ動かす (選択なしならスクロール)'], ['← →', '選択中を横に動かす'], ['PageUp / PageDown', '1 小節ずつスクロール'], ['Home / End', '最初 / 最後のノーツへ'],
@@ -883,7 +885,7 @@
         default: handled = false;
       }
     } else {
-      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', '8': 'part', 'q': 'select' };
+      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', '8': 'part', '9': 'range', 'q': 'select' };
       const lk = k.length === 1 ? k.toLowerCase() : k;
       if (toolKeys[lk]) ed.setTool(toolKeys[lk]);
       else switch (lk) {
@@ -891,6 +893,7 @@
         case 'Escape':
           if (ed.slideDraft) ed.finishSlide();
           else if (ed.partStart) { ed.partStart = null; ed.emit(); }
+          else if (ed.rangeStart && !ed.rangeEnd) { ed.rangeStart = null; ed.emit(); }
           else if (ed.tool !== 'select') ed.setTool('select');
           else ed.clearSelection();
           break;
@@ -914,6 +917,7 @@
         case 'c': ed.toggleCurve(); break;
         case 'b': ed.bakeCurve(); break;
         case 'F1': showHelp(); break;
+        case 'p': startTest(); break;
         default: handled = false;
       }
     }
@@ -948,7 +952,62 @@
     host.onOpenPath(async p => { if (await confirmDiscard()) openPath(p); });
   }
 
+  // ------------------------------------------------------------ テストプレイ
+  const playScreen = new window.BXPlayScreen(audio);
+  function startTest() {
+    if (playScreen.isOpen) return;
+    stop();
+    if (ed.slideDraft) ed.finishSlide();
+    ed.ghost = null;
+    if (!ed.chart.notes.length) { toast('ノーツがありません'); return; }
+    // 再生ラインの位置から (0 拍目より前なら最初から)
+    const startSec = ed.secOfBeat(Math.max(0, ed.viewBeat));
+    playScreen.onClose = () => { needDraw = true; };
+    playScreen.open({ chart: ed.chart, startSec });
+  }
+
+  // ------------------------------------------------------------ ノーツ音の差し替え
+  const SE_KINDS = [['tap', 'タップ'], ['wipe', 'ワイプ'], ['red', '赤']];
+  function renderSERows() {
+    const box = $('seRows');
+    box.innerHTML = '';
+    for (const [k, label] of SE_KINDS) {
+      const p = pref('seFile.' + k, null);
+      const row = document.createElement('div');
+      row.className = 'serow';
+      row.innerHTML = '<span>' + label + '</span><span class="sename"></span><button title="鳴らしてみる">▶</button><button>選ぶ…</button><button title="元の音に戻す">元に戻す</button>';
+      row.children[1].textContent = p ? p.split(/[\\/]/).pop() : '(元の音)';
+      row.children[1].title = p || '';
+      row.children[2].onclick = () => audio.playNow(k);
+      row.children[3].onclick = async () => {
+        if (!host) return;
+        const f = await host.audioDialog(p ? await dirOf(p) : undefined);
+        if (f) await loadSE(k, f, true);
+      };
+      row.children[4].onclick = async () => { await audio.setSE(k, null); setPref('seFile.' + k, null); renderSERows(); toast(label + 'の音を元に戻しました'); };
+      box.appendChild(row);
+    }
+  }
+  async function loadSE(k, f, announce) {
+    try {
+      await audio.setSE(k, await host.readBinary(f));
+      setPref('seFile.' + k, f);
+      if (announce) { audio.playNow(k); toast('ノーツ音を変えました: ' + f.split(/[\\/]/).pop()); }
+    } catch (e) {
+      toast('音を読み込めませんでした: ' + f.split(/[\\/]/).pop() + ' (元の音を使います)');
+      await audio.setSE(k, null);
+      setPref('seFile.' + k, null);
+    }
+    renderSERows();
+  }
+  async function initSE() {
+    renderSERows();
+    if (!host) return;
+    for (const [k] of SE_KINDS) { const f = pref('seFile.' + k, null); if (f) await loadSE(k, f, false); }
+  }
+
   bindMeta();
+  initSE();
   syncUI();
   initFolders();
   requestAnimationFrame(frame);

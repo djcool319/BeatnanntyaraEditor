@@ -8,7 +8,7 @@
   }
   function savePref(key, v) { try { localStorage.setItem('bx.' + key, JSON.stringify(v)); } catch (e) { /* なくても動く */ } }
 
-  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase', 'part'];   // ホールドは「全部同じ鍵のスライド」
+  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase', 'part', 'range'];   // ホールドは「全部同じ鍵のスライド」
 
   class Editor {
     constructor() {
@@ -132,6 +132,8 @@
       this.ghost = null;
       if (t !== 'modify') this.modifyId = null;
       this.partStart = null;
+      this.rangeStart = null;
+      this.rangeEnd = null;
       this.tool = t;
       this.emit();
     }
@@ -201,7 +203,7 @@
       if (this.isPlaying) { this.toast('再生中は編集できません。止めてから操作してください'); return; }
       const t = this.tool;
       // レーンの外 (左右の黒い所) では、ノーツを置かない。ノーツに触れていれば選ぶ・選択ツールの囲みは始められる
-      if (!this.inLane(p, g) && t !== 'select' && t !== 'part' && !this.hitNote(p, g)) { this.clearGhost(); return; }
+      if (!this.inLane(p, g) && t !== 'select' && t !== 'part' && t !== 'range' && !this.hitNote(p, g)) { this.clearGhost(); return; }
       if (t === 'erase') {
         const n = this.hitNote(p, g);
         if (n) this.removeAt(n, p, g);
@@ -209,6 +211,7 @@
       }
       if (t === 'ease') { this.easePick(p, g); return; }
       if (t === 'part') { this.partClick(this.snapBeat(g.beatOf(p.y))); return; }
+      if (t === 'range') { this.rangeClick(this.snapBeat(g.beatOf(p.y))); return; }
       if (t === 'modify') {
         const h = this.hitSegAny(p, g);
         if (h) {
@@ -834,6 +837,8 @@
       if (this.partStart) {
         const s = this.partStart;
         this.partStart = null;
+      this.rangeStart = null;
+      this.rangeEnd = null;
         if (Beat.eq(s, b)) { this.toast('始点と同じ位置です。もう一度、始点からクリックしてください'); this.emit(); return; }
         const lo = Beat.cmp(s, b) < 0 ? s : b, hi = Beat.cmp(s, b) < 0 ? b : s;
         let start = lo, end = hi;
@@ -860,6 +865,27 @@
       }
       this.partStart = b;
       this.toast('part の始点を置きました。終点の拍をクリックしてください (中をクリックで消す)');
+      this.emit();
+    }
+
+    // ------------------------------------------------------------ Time range (iPad 版と同じ: 始点の拍 → 終点の拍。両端を含む、ノーツの先頭の拍で選ぶ)
+    rangeClick(b) {
+      if (!this.rangeStart || this.rangeEnd) {
+        this.rangeStart = b;
+        this.rangeEnd = null;
+        this.selected = new Set();
+        this.toast('範囲の始点を置きました。終点の拍をクリックしてください');
+        this.emit();
+        return;
+      }
+      const s = this.rangeStart;
+      const lo = Beat.cmp(s, b) <= 0 ? s : b, hi = Beat.cmp(s, b) <= 0 ? b : s;
+      this.rangeStart = lo;
+      this.rangeEnd = hi;
+      const ids = new Set();
+      for (const n of this.chart.notes) if (Beat.cmp(n.beat, lo) >= 0 && Beat.cmp(n.beat, hi) <= 0) ids.add(n.id);
+      this.selected = ids;
+      this.toast(ids.size ? ids.size + ' 個のノーツを選びました (' + Beat.label(lo) + ' 〜 ' + Beat.label(hi) + ')。Ctrl+C でコピー / Delete で消す / ↑↓ で動かす' : '範囲の中にノーツがありません');
       this.emit();
     }
 

@@ -43,8 +43,16 @@
       this.applyVolumes();
       const d = window.BX_SOUND_DATA || {};
       this.se = {};
-      for (const k of ['tap', 'wipe', 'red']) if (d[k]) this.se[k] = decodePCM(this.ctx, d[k]);
+      this.seDefault = {};
+      for (const k of ['tap', 'wipe', 'red']) if (d[k]) { this.seDefault[k] = decodePCM(this.ctx, d[k]); this.se[k] = this.seDefault[k]; }
       return this.ctx;
+    }
+    /// ノーツ音を差し替える (arrayBuffer = 音のファイルの中身。null で元の音に戻す)
+    async setSE(kind, arrayBuffer) {
+      const ctx = this.ensure();
+      if (!arrayBuffer) { this.se[kind] = this.seDefault[kind]; return true; }
+      this.se[kind] = await ctx.decodeAudioData(arrayBuffer);
+      return true;
     }
     applyVolumes() {
       if (!this.ctx) return;
@@ -118,7 +126,31 @@
       s.connect(this.seGain);
       s.start();
     }
+    /// 譜面の時刻に合わせてノーツ音を予約する (曲と同じ時計。もう過ぎていればすぐ鳴らす)
+    playAt(kind, chartSec) {
+      if (!this.playing) { this.playNow(kind); return; }
+      const ctx = this.ctx;
+      const buf = this.se && this.se[kind];
+      if (!buf || !this.seOn) return;
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      s.connect(this.seGain);
+      s.start(Math.max(this.ctxTimeOf(chartSec), ctx.currentTime));
+      this.voices.push(s);
+      s.onended = () => { const k = this.voices.indexOf(s); if (k >= 0) this.voices.splice(k, 1); };
+    }
     ctxTimeOf(chartSec) { return this.startCtx + (chartSec - this.chart0) / this.rate; }
+    /// performance.now() の時刻 p に「聞こえていた」譜面の秒 (キーを押した瞬間の時刻を、フレームを待たずに出す)
+    chartTimeAtPerf(p, extraLatencySec) {
+      if (!this.playing) return this.chart0 || 0;
+      const ctx = this.ctx;
+      let heard;
+      const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
+      if (ts && ts.contextTime > 0 && ts.performanceTime > 0) heard = ts.contextTime + (p - ts.performanceTime) / 1000;
+      else heard = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0) - (performance.now() - p) / 1000;
+      heard -= (extraLatencySec || 0);
+      return this.chart0 + (heard - this.startCtx) * this.rate;
+    }
     /// 今「聞こえている」譜面の秒 (出力の遅れを引いた分)
     chartTime(extraLatencySec) {
       if (!this.playing) return this.chart0 || 0;

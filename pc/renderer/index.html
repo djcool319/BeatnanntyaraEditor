@@ -17,6 +17,7 @@
     <div class="clock"><div id="clockTime">0:00.000</div><div id="clockBeat">0:0/1</div></div>
   </div>
   <div class="spacer"></div>
+  <button id="btnTest" class="playtest" title="テストプレイ (P)。再生ラインの位置から始まります">▶ プレイ</button>
   <button id="btnOpen" class="ghost" title="開く (Ctrl+O)">開く</button>
   <button id="btnSave" class="accent" title="保存 (Ctrl+S)">保存</button>
 </header>
@@ -33,6 +34,7 @@
     <button class="tool" data-tool="ease" title="区間の曲がり方 (6)"><i class="ic ease"></i><span>Ease</span><kbd>6</kbd></button>
     <button class="tool" data-tool="erase" title="消しゴム (7)"><i class="ic erase"></i><span>消す</span><kbd>7</kbd></button>
     <button class="tool" data-tool="part" title="part の区間 (8)"><i class="ic part"></i><span>Part</span><kbd>8</kbd></button>
+    <button class="tool" data-tool="range" title="Time range: 始点の拍 → 終点の拍で、その間のノーツを選ぶ (9)"><i class="ic range"></i><span>範囲選択</span><kbd>9</kbd></button>
     <div class="group-label">始点</div>
     <label class="chk"><input type="checkbox" id="slideHead"> スライドに始点</label>
     <div class="group-label">分割</div>
@@ -158,9 +160,50 @@
         <select id="rate"><option value="1">×1.0</option><option value="0.75">×0.75 (音程も下がる)</option><option value="0.5">×0.5 (音程も下がる)</option></select>
       </label>
       <label>画面の遅れの補正 (ms)<input type="number" id="latency" step="1"></label>
-      <p class="muted">保存すると、前の中身が「〇〇.json.bak」に残ります。日時付きの控えは ヘルプ → バックアップのフォルダ。</p>
+      <div class="sub">ノーツ音</div>
+      <div id="seRows"></div>
+      <p class="muted">ogg / mp3 / wav を選べます。エディタの再生とテストプレイの両方で使います。</p>
+      <p class="muted">保存すると、前の中身がバックアップのフォルダ (ヘルプ → バックアップのフォルダ) に日時付きで残ります。</p>
     </section>
   </aside>
+</div>
+
+<div id="play" class="playscreen hidden">
+  <canvas id="playCanvas"></canvas>
+  <div id="playPause" class="pp hidden">
+    <div class="pp-box">
+      <h2>PAUSE</h2>
+      <div class="pp-btns">
+        <button id="ppResume" class="primary">再開 <kbd>Esc</kbd></button>
+        <button id="ppRetry">やり直す <kbd>Enter</kbd></button>
+        <button id="ppQuit">エディタに戻る</button>
+      </div>
+      <label>スクロール速度 <b id="ppSpeedV">×1.0</b><input type="range" id="ppSpeed" min="0.5" max="2" step="0.1"></label>
+      <label>判定の位置
+        <select id="ppEdge"><option value="1">ノーツが判定ラインに触れたとき</option><option value="0">ノーツの真ん中が重なったとき</option></select>
+      </label>
+      <label>プレイの補正 (ms。− でノーツが早く来る)<input type="number" id="ppAdj" step="1" min="-200" max="200"></label>
+      <label class="chk"><input type="checkbox" id="ppAuto"> オート (全部 PERFECT+ で取る)</label>
+      <label class="chk"><input type="checkbox" id="ppSE"> ノーツ音</label>
+      <p class="muted">操作: D 左 / F 中央左 / J 中央右 / K 右。押した瞬間にタップ、押している間にワイプ・ホールド・スライド。</p>
+    </div>
+  </div>
+  <div id="playResult" class="pr hidden">
+    <div class="pr-box">
+      <div class="pr-title">RESULT</div>
+      <div class="pr-score"><span id="prScore">0</span><b id="prRank">D</b></div>
+      <div id="prClear">CLEAR</div>
+      <div class="pr-grid">
+        <span>PERFECT+</span><b id="prPP">0</b><span>PERFECT</span><b id="prP">0</b>
+        <span>GREAT</span><b id="prG">0</b><span>MISS</span><b id="prM">0</b>
+        <span>MAX COMBO</span><b id="prCombo">0</b>
+      </div>
+      <div class="pp-btns">
+        <button id="prRetry" class="primary">もう一回 <kbd>Enter</kbd></button>
+        <button id="prQuit">エディタに戻る <kbd>Esc</kbd></button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <footer id="status">
@@ -185,6 +228,8 @@
 <script src="js/audio.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/view.js"></script>
+<script src="js/playcore.js"></script>
+<script src="js/play.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
