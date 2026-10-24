@@ -445,7 +445,7 @@
   function playingNow() { return audio.playing || seeking; }
   function startAudio() {
     audio.rate = Number($('rate').value) || 1;
-    const startBeat = Math.max(0, ed.viewBeat);
+    const startBeat = Math.max(-64, ed.viewBeat);      // 0 拍目より前 (前奏) からも流せる (プレビューの試聴など)
     ed.playStartBeat = startBeat;
     audio.play(ed.secOfBeat(startBeat), ed.offsetSec(), ed.keySounds());
   }
@@ -690,6 +690,26 @@
     $('mLevel').onchange = e => { const v = Number(e.target.value); if (isFinite(v)) ed.setMeta('LEVEL', v); };
     $('mOffset').onchange = e => { const v = Math.round(Number(e.target.value)); if (isFinite(v)) ed.setMeta('offset', v); };
     $('mPreview').onchange = e => { const t = e.target.value.trim(); ed.setMeta('preview', t === '' ? undefined : Number(t)); };
+    // プレビュー: JSON の "preview" は「曲の何秒目から流すか」(Unity の preview.cs で music.time にそのまま入れている)。
+    //   譜面の時刻 t の音 = 曲の t + offset/1000 秒目 なので、曲の秒 = 譜面の秒 + offset/1000
+    $('pvHere').onclick = () => {
+      const beat = playingNow() ? ed.beatOfSec(audio.chartTime(latencyMs / 1000)) : ed.viewBeat;
+      const song = Math.max(0, ed.secOfBeat(Math.max(0, beat)) + ed.offsetSec());
+      const v = Math.round(song * 1000) / 1000;
+      ed.setMeta('preview', v);
+      scheduleUI();
+      toast('プレビューを 曲の ' + v + ' 秒目 にしました' + (F.intValue(ed.chart.bx.difficulty) === 2 ? '' : ' (ゲームでは EX の譜面の preview が使われます)'));
+    };
+    $('pvPlay').onclick = () => {
+      if (!audio.music) { toast('曲が読み込まれていません'); return; }
+      const p = F.doubleValue(ed.chart.bx.preview);
+      const song = p === null ? 0 : p;
+      stop();
+      ed.viewBeat = ed.beatOfSec(song - ed.offsetSec());
+      needDraw = true;
+      play();
+      toast('プレビューの位置 (曲の ' + song + ' 秒目) から流しています。Space で止める');
+    };
     $('mVer').onchange = e => { const t = e.target.value.trim(); ed.setMeta('ver', t === '' ? undefined : Math.round(Number(t))); };
     $('bpmBase').onchange = e => { const v = Number(e.target.value); if (v > 0) ed.setBaseBPM(v); };
     $('bpmAdd').onclick = () => {

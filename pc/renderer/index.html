@@ -67,7 +67,11 @@
       </div>
       <div class="row2">
         <label>offset (ms)<input id="mOffset" type="number" step="1"></label>
-        <label>preview (秒)<input id="mPreview" type="number" step="0.1"></label>
+        <label>preview (曲の何秒目)<input id="mPreview" type="number" step="0.001"></label>
+      </div>
+      <div class="btns preview-btns">
+        <button id="pvHere" title="再生ライン (再生中なら今の位置) を、曲選択画面で流れ始める位置にする">再生ラインをプレビューに</button>
+        <button id="pvPlay" title="プレビューの位置から、曲選択画面と同じように流す">▶ プレビューを試聴</button>
       </div>
       <div class="row2">
         <label>ver<input id="mVer" type="number" step="1" placeholder="なし"></label>

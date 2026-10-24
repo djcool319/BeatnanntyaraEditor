@@ -772,3 +772,4 @@
 - （2026-10-23）PC 版に Part ツール（8）。iPad 版 partTap と同じ（始点 → 終点。区間の中で消す。重なる区間はまとめる）。区間はレーンの両端の太い白線で描く
 - （2026-10-24）PC 版にテストプレイ（renderer/js/playcore.js = BeatrixPlayCore.swift の移植、renderer/js/play.js = BeatrixPlayView.swift の見た目を Canvas で）。D F J K = ボタン 0〜3（keydown の e.timeStamp を AudioContext の getOutputTimestamp で譜面時刻にする）。ワイプの音はノーツの時刻に予約、タップ / 赤は押した瞬間。ポーズ: スクロール速度・判定の位置・補正（初期値 −30ms）・オート・ノーツ音（localStorage の bx.play.*）
 - （2026-10-24）PC 版に範囲選択（Time range。ツール 9）と、ノーツ音の差し替え（設定タブ。bx.seFile.tap / wipe / red にファイルのパス）
+- （2026-10-24）プレビュー（JSON の preview = 曲の何秒目から流すか。Unity の preview.cs は EX の譜面の preview を music.time に入れる）: iPad の Information と PC の「曲の情報」に「再生ラインをプレビューに」「▶ 試聴」。曲の秒 = 譜面の秒 + offset/1000。PC は 0 拍目より前（前奏）からも再生できるようにした

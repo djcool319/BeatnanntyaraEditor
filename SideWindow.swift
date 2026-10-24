@@ -545,7 +545,18 @@ private struct InformationWindowContent: View {
                             .background(state.chart.bxDifficulty.color)
                     }
                     labeled("LEVEL") { SideWideField(text: $levelText, keyboard: .decimalPad) }
-                    labeled("プレビュー開始 (秒)") { SideWideField(text: $previewText, keyboard: .decimalPad) }
+                    labeled("プレビュー開始 (曲の何秒目)") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SideWideField(text: $previewText, keyboard: .decimalPad)
+                            HStack(spacing: 8) {
+                                SideSmallButton(title: "再生ラインをプレビューに") {
+                                    let v = state.setPreviewHere()
+                                    previewText = Self.numberText(v)
+                                }
+                                SideSmallButton(title: "▶ 試聴") { state.playPreview() }
+                            }
+                        }
+                    }
                     labeled("ver (整数。空欄なら書き出さない)") { SideWideField(text: $verText, keyboard: .numberPad) }
                 }
                 Group {

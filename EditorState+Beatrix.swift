@@ -217,6 +217,33 @@ extension EditorState {
         showToast(parts.joined(separator: " / ") + " を入れました")
     }
 
+    // MARK: プレビュー (曲選択画面で流れ始める位置)
+    //   JSON の "preview" は「曲の何秒目から流すか」(Unity の preview.cs で music.time にそのまま入れている)。
+    //   譜面の時刻 t の音 = 曲の t + offset/1000 秒目 なので、曲の秒 = 譜面の秒 + offset/1000
+
+    /// 再生ライン (再生中なら今の位置) を、プレビューの位置にする。入れた値 (秒) を返す
+    @discardableResult
+    func setPreviewHere() -> Double {
+        if isPlaying { pause() }                      // 止めた位置 = 今聞いていた位置
+        let song = max(0, timeMap.sec(atBeat: max(0, viewBeat)) + Double(chart.bxOffsetRaw) / 1000)
+        let v = (song * 1000).rounded() / 1000
+        chart.bxPreview = v
+        metaChanged()
+        let note = chart.bxDifficulty == .extreme ? "" : " (ゲームでは EX の譜面の preview が使われます)"
+        showToast("プレビューを 曲の \(v) 秒目 にしました" + note)
+        return v
+    }
+
+    /// プレビューの位置から流す (曲選択画面と同じ位置から聞ける)。Play / 停止はふつうの再生と同じ
+    func playPreview() {
+        if isPlaying { pause() }
+        let song = chart.bxPreview ?? 0
+        let t = song - Double(chart.bxOffsetRaw) / 1000
+        setViewBeat(timeMap.beat(atSec: max(0, t)))
+        play()
+        showToast("プレビューの位置 (曲の \(song) 秒目) から流しています" + (t < 0 ? "。0 拍目より前なので 0 拍目から流します" : ""))
+    }
+
     // MARK: 出現 / 消える (appear / disappear)
 
     enum AppearAction {

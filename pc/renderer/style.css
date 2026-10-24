@@ -172,3 +172,5 @@ button.playtest:hover { background: rgba(230,18,230,.28); }
 #prClear.clear { color: #9eeb99; } #prClear.failed { color: #ff7a7a; }
 .pr-grid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px 14px; font-size: 13px; margin-bottom: 18px; }
 .pr-grid b { font-family: Consolas, monospace; text-align: right; }
+
+.preview-btns { margin: -2px 0 10px; }
