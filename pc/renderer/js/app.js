@@ -603,6 +603,7 @@
     const bx = ed.chart.bx;
     setVal('mTitle', bx.name || '');
     setVal('mArtist', bx.artist || '');
+    setVal('mSubtitle', typeof bx.subtitle === 'string' ? bx.subtitle : '');
     const lv = F.doubleValue(bx.LEVEL);
     setVal('mLevel', lv === null ? 1 : lv);
     $('mRank').textContent = F.lvRank(lv === null ? 1 : lv);
@@ -687,6 +688,7 @@
   function bindMeta() {
     $('mTitle').onchange = e => { ed.setMeta('name', e.target.value.trim()); refreshSiblings(); };
     $('mArtist').onchange = e => ed.setMeta('artist', e.target.value);
+    $('mSubtitle').onchange = e => { const v = e.target.value; ed.setMeta('subtitle', v.trim() === '' ? undefined : v); };
     $('mLevel').onchange = e => { const v = Number(e.target.value); if (isFinite(v)) ed.setMeta('LEVEL', v); };
     $('mOffset').onchange = e => { const v = Math.round(Number(e.target.value)); if (isFinite(v)) ed.setMeta('offset', v); };
     $('mPreview').onchange = e => { const t = e.target.value.trim(); ed.setMeta('preview', t === '' ? undefined : Number(t)); };

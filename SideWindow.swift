@@ -535,6 +535,7 @@ private struct InformationWindowContent: View {
                 Group {
                     labeled("曲名 (略称は付けない)") { SideWideField(text: titleBinding) }
                     labeled("アーティスト") { SideWideField(text: artistBinding) }
+                    labeled("サブタイトル (-short ver.- など)") { SideWideField(text: subtitleBinding) }
                     labeled("難易度 (画面上の札から切り替え)") {
                         Text(state.chart.bxDifficulty.label)
                             .font(PanelFont.label(22))
@@ -635,6 +636,16 @@ private struct InformationWindowContent: View {
             get: { state.chart.bxTitle },
             set: { newValue in
                 state.chart.bxTitle = newValue
+                state.metaChanged()
+            }
+        )
+    }
+
+    private var subtitleBinding: Binding<String> {
+        Binding(
+            get: { state.chart.bxSubtitle },
+            set: { newValue in
+                state.chart.bxSubtitle = newValue
                 state.metaChanged()
             }
         )

@@ -521,6 +521,16 @@ extension ChartData {
         }
     }
 
+    /// "subtitle" (選曲画面でアーティスト名と交互に出す文字。(Game Edit) / -short ver.- など)。空なら書き出さない
+    var bxSubtitle: String {
+        get { (bx["subtitle"] as? String) ?? "" }
+        set {
+            var b = bx
+            if newValue.isEmpty { b.removeValue(forKey: "subtitle") } else { b["subtitle"] = newValue }
+            bx = b
+        }
+    }
+
     var bxDifficulty: BeatrixDifficulty {
         get { Beatrix.intValue(bx["difficulty"]).flatMap { BeatrixDifficulty(rawValue: $0) } ?? .extreme }
         set {
@@ -1039,7 +1049,7 @@ struct BeatrixKey: Hashable {
 //   ・数は、整数なら小数点を付けない (149)、小数は短い表記 (4.7)
 
 enum BeatrixJSONWriter {
-    static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "offset", "preview", "ver",
+    static let topOrder = ["name", "maxBlock", "BPM", "LEVEL", "difficulty", "artist", "subtitle", "offset", "preview", "ver",
                            "bpms", "speeds", "speeds_each", "dummy", "appear", "disappear", "curve", "ease", "part", "lyrics", "notes"]
     static let innerOrder = ["LPB", "num", "block", "type", "nth", "bpm", "speed", "atLPB", "atNum", "eases", "text", "notes", "parts"]
 

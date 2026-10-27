@@ -486,7 +486,7 @@
   }
 
   // ---------------------------------------------------------------- JSON の書き方 (BeatrixJSONWriter)
-  const topOrder = ['name', 'maxBlock', 'BPM', 'LEVEL', 'difficulty', 'artist', 'offset', 'preview', 'ver',
+  const topOrder = ['name', 'maxBlock', 'BPM', 'LEVEL', 'difficulty', 'artist', 'subtitle', 'offset', 'preview', 'ver',
     'bpms', 'speeds', 'speeds_each', 'dummy', 'appear', 'disappear', 'curve', 'ease', 'part', 'lyrics', 'notes'];
   const innerOrder = ['LPB', 'num', 'block', 'type', 'nth', 'bpm', 'speed', 'atLPB', 'atNum', 'eases', 'text', 'notes', 'parts'];
 

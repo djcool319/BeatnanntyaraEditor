@@ -14,6 +14,7 @@ function check(name, ok, info) {
 
 const c = F.newChart('テスト "曲"', 180, 1);
 c.bx.mystery = { z: 1, a: [1, 2.5] };
+c.bx.subtitle = '-short ver.-';
 c.bx.part = [{ LPB: 4, num: 8, parts: [{ LPB: 4, num: 16, parts: [] }] }];
 c.bx.lyrics = [{ LPB: 4, num: 8, text: '歌詞', parts: [{ LPB: 4, num: 12, parts: [] }] }];
 c.times.push({ beat: B(8), bpm: 90.5 });
@@ -36,6 +37,7 @@ check('始点の表記 (LPB・num が 2 倍) が出る', j.notes.some(n => n.LPB
 check('始点ワイプ', j.notes.some(n => n.LPB === 8 && n.num === 16 && n.block === 3 && n.type === 4));
 check('曲線・ease・ダミー・出現・消える・速さ', j.curve.length === 1 && j.ease.length === 1 && j.dummy.length === 1 && j.appear.length === 2 && j.disappear.length === 1 && j.speeds_each.length === 1);
 check('知らないキー・part・歌詞が残る', j.mystery.z === 1 && j.mystery.a[1] === 2.5 && j.part.length === 1 && j.lyrics[0].text === '歌詞');
+check('subtitle は artist のすぐ後ろ', o1.indexOf('"artist"') < o1.indexOf('"subtitle": "-short ver.-"') && o1.indexOf('"subtitle"') < o1.indexOf('"offset"'));
 check('知らない type が残る', j.notes.some(n => n.type === 7));
 check('数の書き方 (整数に小数点を付けない / 小数は短く)', /"BPM": 180,/.test(o1) && /"bpm": 90\.5/.test(o1) && /"speed": 0\.75/.test(o1));
 check('キーの順番', o1.indexOf('"name"') < o1.indexOf('"maxBlock"') && o1.indexOf('"ease"') < o1.indexOf('"part"') && o1.indexOf('"lyrics"') < o1.indexOf('"notes"') && o1.indexOf('"mystery"') > o1.indexOf('"notes"'));

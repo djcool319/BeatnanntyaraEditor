@@ -18,6 +18,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
   "LEVEL": 4.7,
   "difficulty": 2,
   "artist": "作曲者",
+  "subtitle": "-short ver.-",
   "offset": 720,
   "preview": 14.52,
   "ver": 1001,
@@ -38,6 +39,7 @@ BeatTriX Editor（iPad の譜面エディタ）で書き出す JSON に足した
 
 - `name` は曲名だけ（`(EX)` などの略称は付けない）。略称はファイル名（`曲名(EX).json`）にだけ付ける
 - `difficulty`: 0 = BASIC / 1 = HARD / 2 = EXTREME / 3 = INSANE
+- `subtitle`（2026-10-27 追加）: 選曲画面でアーティスト名と交互に出す文字（`(Game Edit)` / `-short ver.-` など）。**空なら書き出さない**（キーが無い = 空文字。JsonUtility では `public string subtitle;` が "" になる）。エディタは iPad 版・PC 版とも「曲の情報」で入力できる
 
 ### 0-1. ノーツの指し方（`speeds_each` / `dummy` / `appear` / `disappear` / `curve` / `ease` 共通）（2026-10-15 変更）
 
