@@ -280,6 +280,14 @@
       c.fillText('×' + fmt(sp.value), g.trackL + g.trackW + 8, y + 8);
     }
 
+    // 歌詞の始点 (置いている途中)
+    if (ed.lyricsStart) {
+      const y = g.py(Beat.val(ed.lyricsStart));
+      c.fillStyle = 'rgba(178,255,115,0.95)';
+      c.fillRect(g.trackL - 6, y - 1.5, g.trackW + 12, 3);
+      c.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
+      c.fillText('歌詞 始点', g.trackL + 6, y - 8);
+    }
     // Time range
     if (ed.rangeStart) {
       const y0 = g.py(Beat.val(ed.rangeStart));

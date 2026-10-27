@@ -174,3 +174,5 @@ button.playtest:hover { background: rgba(230,18,230,.28); }
 .pr-grid b { font-family: Consolas, monospace; text-align: right; }
 
 .preview-btns { margin: -2px 0 10px; }
+
+.ic.lyrics { font-style: normal; color: #b2ff73; font-weight: 900; font-size: 14px; line-height: 12px; text-align: center; }

@@ -8,7 +8,7 @@
   }
   function savePref(key, v) { try { localStorage.setItem('bx.' + key, JSON.stringify(v)); } catch (e) { /* なくても動く */ } }
 
-  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase', 'part', 'range'];   // ホールドは「全部同じ鍵のスライド」
+  const TOOLS = ['select', 'tap', 'red', 'wipe', 'slide', 'modify', 'ease', 'erase', 'part', 'range', 'lyrics'];   // ホールドは「全部同じ鍵のスライド」
 
   class Editor {
     constructor() {
@@ -134,6 +134,7 @@
       this.partStart = null;
       this.rangeStart = null;
       this.rangeEnd = null;
+      this.lyricsStart = null;
       this.tool = t;
       this.emit();
     }
@@ -203,7 +204,7 @@
       if (this.isPlaying) { this.toast('再生中は編集できません。止めてから操作してください'); return; }
       const t = this.tool;
       // レーンの外 (左右の黒い所) では、ノーツを置かない。ノーツに触れていれば選ぶ・選択ツールの囲みは始められる
-      if (!this.inLane(p, g) && t !== 'select' && t !== 'part' && t !== 'range' && !this.hitNote(p, g)) { this.clearGhost(); return; }
+      if (!this.inLane(p, g) && t !== 'select' && t !== 'part' && t !== 'range' && t !== 'lyrics' && !this.hitNote(p, g)) { this.clearGhost(); return; }
       if (t === 'erase') {
         const n = this.hitNote(p, g);
         if (n) this.removeAt(n, p, g);
@@ -212,6 +213,7 @@
       if (t === 'ease') { this.easePick(p, g); return; }
       if (t === 'part') { this.partClick(this.snapBeat(g.beatOf(p.y))); return; }
       if (t === 'range') { this.rangeClick(this.snapBeat(g.beatOf(p.y))); return; }
+      if (t === 'lyrics') { this.lyricsClick(this.snapBeat(g.beatOf(p.y))); return; }
       if (t === 'modify') {
         const h = this.hitSegAny(p, g);
         if (h) {
@@ -866,6 +868,69 @@
       this.partStart = b;
       this.toast('part の始点を置きました。終点の拍をクリックしてください (中をクリックで消す)');
       this.emit();
+    }
+
+    // ------------------------------------------------------------ 歌詞 (iPad 版 bxLyrics / lyricsTap と同じ)
+    //   JSON: "lyrics": [ {"LPB": 4, "num": 560, "text": "〜〜", "parts": [ {"LPB": 4, "num": 576, "parts": []} ]} ]
+    //   外側の LPB / num が表示の始まり、parts[0] が終わり。始まり <= 今 < 終わり の間だけ text を出す
+    getLyrics() {
+      const out = [];
+      for (const l of Array.isArray(this.chart.bx.lyrics) ? this.chart.bx.lyrics : []) {
+        const e = Array.isArray(l.parts) && l.parts[0];
+        if (!e) continue;
+        const s = F.beatOf(l), en = F.beatOf(e);
+        if (Beat.cmp(s, en) < 0) out.push({ start: s, end: en, text: typeof l.text === 'string' ? l.text : '' });
+      }
+      return out.sort((a, b) => Beat.cmp(a.start, b.start));
+    }
+    setLyrics(list) {
+      this.chart.bx.lyrics = list.slice().sort((a, b) => Beat.cmp(a.start, b.start)).map(l => {
+        const s = F.lpbNum(l.start), e = F.lpbNum(l.end);
+        return { LPB: s.lpb, num: s.num, text: l.text, parts: [{ LPB: e.lpb, num: e.num, parts: [] }] };
+      });
+    }
+    /// 始点 → 終点をクリックで、その間に出す歌詞を入れる。歌詞の区間の中をクリックで編集・削除
+    lyricsClick(b) {
+      if (this.guardPlaying()) return;
+      if (this.lyricsStart) {
+        const s = this.lyricsStart;
+        this.lyricsStart = null;
+        this.emit();
+        if (Beat.eq(s, b)) { this.toast('始点と同じ位置です。もう一度、始点からクリックしてください'); return; }
+        this.onLyricEdit({ index: null, start: Beat.cmp(s, b) < 0 ? s : b, end: Beat.cmp(s, b) < 0 ? b : s, text: '' });
+        return;
+      }
+      const list = this.getLyrics();
+      let hit = -1;
+      list.forEach((l, i) => { if (Beat.cmp(l.start, b) <= 0 && Beat.cmp(b, l.end) < 0) hit = i; });   // 重なっているときは、あとから始まるほう
+      if (hit >= 0) { this.onLyricEdit({ index: hit, start: list[hit].start, end: list[hit].end, text: list[hit].text }); return; }
+      this.lyricsStart = b;
+      this.toast('歌詞の始点を置きました。終点の拍をクリックしてください');
+      this.emit();
+    }
+    commitLyric(e, text) {
+      const t = String(text).trim();
+      const list = this.getLyrics();
+      if (!t) {
+        if (e.index !== null && e.index < list.length) { this.deleteLyric(e); return; }
+        this.toast('歌詞が空なので、置きませんでした');
+        return;
+      }
+      this.pushUndo();
+      if (e.index !== null && e.index < list.length) list[e.index].text = t;
+      else list.push({ start: e.start, end: e.end, text: t });
+      this.setLyrics(list);
+      this.changed();
+      this.toast('歌詞「' + t + '」(' + Beat.label(e.start) + ' 〜 ' + Beat.label(e.end) + ')');
+    }
+    deleteLyric(e) {
+      const list = this.getLyrics();
+      if (e.index === null || e.index >= list.length) return;
+      this.pushUndo();
+      list.splice(e.index, 1);
+      this.setLyrics(list);
+      this.changed();
+      this.toast('歌詞を消しました');
     }
 
     // ------------------------------------------------------------ Time range (iPad 版と同じ: 始点の拍 → 終点の拍。両端を含む、ノーツの先頭の拍で選ぶ)

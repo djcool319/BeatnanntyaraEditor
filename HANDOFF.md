@@ -774,3 +774,4 @@
 - （2026-10-24）PC 版に範囲選択（Time range。ツール 9）と、ノーツ音の差し替え（設定タブ。bx.seFile.tap / wipe / red にファイルのパス）
 - （2026-10-24）プレビュー（JSON の preview = 曲の何秒目から流すか。Unity の preview.cs は EX の譜面の preview を music.time に入れる）: iPad の Information と PC の「曲の情報」に「再生ラインをプレビューに」「▶ 試聴」。曲の秒 = 譜面の秒 + offset/1000。PC は 0 拍目より前（前奏）からも再生できるようにした
 - （2026-10-27）JSON に "subtitle"（選曲画面でアーティスト名と交互に出す (Game Edit) / -short ver.- など）。キーの順番は artist のすぐ後ろ（Swift / JS の topOrder 両方）。空なら書き出さない。iPad の Information と PC の「曲の情報」で入力（ChartData.bxSubtitle）
+- （2026-10-27）PC 版に歌詞ツール（L）。iPad 版 lyricsTap / commitLyric / deleteLyric と同じ（始点 → 終点 → 文字を入れる。区間の中で変える・消す）。入力欄の Enter は日本語の変換中は決定にしない

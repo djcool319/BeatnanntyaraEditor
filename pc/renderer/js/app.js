@@ -57,7 +57,7 @@
       });
       const onKey = e => {
         if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(null); }
-        if (e.key === 'Enter' && opts && opts.enter !== undefined && e.target.tagName !== 'BUTTON') { e.stopPropagation(); e.preventDefault(); close(opts.enter); }
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229 && opts && opts.enter !== undefined && e.target.tagName !== 'BUTTON') { e.stopPropagation(); e.preventDefault(); close(opts.enter); }
       };
       document.addEventListener('keydown', onKey, true);
       $('modal').classList.remove('hidden');
@@ -680,6 +680,7 @@
     modify: 'スライドを選んで、点をドラッグで動かす。空いた所をクリックで点を足す。',
     ease: 'スライドの帯 (点と点の間) をクリックして、曲がり方を選ぶ。',
     part: '始点の拍 → 終点の拍をクリックで part の区間。区間の中をクリックで消す。重なる区間は 1 つにまとまる。',
+    lyrics: '始点の拍 → 終点の拍をクリックして、その間に出す歌詞を入れる。歌詞の区間 (右の黄緑の帯) の中をクリックで編集・削除。',
     range: '始点の拍 → 終点の拍をクリックで、その間のノーツを全部選ぶ (iPad の Time range)。そのあと Ctrl+C / Delete / ↑↓ など。',
     erase: 'クリックで消す。スライドは近い中継点から後ろを消す。',
   };
@@ -802,6 +803,19 @@
     }
   }
 
+  ed.onLyricEdit = async e => {
+    const editing = e.index !== null;
+    const btns = [{ label: editing ? '変える' : '置く', primary: true, value: 'ok' }];
+    if (editing) btns.push({ label: '消す', danger: true, value: 'del' });
+    btns.push({ label: 'キャンセル', value: null });
+    const r = await modal(editing ? '歌詞を変える' : '歌詞を入れる',
+      '<p class="muted">' + Beat.label(e.start) + ' 〜 ' + Beat.label(e.end) + ' の間だけ表示されます</p>' +
+      '<label>歌詞<input id="lyricText" type="text" value="' + esc(e.text) + '"></label>', btns, { enter: 'ok' });
+    const text = $('lyricText') ? $('lyricText').value : '';
+    if (r === 'ok') ed.commitLyric(e, text);
+    else if (r === 'del') ed.deleteLyric(e);
+  };
+
   ed.onEasePick = async (id, seg) => {
     const r = await modal('この区間の曲がり方', '<p class="muted">見た目だけが変わります (判定の点の位置・時間はそのまま)</p>', [
       { label: 'まっすぐ', value: [0, false] },
@@ -818,7 +832,7 @@
   function showHelp() {
     const rows = [
       ['Space', '再生 / 停止'], ['ホイール', 'スクロール (Shift で速く。再生中は再生したまま移動)'], ['Ctrl + ホイール', 'ズーム'], ['[  ]', '分割を粗く / 細かく'],
-      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜9', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す / Part / 範囲選択'], ['P', 'テストプレイ (再生ラインから。D F J K で遊ぶ)'],
+      ['Q / Esc', '選択ツール (置いている途中なら終わる)'], ['1〜9', 'タップ / 赤 / ワイプ / スライド (ホールド) / 中継点 / Ease / 消す / Part / 範囲選択'], ['P', 'テストプレイ (再生ラインから。D F J K で遊ぶ)'], ['L', '歌詞ツール'],
       ['Shift + クリック', '置くツールのままスライドを置く (Shift を離すと完了)'], ['Enter', 'スライドを完了'], ['右クリック', 'ノーツを消す (スライド作成中は完了)'],
       ['Ctrl+Z / Ctrl+Y', '元に戻す / やり直す'], ['Ctrl+C / X / V', 'コピー / 切り取り / 再生ラインに貼り付け'], ['Ctrl+A', '全部選ぶ'], ['Delete', '選択中を消す'],
       ['↑ ↓', '選択中を 1 分割ずつ動かす (選択なしならスクロール)'], ['← →', '選択中を横に動かす'], ['PageUp / PageDown', '1 小節ずつスクロール'], ['Home / End', '最初 / 最後のノーツへ'],
@@ -907,7 +921,7 @@
         default: handled = false;
       }
     } else {
-      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', '8': 'part', '9': 'range', 'q': 'select' };
+      const toolKeys = { '1': 'tap', '2': 'red', '3': 'wipe', '4': 'slide', '5': 'modify', '6': 'ease', '7': 'erase', '8': 'part', '9': 'range', 'l': 'lyrics', 'q': 'select' };
       const lk = k.length === 1 ? k.toLowerCase() : k;
       if (toolKeys[lk]) ed.setTool(toolKeys[lk]);
       else switch (lk) {
@@ -916,6 +930,7 @@
           if (ed.slideDraft) ed.finishSlide();
           else if (ed.partStart) { ed.partStart = null; ed.emit(); }
           else if (ed.rangeStart && !ed.rangeEnd) { ed.rangeStart = null; ed.emit(); }
+          else if (ed.lyricsStart) { ed.lyricsStart = null; ed.emit(); }
           else if (ed.tool !== 'select') ed.setTool('select');
           else ed.clearSelection();
           break;
