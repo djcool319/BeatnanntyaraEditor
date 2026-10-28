@@ -374,6 +374,9 @@
       rememberAudio();
       $('audioInfo').textContent = audio.musicName + ' (' + V.fmtTime(dur) + ')';
       $('audioInfo').title = p;
+      // ノーツが 1 つも無い譜面 (新しい譜面) に曲を読んだら、BPM・offset を自動で解析する (iPad 版と同じ。結果のダイアログで入れるか選ぶ)
+      const key = (ed.filePath || 'new') + '|' + p;
+      if (!ed.chart.notes.length && !tempoAsked.has(key)) { tempoAsked.add(key); setTimeout(startTempoDetect, 50); }
     } catch (e) {
       audioPath = null;
       audio.music = null;
@@ -695,6 +698,9 @@
     $('mPreview').onchange = e => { const t = e.target.value.trim(); ed.setMeta('preview', t === '' ? undefined : Number(t)); };
     // プレビュー: JSON の "preview" は「曲の何秒目から流すか」(Unity の preview.cs で music.time にそのまま入れている)。
     //   譜面の時刻 t の音 = 曲の t + offset/1000 秒目 なので、曲の秒 = 譜面の秒 + offset/1000
+    $('btnTempo').onclick = startTempoDetect;
+    $('offMinus').onclick = () => { const v = F.intValue(ed.chart.bx.offset) || 0; ed.setMeta('offset', v - 10); scheduleUI(); toast('offset ' + (v - 10)); };
+    $('offPlus').onclick = () => { const v = F.intValue(ed.chart.bx.offset) || 0; ed.setMeta('offset', v + 10); scheduleUI(); toast('offset ' + (v + 10)); };
     $('pvHere').onclick = () => {
       const beat = playingNow() ? ed.beatOfSec(audio.chartTime(latencyMs / 1000)) : ed.viewBeat;
       const song = Math.max(0, ed.secOfBeat(Math.max(0, beat)) + ed.offsetSec());
@@ -987,6 +993,144 @@
       else if (cmd === 'save-and-close') { if (await save()) host.closeNow(); }
     });
     host.onOpenPath(async p => { if (await confirmDiscard()) openPath(p); });
+  }
+
+  // ------------------------------------------------------------ BPM・offset の自動検出 (tempo.js。重い計算は Worker で)
+  const tempoAsked = new Set();
+  let tempoWorker = null;
+  function dlgOpen(title, html) {
+    $('modalTitle').textContent = title;
+    $('modalBody').innerHTML = html;
+    $('modalBtns').innerHTML = '';
+    $('modalBtns').className = 'dialog-btns';
+    $('modal').classList.remove('hidden');
+  }
+  function dlgClose() { $('modal').classList.add('hidden'); document.removeEventListener('keydown', dlgKeys, true); }
+  let dlgEsc = null;
+  function dlgKeys(e) { if (e.key === 'Escape' && dlgEsc) { e.preventDefault(); e.stopPropagation(); dlgEsc(); } }
+  function dlgButtons(list) {
+    const box = $('modalBtns');
+    box.innerHTML = '';
+    for (const b of list) {
+      const el = document.createElement('button');
+      el.textContent = b.label;
+      if (b.primary) el.className = 'primary';
+      el.onclick = b.onClick;
+      box.appendChild(el);
+    }
+  }
+  function startTempoDetect() {
+    if (!audio.music) { toast('曲が読み込まれていないので、解析できません'); return; }
+    if (playingNow()) stop();
+    if (tempoWorker) tempoWorker.terminate();
+    const buf = audio.music;
+    const n = Math.min(buf.length, Math.floor(buf.sampleRate * 360));
+    const mono = new Float32Array(n);
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels;
+    }
+    dlgOpen('BPM・offset の自動検出', '<p>曲を解析しています…</p><div class="progress"><div id="tempoBar"></div></div>');
+    const cancel = () => { if (tempoWorker) { tempoWorker.terminate(); tempoWorker = null; } dlgClose(); };
+    dlgEsc = cancel;
+    document.addEventListener('keydown', dlgKeys, true);
+    dlgButtons([{ label: 'やめる', onClick: cancel }]);
+    // Worker が使えないときは、画面側でそのまま計算する (少しのあいだ画面が止まる)
+    const runHere = () => {
+      setTimeout(() => {
+        try { showTempoResult(window.BXTempo.analyze(mono, buf.sampleRate)); }
+        catch (err) { $('modalBody').innerHTML = '<p>' + esc(err.message || err) + '</p>'; dlgButtons([{ label: '閉じる', primary: true, onClick: dlgClose }]); dlgEsc = dlgClose; }
+      }, 30);
+    };
+    let w;
+    try { w = new Worker('js/tempo.js'); } catch (err) { runHere(); return; }
+    tempoWorker = w;
+    w.onmessage = e => {
+      if (tempoWorker !== w) return;
+      if (e.data.progress !== undefined) { const bar = $('tempoBar'); if (bar) bar.style.width = Math.round(e.data.progress * 100) + '%'; return; }
+      tempoWorker = null;
+      w.terminate();
+      if (e.data.error) {
+        $('modalBody').innerHTML = '<p>' + esc(e.data.error) + '</p>';
+        dlgButtons([{ label: '閉じる', primary: true, onClick: dlgClose }]);
+        dlgEsc = dlgClose;
+        return;
+      }
+      showTempoResult(e.data.result);
+    };
+    w.onerror = err => {
+      if (tempoWorker !== w) return;
+      tempoWorker = null;
+      if (err && err.preventDefault) err.preventDefault();
+      runHere();                     // Worker が読めなかったなど
+    };
+    w.postMessage({ mono: mono.slice(), sr: buf.sampleRate });
+  }
+  function showTempoResult(a) {
+    const T = window.BXTempo;
+    let pick = 0, shift = 0;
+    const fmtB = v => (Math.round(v * 1000) / 1000).toString();
+    const hasNotes = ed.chart.notes.length > 0;
+    $('modalBody').innerHTML =
+      '<div class="muted">BPM (左がおすすめ。倍・半分の取り違えがあるので、曲に合うほうを選んでください)</div>' +
+      '<div class="tempo-cands" id="tCands"></div>' +
+      '<div class="muted">解析の値: ' + a.rawBPM.toFixed(3) + '</div>' +
+      '<div class="tempo-off" id="tOff"></div><div class="muted" id="tOffSub"></div>' +
+      '<div style="margin-top:10px">0 拍目をずらす: <b id="tShift">0</b> 拍 <span class="muted">(+ で曲の後ろへ / − で前へ)</span></div>' +
+      '<div class="tempo-row"><button data-d="-1">−1</button><button data-d="-0.5">−0.5</button><button data-d="0">0</button><button data-d="0.5">+0.5</button><button data-d="1">+1</button>' +
+      '<input id="tShiftIn" type="text" placeholder="拍を入力 (2 / -1.5 / 1/4)"></div>' +
+      '<div class="tempo-red" id="tNeg"></div>' +
+      (a.changeHint ? '<div class="tempo-warn">⚠ ' + esc(a.changeHint) + '</div>' : '') +
+      '<label class="chk"><input type="checkbox" id="tUseBpm" checked> BPM を入れる</label>' +
+      '<label class="chk"><input type="checkbox" id="tUseOff" checked> offset を入れる</label>' +
+      (hasNotes ? '<div class="tempo-red" id="tNotesWarn">ノーツがある譜面です。BPM を変えると、ノーツの時刻 (秒) もずれます</div>' : '') +
+      '<p class="muted">検出は目安です。入れたあと、再生してノーツ音と曲が合っているか確かめてください (offset は −10ms / +10ms で微調整できます)。</p>';
+    const render = () => {
+      const bpm = a.candidates[pick];
+      const raw = T.offsetRaw(a, bpm, shift);
+      const box = $('tCands');
+      box.innerHTML = '';
+      a.candidates.forEach((c, i) => {
+        const b = document.createElement('button');
+        b.textContent = fmtB(c);
+        if (i === pick) b.className = 'on';
+        b.onclick = () => { pick = i; render(); };
+        box.appendChild(b);
+      });
+      $('tOff').textContent = 'offset: ' + raw;
+      $('tOffSub').textContent = '0 拍目 = 曲の ' + (raw / 1000).toFixed(3) + ' 秒';
+      $('tShift').textContent = (shift > 0 ? '+' : '') + fmtB(shift);
+      $('tNeg').textContent = raw < 0 ? '0 拍目が曲の始まり (0 秒) より前になっています (offset がマイナス)' : '';
+      return { bpm, raw };
+    };
+    const setShift = v => { const r = Math.round(v * 1000) / 1000; shift = Math.abs(r) < 1e-9 ? 0 : r; render(); };
+    for (const b of $('modalBody').querySelectorAll('.tempo-row button')) {
+      b.onclick = () => { const d = Number(b.dataset.d); setShift(d === 0 ? 0 : shift + d); };
+    }
+    $('tShiftIn').onkeydown = e => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      const t = e.target.value.trim().replace(/[＋]/g, '+').replace(/[−ー]/g, '-');
+      let v = null;
+      if (t.includes('/')) { const ps = t.split('/'); const nn = Number(ps[0]), dd = Number(ps[1]); if (ps.length === 2 && dd) v = nn / dd; }
+      else if (t !== '') v = Number(t);
+      if (v !== null && isFinite(v) && Math.abs(v) <= 10000) setShift(v); else toast('拍は 2 / -1.5 / 1/4 のように入れてください');
+    };
+    render();
+    dlgEsc = dlgClose;
+    dlgButtons([
+      { label: 'キャンセル', onClick: dlgClose },
+      { label: '入れる', primary: true, onClick: () => {
+        const r = render();
+        const useB = $('tUseBpm').checked, useO = $('tUseOff').checked;
+        dlgClose();
+        ed.applyTempo(useB ? r.bpm : null, useO ? r.raw : null);
+        syncUI();
+        const parts = [];
+        if (useB) parts.push('BPM ' + fmtB(r.bpm));
+        if (useO) parts.push('offset ' + r.raw);
+        if (parts.length) toast(parts.join(' / ') + ' を入れました');
+      } },
+    ]);
   }
 
   // ------------------------------------------------------------ テストプレイ

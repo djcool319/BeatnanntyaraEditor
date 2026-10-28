@@ -968,6 +968,18 @@
       this.toast('曲線に作り直しました (' + out.length + ' 本。判定点が変わります。Ctrl+Z で戻せます)');
     }
 
+    /// 自動検出の結果を入れる (iPad 版 applyTempoDetect と同じ)。bpm / offset のどちらかだけでもよい
+    applyTempo(bpm, offsetRaw) {
+      if (bpm === null && offsetRaw === null) return;
+      this.pushUndo();
+      if (bpm !== null) {
+        if (!this.chart.notes.length || this.chart.times.length <= 1) this.chart.times = [{ beat: Beat.zero, bpm }];
+        else { this.chart.times.sort((a, b) => Beat.cmp(a.beat, b.beat)); this.chart.times[0].bpm = bpm; }
+      }
+      if (offsetRaw !== null) this.chart.bx.offset = offsetRaw;
+      this.changed();
+    }
+
     // ------------------------------------------------------------ BPM / ソフラン / 曲の情報
     setMeta(key, value) {
       if (this.chart.bx[key] === value) return;
