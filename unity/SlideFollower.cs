@@ -112,12 +112,17 @@ public class SlideFollower : MonoBehaviour
 
         // ★帯の太さは、LineRenderer が実際に描いていた太さ = Width のカーブの値 × Width Multiplier (世界の長さ)
         //   (startWidth だけだと、カーブの値 (1 など) が返ってきて、とても太くなることがある)
+        //   ★LineRenderer の太さには、その GameObject の大きさ(Scale)も掛かっていた。
+        //     プレハブの Width が 2.5 でも、Scale が小さいので実際は細く描かれていた → メッシュでも同じだけ掛ける
         float curveW = (line.widthCurve != null && line.widthCurve.length > 0) ? line.widthCurve.Evaluate(0f) : 1f;
-        _halfWidth = Mathf.Max(0.0001f, curveW * line.widthMultiplier * 0.5f * bandWidthScale);
+        Vector3 ls = line.transform.lossyScale;
+        float lineScale = Mathf.Abs(ls.x) > 1e-6f ? Mathf.Abs(ls.x) : 1f;
+        _halfWidth = Mathf.Max(0.0001f, curveW * line.widthMultiplier * lineScale * 0.5f * bandWidthScale);
         if (!_loggedWidth)
         {
             _loggedWidth = true;   // 確認用 (1 回だけ)。太さがおかしいときは、この値を教えてください
             Debug.Log("SlideFollower 帯の太さ: curve=" + curveW + " multiplier=" + line.widthMultiplier + " startWidth=" + line.startWidth
+                      + " scale=" + ls
                       + " → 帯の幅=" + (_halfWidth * 2f) + " / レーン1つの幅=" + _lineBase.MultiplyVector(new Vector3(0.112333333f, 0f, 0f)).magnitude);
         }
 

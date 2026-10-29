@@ -777,3 +777,4 @@
 - （2026-10-27）PC 版に歌詞ツール（L）。iPad 版 lyricsTap / commitLyric / deleteLyric と同じ（始点 → 終点 → 文字を入れる。区間の中で変える・消す）。入力欄の Enter は日本語の変換中は決定にしない
 - （2026-10-28）PC 版に BPM・offset の自動検出（renderer/js/tempo.js = BeatrixTempoDetect.swift の移植。Web Worker で計算、使えなければ画面側で）。ノーツが無い譜面に曲を読むと自動で開く。offset の ±10ms ボタンも
 - （2026-10-29）unity/SlideFollower.cs: 帯を LineRenderer から「横に ±太さ」のメッシュ（子オブジェクト RibbonMesh）に変更。ソフラン 0 の区間で LineRenderer が細く・ギザギザになっていたため（実機の画面収録で確認）。エディタ側の変更はなし
+- （2026-10-29）SlideFollower の帯の太さ: LineRenderer の太さには GameObject の Scale（lossyScale.x）も掛かっていた（プレハブの Width 2.5 × 小さい Scale）。メッシュでも curve × widthMultiplier × lossyScale.x にした（ユーザーが直した版をリポジトリに入れた）
