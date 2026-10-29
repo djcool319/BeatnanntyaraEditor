@@ -80,6 +80,9 @@ public class SlideFollower : MonoBehaviour
     private Vector3[] _normals;
     private int[] _tris;
     private float _halfWidth = 0.014f;  // 帯の太さの半分 (世界の長さ)
+    // ★帯の太さの倍率 (1 = LineRenderer の Width と同じ)。太すぎ / 細すぎのときはここで合わせる
+    [SerializeField] private float bandWidthScale = 1f;
+    private static bool _loggedWidth = false;
 
     // 帯の点を置く(今までと同じ座標を渡せばよい)
     void SetLinePoint(int i, Vector3 p)
@@ -107,8 +110,16 @@ public class SlideFollower : MonoBehaviour
         _lineBase = line.useWorldSpace ? Matrix4x4.identity : line.transform.localToWorldMatrix;
         _snapBase = transform.localToWorldMatrix; // 光は今まで「この親から見た座標」で置いていた
 
-        // ★帯の太さは LineRenderer の Width (Inspector の値。世界の長さ)
-        _halfWidth = Mathf.Max(0.0001f, line.startWidth * 0.5f);
+        // ★帯の太さは、LineRenderer が実際に描いていた太さ = Width のカーブの値 × Width Multiplier (世界の長さ)
+        //   (startWidth だけだと、カーブの値 (1 など) が返ってきて、とても太くなることがある)
+        float curveW = (line.widthCurve != null && line.widthCurve.length > 0) ? line.widthCurve.Evaluate(0f) : 1f;
+        _halfWidth = Mathf.Max(0.0001f, curveW * line.widthMultiplier * 0.5f * bandWidthScale);
+        if (!_loggedWidth)
+        {
+            _loggedWidth = true;   // 確認用 (1 回だけ)。太さがおかしいときは、この値を教えてください
+            Debug.Log("SlideFollower 帯の太さ: curve=" + curveW + " multiplier=" + line.widthMultiplier + " startWidth=" + line.startWidth
+                      + " → 帯の幅=" + (_halfWidth * 2f) + " / レーン1つの幅=" + _lineBase.MultiplyVector(new Vector3(0.112333333f, 0f, 0f)).magnitude);
+        }
 
         _material = line.material;
         _material.color = idleColor;
