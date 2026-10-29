@@ -776,3 +776,4 @@
 - （2026-10-27）JSON に "subtitle"（選曲画面でアーティスト名と交互に出す (Game Edit) / -short ver.- など）。キーの順番は artist のすぐ後ろ（Swift / JS の topOrder 両方）。空なら書き出さない。iPad の Information と PC の「曲の情報」で入力（ChartData.bxSubtitle）
 - （2026-10-27）PC 版に歌詞ツール（L）。iPad 版 lyricsTap / commitLyric / deleteLyric と同じ（始点 → 終点 → 文字を入れる。区間の中で変える・消す）。入力欄の Enter は日本語の変換中は決定にしない
 - （2026-10-28）PC 版に BPM・offset の自動検出（renderer/js/tempo.js = BeatrixTempoDetect.swift の移植。Web Worker で計算、使えなければ画面側で）。ノーツが無い譜面に曲を読むと自動で開く。offset の ±10ms ボタンも
+- （2026-10-29）unity/SlideFollower.cs: 帯を LineRenderer から「横に ±太さ」のメッシュ（子オブジェクト RibbonMesh）に変更。ソフラン 0 の区間で LineRenderer が細く・ギザギザになっていたため（実機の画面収録で確認）。エディタ側の変更はなし
