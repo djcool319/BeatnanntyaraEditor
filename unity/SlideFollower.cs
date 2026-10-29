@@ -1,14 +1,6 @@
 using UnityEngine;
 using UnityEngine.Playables;
 
-// ★2026-10-29: 帯の描き方を LineRenderer から「横に ±太さ」のメッシュに変えた (エディタのテストプレイと同じ見た目)
-//   LineRenderer は線の向きに直角に太さを付けるので、ソフランで速さ 0 の区間 (奥行きが進まず横にだけ動く所) があると、
-//   線が真横を向いて奥行き方向にしか太さが付かず、帯がとても細く・ギザギザに見えていた。
-//   今は、どの点でも「横 (x) に ±太さの半分」の 2 頂点を置いて、となりの点と四角でつなぐだけ (エディタの Renderers / BeatrixPlayView と同じ)。
-//   角で頂点を斜めにずらさないので、前に試した「直角の太さ」のメッシュで出た大きな三角形も出ない。
-//   ・LineRenderer はそのまま残して、マテリアル (色) と太さ (Width) を読むためだけに使う (LineRenderer 自体は描かない)
-//   ・帯は子の GameObject「RibbonMesh」(MeshFilter + MeshRenderer) で描く。自動で作るので、プレハブを変える必要はない
-//   ・判定・SnapIndicator・曲線 (curve)・ease・ソフラン・出現/消えるは今までと同じ
 public class SlideFollower : MonoBehaviour
 {
     public PlayableDirector director;
@@ -20,9 +12,11 @@ public class SlideFollower : MonoBehaviour
     // ★ソフラン：このスライドだけの速さの倍率(speeds_each)。指定が無ければ1
     public float eachSpeed = 1f;
 
-    // ★出現・消える：見える時間(秒)。この間だけ帯と光を表示する(判定には関係ない)
-    public float showTime = float.NegativeInfinity;
-    public float hideTime = float.PositiveInfinity;
+    // ★自動ポーズ用：この区間に付いている、まだ判定されていない判定点の数(NotesGenerate が数えて、keyjudge が判定したら減らす)
+    [HideInInspector] public int remainingJudge = 0;
+
+    // ★出現・消える：見える / 見えないの切り替え(何回でも)。null = いつも見える(判定には関係ない)
+    public NoteVis vis;
 
     // ★ソフラン：この区間の途中でソフランが変わる時刻(帯をそこで折る)
     private readonly System.Collections.Generic.List<float> _cutTimes = new System.Collections.Generic.List<float>();
@@ -31,7 +25,6 @@ public class SlideFollower : MonoBehaviour
 
     // ★曲線スライド(curve)：同じスライドの全セグメントで共有する曲線。null なら今まで通りまっすぐ(見た目だけ。判定は変えない)
     [HideInInspector] public SlideCurve curve;
-
     // ★区間の曲がり方(ease)：0 = まっすぐ / 1 = Ease In(はじめゆっくり→あと速く) / 2 = Ease Out(はじめ速く→あとゆっくり)
     //   0 以外なら curve より優先(見た目だけ。判定は変えない)
     [HideInInspector] public int ease = 0;
@@ -49,20 +42,54 @@ public class SlideFollower : MonoBehaviour
     private Color activeColor = new Color(0.362f, 0.436f, 0.760f, 0.9f);
 
     private Material _material;
-    private bool _initialized = false;
 
-    // ★帯のメッシュ (横に ±太さ)
+    // ★判定ラインの光(SnapIndicator)の奥行きの微調整。エフェクトの位置(keyjudge の effectZ)を動かしたら、ここも同じだけ動かす
+    //   今：エフェクトを +0.02(判定バー -9.83 → -9.81)、そのあと -0.005 したので、合計 +0.015
+    private const float snapZShift = 0.0135f; // ★0.015 から -0.0015
+
+    // =====================================================================
+    // ★平らな帯：スライドの帯を、ホールドの帯と同じように「レーンの上に平らに寝かせた帯」で描く
+    //   (前は LineRenderer の Alignment = View で、帯がカメラの方に起き上がっていたのを、平らに寝かせた)
+    //
+    // ★2026-10-29：平らな帯を、LineRenderer ではなく「横に ±太さ」のメッシュで描くようにした (エディタのテストプレイと同じ見た目)
+    //   LineRenderer (TransformZ) は、平らに寝かせても「線の向きに直角」に太さを付けるので、
+    //   ソフランで速さ 0 の区間 (奥へ進まず横にだけ動く所) で線が真横を向くと、太さが奥行き方向にしか付かず、帯がとても細くなっていた。
+    //   中継点ごとに線の向きが縦 ⇔ 横に変わると、角で太さの向きが斜めにねじれて、帯全体が細く・ギザギザに見えていた。
+    //   今は、どの点でも「横 (レーンの左右) に ±太さの半分」の 2 頂点を置いて、となりの点と四角でつなぐだけ。
+    //   ・太さは LineRenderer の Width、色はそのマテリアル。LineRenderer 自体は描かない (帯は子の「RibbonMesh」で描く。自動で作る)
+    //   ・帯の点の座標・SnapIndicator・描く順番 (sortingOrder)・出現/消える・自動ポーズの処理は今までと同じ
+    //   ・奥へ進まない区間 (速さ 0) の帯は、高さ 0 になって見えない (エディタと同じ)
+    // =====================================================================
+    private bool flatBand = true;
+
+    // ★帯の描く順番(小さいほど先 = 下)。ノーツは 0、レーンの床は DrawFirst で -10
+    public const int BandOrderIdle = -2;   // 押していない帯
+    public const int BandOrderActive = -1; // 押している帯(押していない帯より上)
+    // ★帯が見えなくなった(裏返しになった)ときは true にする
+    private bool flatBandFlip = false;
+
+    private Matrix4x4 _lineBase = Matrix4x4.identity; // 帯の点の座標を、世界の座標にするための変換(今までの座標の意味を変えないため)
+    private Matrix4x4 _snapBase = Matrix4x4.identity; // 光(SnapIndicator)の座標を、世界の座標にするための変換
+
+    // ★帯のメッシュ
     private Transform _ribbon;
     private MeshRenderer _ribbonRenderer;
     private Mesh _mesh;
+    private Vector3[] _points;          // 帯の中心の点 (今まで LineRenderer に渡していたのと同じ座標)
     private Vector3[] _verts;
     private Vector3[] _normals;
     private int[] _tris;
-    private Vector3[] _points;          // 帯の中心の点 (LineRenderer に入れていたのと同じ座標)
-    private float _halfWidth = 0.014f;
+    private float _halfWidth = 0.014f;  // 帯の太さの半分 (世界の長さ)
+
+    // 帯の点を置く(今までと同じ座標を渡せばよい)
+    void SetLinePoint(int i, Vector3 p)
+    {
+        _points[i] = p;
+    }
+    private bool _initialized = false;
 
     private float lastHeldRealTime = -999f; // ★追加：最後に押下判定が出たリアルタイム
-    private const float ReleaseGraceSeconds = 0.2f; // ★追加：離してから何秒activeを維持するか
+    private const float ReleaseGraceSeconds = 0.3f; // ★追加：離してから何秒activeを維持するか
 
     [Range(0f, 1f)] private float indicatorSpreadFactor = 0.955f; // ★追加：1で今と同じ、小さいほど中央寄りに縮む
     [Range(1f, 4f)] private float indicatorSpreadCurve = 4f; // ★追加：大きいほど中心付近の影響を抑え、端だけに効かせる
@@ -76,34 +103,37 @@ public class SlideFollower : MonoBehaviour
         if (_initialized) return;
         if (line == null) return;
 
-        // ★マテリアルは LineRenderer に付いているものを使う (色はこのマテリアルの color を変えて切り替える)
+        // ★今までの座標の意味を覚える (LineRenderer の点の座標 → 世界の座標)。line の向きはもう変えない
+        _lineBase = line.useWorldSpace ? Matrix4x4.identity : line.transform.localToWorldMatrix;
+        _snapBase = transform.localToWorldMatrix; // 光は今まで「この親から見た座標」で置いていた
+
+        // ★帯の太さは LineRenderer の Width (Inspector の値。世界の長さ)
+        _halfWidth = Mathf.Max(0.0001f, line.startWidth * 0.5f);
+
         _material = line.material;
         _material.color = idleColor;
-
-        // ★太さは LineRenderer の Width (Inspector の値) をそのまま使う
-        _halfWidth = Mathf.Max(0.0001f, line.startWidth * 0.5f);
 
         // ★LineRenderer 自体は描かない (帯は下のメッシュで描く)
         line.enabled = false;
 
-        // ★帯のメッシュ用の子オブジェクトを作る
+        // ★帯のメッシュ用の子オブジェクトを作る (頂点は毎フレーム、世界の座標からこの子の座標に直して入れる)
         var go = new GameObject("RibbonMesh");
         go.layer = line.gameObject.layer;
         _ribbon = go.transform;
-        _ribbon.SetParent(line.transform, false);
+        _ribbon.SetParent(transform, false);
         _ribbon.localPosition = Vector3.zero;
         _ribbon.localRotation = Quaternion.identity;
         _ribbon.localScale = Vector3.one;
         var mf = go.AddComponent<MeshFilter>();
         _ribbonRenderer = go.AddComponent<MeshRenderer>();
         _ribbonRenderer.sharedMaterial = _material;
-        // ホールド(Bar)・前の LineRenderer と同じ光の当たり方
+        // ★色合わせ：ホールド(Bar)と同じ光の当たり方 (Light Probes / Reflection Probes = Blend Probes)
         _ribbonRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.BlendProbes;
         _ribbonRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.BlendProbes;
         _ribbonRenderer.shadowCastingMode = line.shadowCastingMode;
         _ribbonRenderer.receiveShadows = line.receiveShadows;
         _ribbonRenderer.sortingLayerID = line.sortingLayerID;
-        _ribbonRenderer.sortingOrder = line.sortingOrder;
+        _ribbonRenderer.sortingOrder = BandOrderIdle;
         _mesh = new Mesh();
         _mesh.name = "SlideRibbon";
         _mesh.MarkDynamic();
@@ -165,19 +195,28 @@ public class SlideFollower : MonoBehaviour
             ? director.time
             : ChartClock.Instance.Time;
 
-        float zA = ZAt(timeA, now);
+        // ★自動ポーズで時刻を戻したとき：スライドが「最後まで全部」流し終わっていたら、そのスライドは出さない(残骸が流れないように)
+        //   途中まで流れていたスライドは、切らずに今まで通り全部描く(途中で切ると、帯が浮いたように途切れて見えるので)
+        double played = ChartClock.Instance != null ? ChartClock.Instance.PlayedUntil : double.NegativeInfinity;
+        bool alreadyDone = played >= ChainEndTime() && ChainRemaining() <= 0; // ★判定点がまだ残っていたら消さない
+        bool cut = false;
+        float cutT = timeA;
+
+        float zA = ZAt(cutT, now);
         float zB = ZAt(timeB, now);
 
-        // ★帯の中心の点 (前に LineRenderer に入れていたのと同じ座標)
+        // 帯の点 (今まで LineRenderer に渡していたのと同じ座標)
         // ★ソフラン：途中でソフランが変わるときは、その時刻の位置にも点を置く(無ければ今まで通り2点)
         // ★曲線スライド：曲線の細かい点も置く。横の位置は曲線から(見た目だけ)
         int last = _midTimes.Count + 1;
-        _points[0] = new Vector3(_curveSeg >= 0 ? DrawX(timeA) : BlockToX(laneA), 0.69f, zA);
+        float xA = cut ? DrawX(cutT) : (_curveSeg >= 0 ? DrawX(timeA) : BlockToX(laneA));
+        SetLinePoint(0, new Vector3(xA, 0.69f, zA));
         for (int i = 0; i < _midTimes.Count; i++)
         {
-            _points[i + 1] = new Vector3(DrawX(_midTimes[i]), 0.69f, ZAt(_midTimes[i], now));
+            float mt = cut ? Mathf.Max(_midTimes[i], cutT) : _midTimes[i]; // 流し終わった所の点は、切った所に寄せる
+            SetLinePoint(i + 1, new Vector3(DrawX(mt), 0.69f, ZAt(mt, now)));
         }
-        _points[last] = new Vector3(_curveSeg >= 0 ? DrawX(timeB) : BlockToX(laneB), 0.69f, zB);
+        SetLinePoint(last, new Vector3(_curveSeg >= 0 ? DrawX(timeB) : BlockToX(laneB), 0.69f, zB));
         UpdateRibbonMesh();
 
         bool withinWindow = (float)now >= timeA && (float)now <= timeB;
@@ -209,8 +248,14 @@ public class SlideFollower : MonoBehaviour
 
         _material.color = chainActive ? activeColor : idleColor;
 
+        // ★重なったスライドの色対策：押している(光っている)帯を、押していない帯より必ず上に描く
+        //   (重なった所が、押している色と押していない色でまだらにならないように)
+        //   どっちもノーツ(0)より下なので、帯の上のワイプ・始点は隠れない。※レーンの床は DrawFirst(-10)でこれより下にしておく
+        int order = chainActive ? BandOrderActive : BandOrderIdle;
+        if (_ribbonRenderer.sortingOrder != order) _ribbonRenderer.sortingOrder = order;
+
         // ★出現・消える：見えない間は、帯も判定ラインの光も出さない
-        bool visible = ChartScroll.IsVisible(showTime, hideTime, now);
+        bool visible = NoteVis.Visible(vis, now) && !alreadyDone; // ★流し終わっていた区間は出さない
         if (_ribbonRenderer.enabled != visible) _ribbonRenderer.enabled = visible;
         if (!visible) selfActive = false;
 
@@ -253,7 +298,9 @@ public class SlideFollower : MonoBehaviour
                     }
                 }
 
-                snapIndicator.transform.localPosition = new Vector3(x, 0.71f, z - 0.06f);
+                Vector3 snapLocal = new Vector3(x, 0.71f, z - 0.06f + snapZShift);
+                if (flatBand) snapIndicator.transform.position = _snapBase.MultiplyPoint3x4(snapLocal); // 帯を回しても、光の場所は今まで通り
+                else snapIndicator.transform.localPosition = snapLocal;
                 snapIndicator.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
                 snapIndicator.transform.localScale = new Vector3(0.028f, 0.015f, 0.005f);
             }
@@ -265,36 +312,36 @@ public class SlideFollower : MonoBehaviour
         }
     }
 
-    // ★帯のメッシュを作り直す: どの点でも横 (x) に ±太さの半分の 2 頂点。となりの点と四角 (三角形 2 つ) でつなぐ。
-    //   奥行きが進まない区間 (ソフランで速さ 0) は高さ 0 の四角になって見えない (エディタと同じ)。
-    //   四角の向き (表 / 裏) は、奥行きが進む向きに合わせて毎フレーム決める (裏向きで消えないように)
+    // ★帯のメッシュを作り直す
+    //   どの点でも、横 (点の座標の x 方向 = レーンの左右) に ±太さの半分の 2 頂点を置き、となりの点と四角 (三角形 2 つ) でつなぐ。
+    //   角で頂点を斜めにずらさないので、帯が細くなったり、大きな三角形が出たりしない
     void UpdateRibbonMesh()
     {
         int count = _points.Length;
-        bool world = line.useWorldSpace;
+        Matrix4x4 toRibbon = _ribbon.worldToLocalMatrix;
+        // 横の向きと上の向き (世界の座標)。点の座標の x 方向 / y 方向
+        Vector3 side = _lineBase.MultiplyVector(Vector3.right).normalized * _halfWidth;
+        Vector3 up = _lineBase.MultiplyVector(Vector3.up).normalized;
+        if (flatBandFlip) up = -up;
+        Vector3 upLocal = toRibbon.MultiplyVector(up).normalized;
+
         for (int i = 0; i < count; i++)
         {
-            Vector3 p = _points[i];
-            Vector3 l = new Vector3(p.x - _halfWidth, p.y, p.z);
-            Vector3 r = new Vector3(p.x + _halfWidth, p.y, p.z);
-            if (world)
-            {
-                // LineRenderer がワールド座標の点を使っていたときは、子オブジェクトの座標に直す
-                l = _ribbon.InverseTransformPoint(l);
-                r = _ribbon.InverseTransformPoint(r);
-            }
-            _verts[i * 2] = l;
-            _verts[i * 2 + 1] = r;
-            _normals[i * 2] = Vector3.up;
-            _normals[i * 2 + 1] = Vector3.up;
+            Vector3 c = _lineBase.MultiplyPoint3x4(_points[i]);
+            _verts[i * 2] = toRibbon.MultiplyPoint3x4(c - side);
+            _verts[i * 2 + 1] = toRibbon.MultiplyPoint3x4(c + side);
+            _normals[i * 2] = upLocal;
+            _normals[i * 2 + 1] = upLocal;
         }
         for (int k = 0; k < count - 1; k++)
         {
             int l0 = k * 2, r0 = k * 2 + 1, l1 = k * 2 + 2, r1 = k * 2 + 3;
             int t = k * 6;
-            if (_points[k + 1].z >= _points[k].z)
+            // 面の表が上 (カメラのある側) を向くように、三角形の頂点の順番を決める (奥へ進む / 手前に戻る のどちらでも)
+            Vector3 n = Vector3.Cross(_verts[l1] - _verts[l0], _verts[r1] - _verts[l0]);
+            bool keep = Vector3.Dot(n, upLocal) >= 0f;
+            if (keep)
             {
-                // 奥へ進む: 上から見て時計回り
                 _tris[t] = l0; _tris[t + 1] = l1; _tris[t + 2] = r1;
                 _tris[t + 3] = l0; _tris[t + 4] = r1; _tris[t + 5] = r0;
             }
@@ -313,6 +360,25 @@ public class SlideFollower : MonoBehaviour
     void OnDestroy()
     {
         if (_mesh != null) Destroy(_mesh);
+    }
+
+    // ★このスライド(区間ぜんぶ)で、まだ判定されていない判定点の数
+    int ChainRemaining()
+    {
+        if (chainMembers == null) return remainingJudge;
+        int n = 0;
+        foreach (var m in chainMembers) if (m != null) n += m.remainingJudge;
+        return n;
+    }
+
+    // ★このスライド(同じスライドの区間ぜんぶ)の最後の時刻
+    float ChainEndTime()
+    {
+        float end = timeB;
+        if (chainMembers != null)
+            foreach (var m in chainMembers)
+                if (m != null && m.timeB > end) end = m.timeB;
+        return end;
     }
 
     // ★追加：他セグメントから呼ばれる。自分の区間が「今押されてる状態」かどうかだけ返す
