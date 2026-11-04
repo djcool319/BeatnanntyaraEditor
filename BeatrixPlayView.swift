@@ -69,6 +69,12 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let floorLayer = CAShapeLayer()
     private let partFillLayer = CAShapeLayer()
     private let partEdgeLayer = CAShapeLayer()
+    private let partStreakLayer = CAShapeLayer()   // part が始まる / 終わるときの、レールが寄ってくる筋
+    private let judgeBandLayer = CAShapeLayer()    // 判定ラインの上の、半透明の紫の帯 (本家の判定枠)
+    private let flashLayer = CALayer()             // 赤ノーツを取ったときに、画面全体が少し光る
+    /// part のレールの出方 (0 = 出ていない / 1 = 出ている)。part に入る / 出るとき、0.25 秒かけて変わる
+    private var partBlend: Double = 0
+    private var partBlendAt: CFTimeInterval = 0
     private let beatLayer = CAShapeLayer()
     private let edgeLayer = CAShapeLayer()
     private let dividerLayer = CAShapeLayer()
@@ -169,11 +175,13 @@ final class BeatrixGameView: UIView, GameSessionView {
         // レーン
         add(floorLayer, fill: UIColor(red: 0.055, green: 0.055, blue: 0.065, alpha: 0.93))
         add(partFillLayer, fill: UIColor(white: 1, alpha: 0.05))
-        add(partEdgeLayer, fill: UIColor(white: 0.93, alpha: 1))
+        add(partEdgeLayer, fill: UIColor(red: 0.78, green: 0.78, blue: 0.80, alpha: 1))      // part 中のレール (本家: 太い明るい灰色)
+        add(partStreakLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.8), width: 1.5)
         add(beatLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.13), width: 1.4)
         add(edgeLayer, fill: nil, stroke: UIColor(white: 0.88, alpha: 1), width: 2.5)
         add(dividerLayer, fill: nil, stroke: UIColor(white: 1, alpha: 0.3), width: 1.4)
-        add(zoneLayer, fill: UIColor(white: 1, alpha: 0.06))                                         // 押しているレーンは少し明るい灰色
+        add(zoneLayer, fill: UIColor(white: 1, alpha: 0.06))
+        add(judgeBandLayer, fill: UIColor(red: 0.62, green: 0.12, blue: 0.66, alpha: 0.38))     // 判定枠 (ノーツより下)                                         // 押しているレーンは少し明るい灰色
         // ホールド / スライドの帯 (本家: くすんだ青紫。押さえている間は明るく)
         add(holdIdleLayer, fill: UIColor(red: 0.36, green: 0.42, blue: 0.74, alpha: 0.9))
         add(holdActiveLayer, fill: UIColor(red: 0.47, green: 0.58, blue: 1.0, alpha: 1))
@@ -191,9 +199,13 @@ final class BeatrixGameView: UIView, GameSessionView {
         add(redLayer, fill: UIColor(red: 0.93, green: 0.2, blue: 0.27, alpha: 1))
         add(wipeShadow, fill: UIColor(red: 0.72, green: 0.68, blue: 0.12, alpha: 1))
         add(wipeLayer, fill: UIColor(red: 0.95, green: 0.93, blue: 0.24, alpha: 1))
-        add(judgeLayer, fill: UIColor(red: 0.93, green: 0.07, blue: 0.93, alpha: 1))
+        add(judgeLayer, fill: UIColor(red: 0.78, green: 0.12, blue: 0.82, alpha: 1))
         effectHost.actions = ["sublayers": NSNull()]
         layer.addSublayer(effectHost)          // タッチエフェクト (判定ラインより上に重ねる)
+        flashLayer.backgroundColor = UIColor.white.cgColor
+        flashLayer.opacity = 0
+        flashLayer.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
+        layer.addSublayer(flashLayer)
         // 左上の帯 (SCORE / 曲名 / 難易度) と、到達可能のゲージ
         for l in [scoreBar, titlePanel, diffTag, rankDiamond] {
             l.actions = ["path": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull()]
@@ -429,12 +441,31 @@ final class BeatrixGameView: UIView, GameSessionView {
             let l = radial(r * 2, r * 2, [UIColor(white: 1, alpha: 0.7), UIColor(white: 1, alpha: 0)], [0, 1])
             fade(l, scaleFrom: 0.9, to: 1.05, duration: 0.2)
         } else {
-            // タップ: やわらかい光の玉だけ (シンプルに)
+            // タップ: やわらかい光の玉
             let R = third * 0.3
             let glow = radial(R * 2, R * 2,
                               [UIColor(white: 1, alpha: 0.8), color.withAlphaComponent(0.55), color.withAlphaComponent(0)],
                               [0, 0.4, 1])
             fade(glow, scaleFrom: 0.85, to: 1.1, duration: judge == .miss ? 0.18 : 0.25)
+            // 本家と同じく、光の玉のまわりに輪 (取れたときだけ)
+            if judge != .miss {
+                let ring = CAShapeLayer()
+                let rr = third * 0.42
+                ring.path = CGPath(ellipseIn: CGRect(x: -rr, y: -rr, width: rr * 2, height: rr * 2), transform: nil)
+                ring.fillColor = nil
+                ring.strokeColor = color.cgColor
+                ring.lineWidth = max(1.5, third * 0.022)
+                ring.shadowColor = color.cgColor
+                ring.shadowOpacity = 0.9
+                ring.shadowRadius = 4
+                ring.shadowOffset = .zero
+                ring.position = center
+                effectHost.addSublayer(ring)
+                made.append(ring)
+                fade(ring, scaleFrom: 0.8, to: 1.08, duration: 0.35)
+            }
+            // 赤ノーツ: 画面全体が少し白く光る (本家と同じ)
+            if type == 3 && judge != .miss { flashScreen() }
         }
         CATransaction.commit()
 
@@ -445,6 +476,17 @@ final class BeatrixGameView: UIView, GameSessionView {
             for l in made { l.removeFromSuperlayer() }
             CATransaction.commit()
         }
+    }
+
+    /// 画面全体を少し白く光らせて、すぐ戻す (赤ノーツを取ったとき)
+    private func flashScreen() {
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = 0.16
+        a.toValue = 0
+        a.duration = 0.3
+        a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        flashLayer.opacity = 0
+        flashLayer.add(a, forKey: "flash")
     }
 
     /// 大きくなりながら消える
@@ -468,7 +510,7 @@ final class BeatrixGameView: UIView, GameSessionView {
         super.layoutSubviews()
         let w = bounds.width
         let h = bounds.height
-        for l in [bgLines, bgRing, floorLayer, partFillLayer, partEdgeLayer, beatLayer, edgeLayer, dividerLayer, zoneLayer,
+        for l in [bgLines, bgRing, floorLayer, partFillLayer, partEdgeLayer, partStreakLayer, judgeBandLayer, beatLayer, edgeLayer, dividerLayer, zoneLayer,
                   holdIdleLayer, holdActiveLayer, slideIdleLayer, slideActiveLayer, simLayer,
                   tapShadow, tapLayer, headShadow, headLayer, multiShadow, multiLayer, redShadow, redLayer, wipeShadow, wipeLayer, judgeLayer,
                   scoreBar, titlePanel, diffTag, rankDiamond] {
@@ -476,9 +518,10 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
         bgGradient.frame = bounds
         effectHost.frame = bounds
+        flashLayer.frame = bounds
 
         // 左上の帯。大きさは本家の画面収録 (1920 × 1440) から測った値を、画面の高さに合わせて縮めたもの
-        let u = h / 1440
+        let u = Self.hudUnit(bounds.size)
         func poly(_ pts: [CGPoint]) -> CGPath {
             let p = CGMutablePath()
             p.addLines(between: pts)
@@ -775,8 +818,23 @@ final class BeatrixGameView: UIView, GameSessionView {
         let w = bounds.width
         let h = bounds.height
         let judgeY = h * 0.80
-        let halfJ = min(w * 0.4625, h * 0.62)
+        // レーンの幅: iPad (4:3) は本家の画面収録 (1920 × 1440) の値。iPhone (横長) は本家の iPhone の画面収録 (2532 × 1170) の値で、
+        // 判定ラインでのレーンの幅が画面の高さの約 1.58 倍 (横の 73%)。そのあいだの比の画面は、比に合わせてなめらかに変える
+        let t = Self.wideness(w, h)
+        let halfJ = min(w * 0.47, h * (0.62 + (0.79 - 0.62) * t))
         return Geo(midX: w / 2, judgeY: judgeY, vanishY: judgeY - h * 1.24, halfJ: halfJ)
+    }
+
+    /// 画面がどれだけ横長か (0 = iPad の 4:3 / 1 = iPhone の 19.5:9 くらい)
+    static func wideness(_ w: CGFloat, _ h: CGFloat) -> CGFloat {
+        guard h > 0 else { return 0 }
+        return min(1, max(0, (w / h - 4.0 / 3.0) / (2.165 - 4.0 / 3.0)))
+    }
+
+    /// 左上の帯・ゲージ・II などの大きさの単位。iPad は画面の高さ / 1440 (本家の画面収録の大きさ)。
+    /// iPhone は本家の iPhone と同じく、高さに対して約 1.35 倍
+    static func hudUnit(_ size: CGSize) -> CGFloat {
+        size.height / 1440 * (1 + 0.35 * wideness(size.width, size.height))
     }
 
     private var depthSpeed: Double { baseDepthSpeed * min(max(session.speed, 0.5), 2.0) }
@@ -865,9 +923,13 @@ final class BeatrixGameView: UIView, GameSessionView {
             div.addLine(to: CGPoint(x: g.x(f, r.top), y: g.y(r.top)))
         }
         dividerLayer.path = div
+        // 判定ライン (本家: 濃いマゼンタの細い線) と、その上の半透明の紫の帯 (判定枠)
         let judge = CGMutablePath()
-        addQuad(judge, g, f0: -0.005, f1: 1.005, d0: -0.007, d1: 0.007)
+        addQuad(judge, g, f0: -0.004, f1: 1.004, d0: -0.006, d1: 0.006)
         judgeLayer.path = judge
+        let band = CGMutablePath()
+        addQuad(band, g, f0: 0, f1: 1, d0: 0.006, d1: 0.04)
+        judgeBandLayer.path = band
     }
 
     // MARK: 毎フレームの描画
@@ -890,23 +952,40 @@ final class BeatrixGameView: UIView, GameSessionView {
         let zones: Set<Int> = session.autoPlay ? [0, 1, 2, 3] : Set(touchZones.values)
         let touchedZones = Set(touchZones.values)
 
-        // part の区間: 床を少し明るく、レーンの両端を白く光らせる
+        // part (本家と同じ): part の間は、レーンの両端の外側に太い灰色のレールが出る (レーンの奥から手前まで全部)。
+        //   part に入る / 出るときは、外側から細い筋が寄ってきてレールになる (0.25 秒)
         var inPart = false
-        let pFill = CGMutablePath()
+        for p in source.parts where viewTime >= p.start && viewTime < p.end { inPart = true }
+        let nowHost = CACurrentMediaTime()
+        let dt = partBlendAt > 0 ? min(0.1, nowHost - partBlendAt) : 0
+        partBlendAt = nowHost
+        let target: Double = inPart ? 1 : 0
+        if partBlend < target { partBlend = min(target, partBlend + dt / 0.25) } else if partBlend > target { partBlend = max(target, partBlend - dt / 0.25) }
+        let pb = partBlend * partBlend * (3 - 2 * partBlend)        // なめらかに
         let pEdge = CGMutablePath()
-        for p in source.parts {
-            if viewTime >= p.start && viewTime < p.end { inPart = true }
-            let d0 = max(depth(p.start), r.bot)
-            let d1 = min(depth(p.end), r.top)
-            if d1 <= d0 { continue }
-            addQuad(pFill, g, f0: 0, f1: 1, d0: d0, d1: d1)
-            addQuad(pEdge, g, f0: -0.012, f1: 0.0, d0: d0, d1: d1)
-            addQuad(pEdge, g, f0: 1.0, f1: 1.012, d0: d0, d1: d1)
+        let pStreak = CGMutablePath()
+        if pb > 0.001 {
+            let railW = 0.026 * pb
+            let gap = 0.004
+            addQuad(pEdge, g, f0: -gap - railW, f1: -gap, d0: r.bot, d1: r.top)
+            addQuad(pEdge, g, f0: 1 + gap, f1: 1 + gap + railW, d0: r.bot, d1: r.top)
+            if pb < 0.999 {
+                // 寄ってくる筋 (外側から、レールの位置へ)
+                for k in 1...3 {
+                    let off = gap + 0.026 + (1 - pb) * 0.05 * Double(k)
+                    for f in [-off, 1 + off] {
+                        pStreak.move(to: CGPoint(x: g.x(f, r.bot), y: g.y(r.bot)))
+                        pStreak.addLine(to: CGPoint(x: g.x(f, r.top), y: g.y(r.top)))
+                    }
+                }
+            }
         }
-        partFillLayer.path = pFill
+        partFillLayer.path = nil
         partEdgeLayer.path = pEdge
-        edgeLayer.lineWidth = inPart ? 4 : 2
-        edgeLayer.strokeColor = (inPart ? UIColor.white : UIColor(white: 0.85, alpha: 1)).cgColor
+        partStreakLayer.path = pStreak
+        partStreakLayer.opacity = Float(1 - pb)
+        edgeLayer.lineWidth = 2.5
+        edgeLayer.strokeColor = UIColor(white: inPart ? 0.95 : 0.88, alpha: 1).cgColor
 
         // 1 拍ごとの線
         let beats = CGMutablePath()
@@ -1103,7 +1182,7 @@ final class BeatrixGameView: UIView, GameSessionView {
             shownLyric = lyric
             lyricLabel.text = lyric
         }
-        let u = bounds.height / 1440
+        let u = Self.hudUnit(bounds.size)
         let score = game.score
         if score != shownScore {
             shownScore = score
@@ -1208,7 +1287,7 @@ struct BeatrixPlayScreen: View {
             if !session.paused {
                 // 右上の II (本家: 暗い四角に白い太い 2 本線。大きさは画面の高さに合わせる)
                 GeometryReader { geo in
-                    let u = geo.size.height / 1440
+                    let u = BeatrixGameView.hudUnit(geo.size)
                     Button { session.pause() } label: {
                         ZStack {
                             RoundedRectangle(cornerRadius: 10 * u)
@@ -1226,7 +1305,10 @@ struct BeatrixPlayScreen: View {
                 .ignoresSafeArea()
             }
             if session.paused {
-                PauseOverlay(session: session)
+                // ポーズ画面は、iPhone ではエディタと同じく iPad くらいの大きさで作って縮めて出す (プレイ画面は全画面のまま)
+                PhoneScaled {
+                    PauseOverlay(session: session)
+                }
             }
         }
         .statusBarHidden(true)

@@ -890,10 +890,9 @@ struct EditorView: View {
         // TEST: びーとり式のテストプレイ (BeatrixPlayView.swift)
         .fullScreenCover(item: $state.bxLaunch) { launch in
             // PAUSE で変えた offset は、テストプレイの間だけのもの (譜面には入れない)
-            // iPhone では、エディタと同じく iPad くらいの大きさで作って縮めて表示する (文字・判定の表示・ボタンの比率を iPad と同じにする)
-            PhoneScaled {
-                BeatrixPlayScreen(launch: launch) { _ in state.bxLaunch = nil }
-            }
+            // iPhone でも、本家と同じく画面いっぱいに出す (ノッチの横も使う)。レーンの幅・左上の帯の大きさは、
+            // BeatrixGameView が画面の横長さに合わせて変える。ポーズ画面だけは縮めて出す (BeatrixPlayScreen の中)
+            BeatrixPlayScreen(launch: launch) { _ in state.bxLaunch = nil }
         }
     }
 
