@@ -442,7 +442,7 @@ final class BeatrixGameView: UIView, GameSessionView {
             fade(l, scaleFrom: 0.9, to: 1.05, duration: 0.2)
         } else if type == 3 && judge != .miss {
             // 赤ノーツ (本家の動画に合わせた): 判定線の横長のピンクの光 → 白く光る芯とピンクのにじみ (2 回脈打つ)
-            //   → 小さな赤い星が散る → 判定線に小さなピンクの点が少し残る。画面全体もほんのり明るくなる
+            //   → 判定線に小さなピンクの点が少し残る。画面全体もほんのり明るくなる
             let pink = UIColor(red: 1.0, green: 0.35, blue: 0.55, alpha: 1)
             let red = UIColor(red: 1.0, green: 0.12, blue: 0.3, alpha: 1)
             let line = radial(third * 1.7, third * 0.22,
@@ -455,26 +455,6 @@ final class BeatrixGameView: UIView, GameSessionView {
                               [UIColor(white: 1, alpha: 1), UIColor(white: 1, alpha: 0.95), pink.withAlphaComponent(0.6), pink.withAlphaComponent(0)],
                               [0, 0.35, 0.65, 1])
             keyframes(core, duration: 0.34, times: [0, 0.12, 0.25, 0.4, 0.65, 1], opacity: [0.4, 1, 0.55, 1, 0.9, 0], scale: [0.4, 1, 0.85, 1, 0.75, 0.5])
-            // 赤い星 (判定線のまわりに散って、外へ流れる)
-            for _ in 0..<8 {
-                let st = CAShapeLayer()
-                st.path = Self.starPath(radius: third * CGFloat.random(in: 0.025...0.045))
-                st.fillColor = red.cgColor
-                let dx = CGFloat.random(in: -1...1) * third * 0.95
-                let dy = CGFloat.random(in: -0.4...0.15) * third
-                let p0 = CGPoint(x: center.x + dx, y: center.y + dy)
-                st.position = CGPoint(x: p0.x + dx * 0.2, y: p0.y + dy * 0.2)
-                st.transform = CATransform3DMakeRotation(CGFloat.random(in: 0...(2 * .pi)), 0, 0, 1)
-                effectHost.addSublayer(st)
-                made.append(st)
-                let mv = CABasicAnimation(keyPath: "position")
-                mv.fromValue = NSValue(cgPoint: p0)
-                mv.toValue = NSValue(cgPoint: st.position)
-                mv.duration = 0.5
-                mv.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                st.add(mv, forKey: "mv")
-                keyframes(st, duration: 0.5, times: [0, 0.08, 0.6, 1], opacity: [0, 1, 0.9, 0], scale: nil)
-            }
             // 判定線に少し残るピンクの点
             let dot = radial(third * 0.28, third * 0.2,
                              [UIColor(white: 1, alpha: 0.8), pink.withAlphaComponent(0.7), pink.withAlphaComponent(0)], [0, 0.35, 1])
@@ -521,19 +501,6 @@ final class BeatrixGameView: UIView, GameSessionView {
             l.transform = CATransform3DMakeScale(scale.last ?? 1, scale.last ?? 1, 1)
             l.add(sc, forKey: "sc")
         }
-    }
-
-    /// 5 つの角の星
-    static func starPath(radius r: CGFloat) -> CGPath {
-        let p = CGMutablePath()
-        for i in 0..<10 {
-            let a = -CGFloat.pi / 2 + CGFloat(i) * .pi / 5
-            let rr = i % 2 == 0 ? r : r * 0.45
-            let pt = CGPoint(x: cos(a) * rr, y: sin(a) * rr)
-            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-        }
-        p.closeSubpath()
-        return p
     }
 
     /// 大きくなりながら消える
