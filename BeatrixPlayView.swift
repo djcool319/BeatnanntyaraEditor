@@ -440,32 +440,78 @@ final class BeatrixGameView: UIView, GameSessionView {
             let r = third * 0.15
             let l = radial(r * 2, r * 2, [UIColor(white: 1, alpha: 0.7), UIColor(white: 1, alpha: 0)], [0, 1])
             fade(l, scaleFrom: 0.9, to: 1.05, duration: 0.2)
+        } else if type == 3 && judge != .miss {
+            // 赤ノーツ (本家の動画に合わせた): 判定線の横長のピンクの光 → 白く光る芯とピンクのにじみ (2 回脈打つ)
+            //   → 細い赤い輪と放射状の筋 → 小さな赤い星が散る → 判定線に小さなピンクの点が少し残る。画面全体もほんのり明るくなる
+            let pink = UIColor(red: 1.0, green: 0.35, blue: 0.55, alpha: 1)
+            let red = UIColor(red: 1.0, green: 0.12, blue: 0.3, alpha: 1)
+            let line = radial(third * 1.7, third * 0.22,
+                              [pink.withAlphaComponent(0.95), pink.withAlphaComponent(0.4), pink.withAlphaComponent(0)], [0, 0.45, 1])
+            keyframes(line, duration: 0.35, times: [0, 0.06, 0.45, 1], opacity: [0, 1, 0.8, 0], scale: [0.6, 1, 1.05, 1.1])
+            let halo = radial(third * 1.15, third * 1.15,
+                              [pink.withAlphaComponent(0.85), red.withAlphaComponent(0.35), red.withAlphaComponent(0)], [0, 0.5, 1])
+            keyframes(halo, duration: 0.42, times: [0, 0.12, 0.25, 0.4, 1], opacity: [0, 1, 0.75, 1, 0], scale: [0.5, 0.95, 0.9, 1, 0.8])
+            let core = radial(third * 0.55, third * 0.55,
+                              [UIColor(white: 1, alpha: 1), UIColor(white: 1, alpha: 0.95), pink.withAlphaComponent(0.6), pink.withAlphaComponent(0)],
+                              [0, 0.35, 0.65, 1])
+            keyframes(core, duration: 0.34, times: [0, 0.12, 0.25, 0.4, 0.65, 1], opacity: [0.4, 1, 0.55, 1, 0.9, 0], scale: [0.4, 1, 0.85, 1, 0.75, 0.5])
+            // 細い輪と放射状の筋
+            let rr = third * 0.56
+            let ring = CAShapeLayer()
+            ring.path = CGPath(ellipseIn: CGRect(x: -rr, y: -rr, width: rr * 2, height: rr * 2), transform: nil)
+            ring.fillColor = nil
+            ring.strokeColor = red.cgColor
+            ring.lineWidth = max(1.5, third * 0.018)
+            let spokes = CAShapeLayer()
+            let sp = CGMutablePath()
+            for k in 0..<28 {
+                let a = CGFloat(k) / 28 * 2 * .pi + CGFloat.random(in: -0.08...0.08)
+                let r0 = rr * CGFloat.random(in: 0.45...0.7)
+                sp.move(to: CGPoint(x: cos(a) * r0, y: sin(a) * r0))
+                sp.addLine(to: CGPoint(x: cos(a) * rr * 0.97, y: sin(a) * rr * 0.97))
+            }
+            spokes.path = sp
+            spokes.fillColor = nil
+            spokes.strokeColor = pink.withAlphaComponent(0.55).cgColor
+            spokes.lineWidth = 1
+            for l in [ring, spokes] {
+                l.position = center
+                effectHost.addSublayer(l)
+                made.append(l)
+                keyframes(l, duration: 0.42, times: [0, 0.12, 0.22, 0.6, 1], opacity: [0, 0, 1, 0.7, 0], scale: [0.8, 0.8, 0.95, 1.02, 1.06])
+            }
+            // 赤い星 (判定線のまわりに散って、外へ流れる)
+            for _ in 0..<8 {
+                let st = CAShapeLayer()
+                st.path = Self.starPath(radius: third * CGFloat.random(in: 0.025...0.045))
+                st.fillColor = red.cgColor
+                let dx = CGFloat.random(in: -1...1) * third * 0.95
+                let dy = CGFloat.random(in: -0.4...0.15) * third
+                let p0 = CGPoint(x: center.x + dx, y: center.y + dy)
+                st.position = CGPoint(x: p0.x + dx * 0.2, y: p0.y + dy * 0.2)
+                st.transform = CATransform3DMakeRotation(CGFloat.random(in: 0...(2 * .pi)), 0, 0, 1)
+                effectHost.addSublayer(st)
+                made.append(st)
+                let mv = CABasicAnimation(keyPath: "position")
+                mv.fromValue = NSValue(cgPoint: p0)
+                mv.toValue = NSValue(cgPoint: st.position)
+                mv.duration = 0.5
+                mv.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                st.add(mv, forKey: "mv")
+                keyframes(st, duration: 0.5, times: [0, 0.08, 0.6, 1], opacity: [0, 1, 0.9, 0], scale: nil)
+            }
+            // 判定線に少し残るピンクの点
+            let dot = radial(third * 0.28, third * 0.2,
+                             [UIColor(white: 1, alpha: 0.8), pink.withAlphaComponent(0.7), pink.withAlphaComponent(0)], [0, 0.35, 1])
+            keyframes(dot, duration: 0.62, times: [0, 0.3, 0.55, 1], opacity: [0, 0, 1, 0], scale: [1, 1, 0.9, 0.6])
+            flashScreen()
         } else {
-            // タップ: やわらかい光の玉
+            // タップ: やわらかい光の玉だけ (シンプルに)
             let R = third * 0.3
             let glow = radial(R * 2, R * 2,
                               [UIColor(white: 1, alpha: 0.8), color.withAlphaComponent(0.55), color.withAlphaComponent(0)],
                               [0, 0.4, 1])
             fade(glow, scaleFrom: 0.85, to: 1.1, duration: judge == .miss ? 0.18 : 0.25)
-            // 本家と同じく、光の玉のまわりに輪 (取れたときだけ)
-            if judge != .miss {
-                let ring = CAShapeLayer()
-                let rr = third * 0.42
-                ring.path = CGPath(ellipseIn: CGRect(x: -rr, y: -rr, width: rr * 2, height: rr * 2), transform: nil)
-                ring.fillColor = nil
-                ring.strokeColor = color.cgColor
-                ring.lineWidth = max(1.5, third * 0.022)
-                ring.shadowColor = color.cgColor
-                ring.shadowOpacity = 0.9
-                ring.shadowRadius = 4
-                ring.shadowOffset = .zero
-                ring.position = center
-                effectHost.addSublayer(ring)
-                made.append(ring)
-                fade(ring, scaleFrom: 0.8, to: 1.08, duration: 0.35)
-            }
-            // 赤ノーツ: 画面全体が少し白く光る (本家と同じ)
-            if type == 3 && judge != .miss { flashScreen() }
         }
         CATransaction.commit()
 
@@ -478,15 +524,41 @@ final class BeatrixGameView: UIView, GameSessionView {
         }
     }
 
-    /// 画面全体を少し白く光らせて、すぐ戻す (赤ノーツを取ったとき)
+    /// 画面全体をほんのり明るくする (赤ノーツを取ったとき。本家: 0.1 秒で明るくなって少し保ち、0.3 秒ほどで戻る)
     private func flashScreen() {
-        let a = CABasicAnimation(keyPath: "opacity")
-        a.fromValue = 0.16
-        a.toValue = 0
-        a.duration = 0.3
-        a.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        flashLayer.opacity = 0
-        flashLayer.add(a, forKey: "flash")
+        flashLayer.removeAnimation(forKey: "flash")
+        keyframes(flashLayer, duration: 0.45, times: [0, 0.22, 0.42, 1], opacity: [0, 0.075, 0.07, 0], scale: nil)
+    }
+
+    /// 不透明度 (と大きさ) をキーフレームで動かす。終わったら見えなくなる
+    private func keyframes(_ l: CALayer, duration: CFTimeInterval, times: [NSNumber], opacity: [Float], scale: [CGFloat]?) {
+        let op = CAKeyframeAnimation(keyPath: "opacity")
+        op.values = opacity
+        op.keyTimes = times
+        op.duration = duration
+        l.opacity = opacity.last ?? 0
+        l.add(op, forKey: "op")
+        if let scale {
+            let sc = CAKeyframeAnimation(keyPath: "transform.scale")
+            sc.values = scale
+            sc.duration = duration
+            sc.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            l.transform = CATransform3DMakeScale(scale.last ?? 1, scale.last ?? 1, 1)
+            l.add(sc, forKey: "sc")
+        }
+    }
+
+    /// 5 つの角の星
+    static func starPath(radius r: CGFloat) -> CGPath {
+        let p = CGMutablePath()
+        for i in 0..<10 {
+            let a = -CGFloat.pi / 2 + CGFloat(i) * .pi / 5
+            let rr = i % 2 == 0 ? r : r * 0.45
+            let pt = CGPoint(x: cos(a) * rr, y: sin(a) * rr)
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        p.closeSubpath()
+        return p
     }
 
     /// 大きくなりながら消える
@@ -952,38 +1024,37 @@ final class BeatrixGameView: UIView, GameSessionView {
         let zones: Set<Int> = session.autoPlay ? [0, 1, 2, 3] : Set(touchZones.values)
         let touchedZones = Set(touchZones.values)
 
-        // part (本家と同じ): part の間は、レーンの両端の外側に太い灰色のレールが出る (レーンの奥から手前まで全部)。
-        //   part に入る / 出るときは、外側から細い筋が寄ってきてレールになる (0.25 秒)
+        // part (本家の動画に合わせた): part の間は、レーンの両端の外側に太い灰色のレールが出る (奥から手前まで全部)。
+        //   入るとき: 端の線が細い 2 本の線に分かれて外へ広がり (レールの輪郭)、広がりきると中が灰色に埋まる。出るときはその逆 (どちらも約 0.07 秒)
         var inPart = false
         for p in source.parts where viewTime >= p.start && viewTime < p.end { inPart = true }
         let nowHost = CACurrentMediaTime()
         let dt = partBlendAt > 0 ? min(0.1, nowHost - partBlendAt) : 0
         partBlendAt = nowHost
         let target: Double = inPart ? 1 : 0
-        if partBlend < target { partBlend = min(target, partBlend + dt / 0.25) } else if partBlend > target { partBlend = max(target, partBlend - dt / 0.25) }
-        let pb = partBlend * partBlend * (3 - 2 * partBlend)        // なめらかに
+        let step = dt / 0.07
+        if partBlend < target { partBlend = min(target, partBlend + step) } else if partBlend > target { partBlend = max(target, partBlend - step) }
+        let pb = partBlend
         let pEdge = CGMutablePath()
         let pStreak = CGMutablePath()
         if pb > 0.001 {
-            let railW = 0.026 * pb
             let gap = 0.004
+            let railW = 0.026 * min(1, pb / 0.6)          // 前半で輪郭が広がる
+            let fillA = max(0, (pb - 0.6) / 0.4)          // 後半で中が埋まる
             addQuad(pEdge, g, f0: -gap - railW, f1: -gap, d0: r.bot, d1: r.top)
             addQuad(pEdge, g, f0: 1 + gap, f1: 1 + gap + railW, d0: r.bot, d1: r.top)
+            partEdgeLayer.opacity = Float(fillA)
             if pb < 0.999 {
-                // 寄ってくる筋 (外側から、レールの位置へ)
-                for k in 1...3 {
-                    let off = gap + 0.026 + (1 - pb) * 0.05 * Double(k)
-                    for f in [-off, 1 + off] {
-                        pStreak.move(to: CGPoint(x: g.x(f, r.bot), y: g.y(r.bot)))
-                        pStreak.addLine(to: CGPoint(x: g.x(f, r.top), y: g.y(r.top)))
-                    }
+                for f in [-gap, -gap - railW, 1 + gap, 1 + gap + railW] {
+                    pStreak.move(to: CGPoint(x: g.x(f, r.bot), y: g.y(r.bot)))
+                    pStreak.addLine(to: CGPoint(x: g.x(f, r.top), y: g.y(r.top)))
                 }
             }
         }
         partFillLayer.path = nil
         partEdgeLayer.path = pEdge
         partStreakLayer.path = pStreak
-        partStreakLayer.opacity = Float(1 - pb)
+        partStreakLayer.opacity = 1
         edgeLayer.lineWidth = 2.5
         edgeLayer.strokeColor = UIColor(white: inPart ? 0.95 : 0.88, alpha: 1).cgColor
 
