@@ -779,3 +779,4 @@
 - （2026-10-29）unity/SlideFollower.cs: 帯を LineRenderer から「横に ±太さ」のメッシュ（子オブジェクト RibbonMesh）に変更。ソフラン 0 の区間で LineRenderer が細く・ギザギザになっていたため（実機の画面収録で確認）。エディタ側の変更はなし
 - （2026-10-29）SlideFollower の帯の太さ: LineRenderer の太さには GameObject の Scale（lossyScale.x）も掛かっていた（プレハブの Width 2.5 × 小さい Scale）。メッシュでも curve × widthMultiplier × lossyScale.x にした（ユーザーが直した版をリポジトリに入れた）
 - （2026-11-04）iOS のテストプレイ（BeatrixPlayView）を本家の iPhone の画面収録に合わせた: iPhone では PhoneScaled をやめて全画面（ポーズ画面だけ縮める）。レーンの幅は画面の横長さで iPad の h×0.62 〜 iPhone の h×0.79 をなめらかに（wideness）、左上の帯などは hudUnit（iPhone で約 1.35 倍）。判定枠 = 判定ラインの上の半透明の紫の帯（judgeBandLayer, 奥行き 0.006〜0.04）と細い濃いマゼンタの線。part は区間を描くのをやめて、part の間ずっとレーンの外側に太い灰色のレール（0.25 秒で筋が寄ってきて出る / 消える）。赤ノーツを取ると画面全体が少し白く光る（flashLayer 0.16 → 0、0.3 秒）。タップのエフェクトに輪を足した
+- （2026-11-04）iOS の起動画面: 音源を選ぶと、その曲の EX 譜面を自動で「譜面」に入れる（RootView の ChartFinder。アプリの書類フォルダの下全部と音源と同じフォルダから、ファイル名「曲名(EX).json」か、中の name が曲名で difficulty が EX の JSON）。無ければ何もしない。2 つ以上なら ChoicePrompt で選ぶ（新しい順）

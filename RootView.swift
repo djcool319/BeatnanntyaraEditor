@@ -139,6 +139,7 @@ struct RootView: View {
                     oggName = url.lastPathComponent
                     oggURL = url
                     if ok { url.stopAccessingSecurityScopedResource() }
+                    autoPickChart(forSong: url)
                 case .bg:
                     bgData = data
                     bgName = url.lastPathComponent
@@ -150,6 +151,46 @@ struct RootView: View {
                 if ok { url.stopAccessingSecurityScopedResource() }
             }
         }
+    }
+
+    // MARK: 音源を選んだら、その曲の EX 譜面を自動で入れる
+    //   アプリの書類フォルダ (BeatrixEditor など。下のフォルダも) と、音源と同じフォルダ (読めるときだけ) から、
+    //   「曲名(EX).json」(ファイル名) か、中の name が曲名で difficulty が EX の JSON を探す。曲名は音源のファイル名 (拡張子なし)。
+    //   見つからなければ何もしない。2 つ以上あれば、どれを使うか選ぶ。
+    //   もう別の曲の譜面を選んでいたときも入れ替える (同じ曲の譜面を選んでいたときは、そのまま)
+
+    private func autoPickChart(forSong song: URL) {
+        let key = ChartFinder.songKey(song.deletingPathExtension().lastPathComponent)
+        if key.isEmpty { return }
+        if let cur = mcURL, ChartFinder.songKey(cur.deletingPathExtension().lastPathComponent) == key { return }
+        Task.detached(priority: .userInitiated) {
+            let found = ChartFinder.findEXCharts(songKey: key, near: song)
+            await MainActor.run {
+                if found.isEmpty { return }
+                if found.count == 1 {
+                    useChart(found[0], auto: true)
+                    return
+                }
+                var actions = found.map { u in
+                    ChoicePrompt.Action(title: ChartFinder.label(u)) { useChart(u, auto: true) }
+                }
+                actions.append(ChoicePrompt.Action(title: "選ばない", style: .cancel) {})
+                ChoicePrompt.show(title: "この曲の EX 譜面が \(found.count) 個あります",
+                                  message: "どれを使いますか？ (フォルダ / ファイル名 / 最後に変えた日時)", actions: actions, delay: 0.5)
+            }
+        }
+    }
+
+    /// 見つけた譜面を「譜面」に入れる (自分で選んだときと同じ)
+    private func useChart(_ url: URL, auto: Bool) {
+        guard let d = try? Data(contentsOf: url) else {
+            message = "譜面を読み込めませんでした: \(url.lastPathComponent)"
+            return
+        }
+        mcData = d
+        mcURL = url
+        mcName = url.lastPathComponent
+        message = auto ? "曲名から譜面を入れました: \(url.lastPathComponent)" : ""
     }
 
     private func openEditor() {
@@ -220,5 +261,73 @@ struct RootView: View {
         mcData = nil
         mcName = url.lastPathComponent
         openEditor()
+    }
+}
+
+/// 曲名から譜面 (JSON) を探す (RootView の「音源を選んだら EX 譜面を自動で入れる」で使う)
+enum ChartFinder {
+    /// 曲名の比べ方: 全角半角・大文字小文字・空白や記号の違いと、末尾の (EX) などは無視する
+    static func songKey(_ s: String) -> String {
+        var t = s.precomposedStringWithCompatibilityMapping.lowercased().trimmingCharacters(in: .whitespaces)
+        if let r = t.range(of: #"[(（](bs|hd|ex|in)[)）]$"#, options: .regularExpression) { t.removeSubrange(r) }
+        let drop = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "_-‐－—~〜・.,!！?？'\"’”()[]{}（）「」『』【】*:<>|/\\"))
+        return String(String.UnicodeScalarView(t.unicodeScalars.filter { !drop.contains($0) }))
+    }
+
+    /// その曲の EX 譜面を探す (アプリの書類フォルダの下全部と、音源と同じフォルダ)。同じファイルは 1 つにまとめる
+    static func findEXCharts(songKey key: String, near song: URL) -> [URL] {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var roots = [docs]
+        let parent = song.deletingLastPathComponent()
+        if !parent.standardizedFileURL.path.hasPrefix(docs.standardizedFileURL.path) { roots.append(parent) }
+        var found: [URL] = []
+        var seen = Set<String>()
+        for root in roots {
+            let access = root != docs && root.startAccessingSecurityScopedResource()
+            defer { if access { root.stopAccessingSecurityScopedResource() } }
+            guard let en = fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey],
+                                         options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
+            var count = 0
+            for case let u as URL in en {
+                count += 1
+                if count > 8000 { break }
+                if en.level > 6 { en.skipDescendants(); continue }
+                guard u.pathExtension.lowercased() == "json" else { continue }
+                let path = u.standardizedFileURL.path
+                if seen.contains(path) { continue }
+                if isEXChart(u, key: key) {
+                    seen.insert(path)
+                    found.append(u)
+                }
+            }
+        }
+        // 新しく変えたものから順に
+        return found.sorted { modified($0) > modified($1) }
+    }
+
+    private static func isEXChart(_ u: URL, key: String) -> Bool {
+        let base = u.deletingPathExtension().lastPathComponent
+        let up = base.uppercased()
+        let exName = up.hasSuffix("(EX)") || up.hasSuffix("（EX）")
+        // 1) ファイル名が「曲名(EX)」
+        if exName && songKey(base) == key { return true }
+        // 2) 中身: name が曲名で、difficulty が EX (無ければ name の (EX) / ファイル名の (EX))
+        guard let d = try? Data(contentsOf: u), d.count < 8_000_000,
+              let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any], o["notes"] != nil else { return false }
+        let info = Beatrix.splitName((o["name"] as? String) ?? "")
+        let diff = Beatrix.intValue(o["difficulty"]) ?? info.diff?.rawValue ?? (exName ? 2 : -1)
+        return diff == BeatrixDifficulty.extreme.rawValue && songKey(info.title) == key
+    }
+
+    private static func modified(_ u: URL) -> Date {
+        (try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+    }
+
+    /// 選ぶダイアログの表示: 「フォルダ / ファイル名 (日時)」
+    static func label(_ u: URL) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy/MM/dd HH:mm"
+        return u.deletingLastPathComponent().lastPathComponent + " / " + u.lastPathComponent + "  (" + f.string(from: modified(u)) + ")"
     }
 }
