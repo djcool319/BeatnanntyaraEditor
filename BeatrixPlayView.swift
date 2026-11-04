@@ -442,7 +442,7 @@ final class BeatrixGameView: UIView, GameSessionView {
             fade(l, scaleFrom: 0.9, to: 1.05, duration: 0.2)
         } else if type == 3 && judge != .miss {
             // 赤ノーツ (本家の動画に合わせた): 判定線の横長のピンクの光 → 白く光る芯とピンクのにじみ (2 回脈打つ)
-            //   → 細い赤い輪と放射状の筋 → 小さな赤い星が散る → 判定線に小さなピンクの点が少し残る。画面全体もほんのり明るくなる
+            //   → 小さな赤い星が散る → 判定線に小さなピンクの点が少し残る。画面全体もほんのり明るくなる
             let pink = UIColor(red: 1.0, green: 0.35, blue: 0.55, alpha: 1)
             let red = UIColor(red: 1.0, green: 0.12, blue: 0.3, alpha: 1)
             let line = radial(third * 1.7, third * 0.22,
@@ -455,31 +455,6 @@ final class BeatrixGameView: UIView, GameSessionView {
                               [UIColor(white: 1, alpha: 1), UIColor(white: 1, alpha: 0.95), pink.withAlphaComponent(0.6), pink.withAlphaComponent(0)],
                               [0, 0.35, 0.65, 1])
             keyframes(core, duration: 0.34, times: [0, 0.12, 0.25, 0.4, 0.65, 1], opacity: [0.4, 1, 0.55, 1, 0.9, 0], scale: [0.4, 1, 0.85, 1, 0.75, 0.5])
-            // 細い輪と放射状の筋
-            let rr = third * 0.56
-            let ring = CAShapeLayer()
-            ring.path = CGPath(ellipseIn: CGRect(x: -rr, y: -rr, width: rr * 2, height: rr * 2), transform: nil)
-            ring.fillColor = nil
-            ring.strokeColor = red.cgColor
-            ring.lineWidth = max(1.5, third * 0.018)
-            let spokes = CAShapeLayer()
-            let sp = CGMutablePath()
-            for k in 0..<28 {
-                let a = CGFloat(k) / 28 * 2 * .pi + CGFloat.random(in: -0.08...0.08)
-                let r0 = rr * CGFloat.random(in: 0.45...0.7)
-                sp.move(to: CGPoint(x: cos(a) * r0, y: sin(a) * r0))
-                sp.addLine(to: CGPoint(x: cos(a) * rr * 0.97, y: sin(a) * rr * 0.97))
-            }
-            spokes.path = sp
-            spokes.fillColor = nil
-            spokes.strokeColor = pink.withAlphaComponent(0.55).cgColor
-            spokes.lineWidth = 1
-            for l in [ring, spokes] {
-                l.position = center
-                effectHost.addSublayer(l)
-                made.append(l)
-                keyframes(l, duration: 0.42, times: [0, 0.12, 0.22, 0.6, 1], opacity: [0, 0, 1, 0.7, 0], scale: [0.8, 0.8, 0.95, 1.02, 1.06])
-            }
             // 赤い星 (判定線のまわりに散って、外へ流れる)
             for _ in 0..<8 {
                 let st = CAShapeLayer()
