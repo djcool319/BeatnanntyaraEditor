@@ -33,10 +33,21 @@ extension EditorState {
     }
 
     /// Quit: 再生を止めて、保存して、エディタを閉じる (確認ダイアログなし)
+    ///   保存できていないときだけ、閉じる前に聞く (書き出す / 保存せずに閉じる / やめる)
     func quitEditor() {
         if isPlaying { pause() }
         saveNow()
-        onClose?()
+        if !saveFailed {
+            onClose?()
+            return
+        }
+        ChoicePrompt.show(title: "譜面を保存できていません",
+                          message: "このまま閉じると、作った譜面が消えます。「書き出す」で別の場所に保存してから閉じてください。",
+                          actions: [
+                            .init(title: "書き出す") { [weak self] in self?.shareMCZNow() },
+                            .init(title: "保存せずに閉じる", style: .destructive) { [weak self] in self?.onClose?() },
+                            .init(title: "やめる", style: .cancel) {}
+                          ], delay: 0.1)
     }
 }
 

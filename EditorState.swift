@@ -300,6 +300,11 @@ final class EditorState: ObservableObject {
     private var corrValid = false
     private var lastCorrWall = 0.0
     private var saveWork: DispatchWorkItem?
+    /// 最後の保存がどこにも書けなかった (このまま閉じると譜面が消えるかもしれない)
+    private(set) var saveFailed = false
+    private var warnedSaveFail = false
+    /// 新しい譜面: 最初に保存できたとき、保存先を知らせる
+    private var announceSaveLocation = false
     private var toastWork: DispatchWorkItem?
     var seekWasPlaying = false
 
@@ -367,6 +372,7 @@ final class EditorState: ObservableObject {
             self.snapDen = d
         }
         recomputeTotal()
+        self.announceSaveLocation = c.notes.isEmpty
         let ud = UserDefaults.standard
         if let v = ud.object(forKey: "editor.musicVolume") as? Double { self.musicVolume = min(max(v, 0), 1) }
         if let v = ud.object(forKey: "editor.noteVolume") as? Double { self.noteVolume = min(max(v, 0), 1) }
@@ -869,6 +875,8 @@ final class EditorState: ObservableObject {
 
     func saveNow() {
         saveWork?.cancel()
+        var saved = false
+        var why = ""
         do {
             let data = try chart.beatrixData()
             let dir = chartDir
@@ -877,25 +885,67 @@ final class EditorState: ObservableObject {
             let inApp = Self.samePath(mcURL.deletingLastPathComponent(), dir)
             if inApp {
                 // アプリ内の譜面: 曲名・難易度を変えたら、ファイル名も「曲名(EX).json」に付け替える
+                // (先に新しい名前で書けたときだけ、前のファイルを消す)
                 if mcURL.lastPathComponent != want.lastPathComponent {
-                    try? FileManager.default.removeItem(at: mcURL)
+                    let old = mcURL
+                    try data.write(to: want, options: .atomic)
+                    try? FileManager.default.removeItem(at: old)
                     mcURL = want
                 }
             } else if mcURL.lastPathComponent != want.lastPathComponent {
                 // 「ファイル」から開いた譜面で、曲名が変わった: 元のファイルは変えずに、アプリ内の「新しい名前.json」へ保存を切り替える
                 mcURL = want
             } else {
-                try? data.write(to: want)          // 「ファイル」から開いた譜面も、アプリ内に控えを残す
+                try? data.write(to: want, options: .atomic)          // 「ファイル」から開いた譜面も、アプリ内に控えを残す
             }
             do {
-                try data.write(to: mcURL)
+                try data.write(to: mcURL, options: .atomic)
                 saveStatus = "保存済み"
+                saved = true
             } catch {
-                saveStatus = "元ファイルに書込不可(アプリ内に保存)"
+                // 元のファイルに書けない: アプリ内の BeatrixEditor フォルダに書く
+                let backup = Self.appChartDirectory().appendingPathComponent(chart.bxFileName)
+                if (try? data.write(to: backup, options: .atomic)) != nil {
+                    saveStatus = "元ファイルに書込不可(アプリ内に保存)"
+                    saved = true
+                } else {
+                    why = error.localizedDescription
+                }
             }
         } catch {
-            saveStatus = "保存失敗"
+            why = error.localizedDescription
         }
+        if saved {
+            saveFailed = false
+            warnedSaveFail = false
+            if announceSaveLocation {
+                announceSaveLocation = false
+                showToast("保存先: \(Self.filesLocation(mcURL))", seconds: 5)
+            }
+            return
+        }
+        saveStatus = "保存失敗"
+        saveFailed = true
+        if !warnedSaveFail {
+            warnedSaveFail = true
+            ChoicePrompt.show(title: "譜面を保存できていません",
+                              message: "\(why)\n\nこのまま閉じると、作った譜面が消えるかもしれません。「書き出す」で別の場所 (ファイル / AirDrop など) に保存してください。",
+                              actions: [
+                                .init(title: "書き出す") { [weak self] in self?.shareMCZNow() },
+                                .init(title: "あとで", style: .cancel) {}
+                              ], delay: 0.1)
+        }
+    }
+
+    /// 「ファイル」アプリでの場所 (例: このiPad内 > BeatTriX Editor > BeatrixEditor > 曲名(EX).json)
+    static func filesLocation(_ url: URL) -> String {
+        let docs = normalizedPath(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+        let p = normalizedPath(url)
+        guard p.hasPrefix(docs + "/") else { return url.lastPathComponent }
+        let appName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "アプリ"
+        let rest = String(p.dropFirst(docs.count + 1)).split(separator: "/").joined(separator: " > ")
+        return "このiPad内 > \(appName) > \(rest)"
     }
 
     /// パスを比べるための形 (/private/var と /var の違いをなくす)

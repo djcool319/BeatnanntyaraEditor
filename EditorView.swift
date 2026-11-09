@@ -624,13 +624,15 @@ struct RightPanel: View {
             }
             .overlay(alignment: .bottom) {
                 // 保存の状態 (オートセーブ)。下の2つのアイコンの上の余白に、小さく出す (レイアウトには影響しない)
+                // 押すと保存先を出す。保存できていないときは赤くする
                 Text(state.saveStatus)
-                    .font(.system(size: 9))
-                    .foregroundColor(Color.white.opacity(0.55))
+                    .font(.system(size: 9, weight: state.saveStatus == "保存失敗" ? .bold : .regular))
+                    .foregroundColor(state.saveStatus == "保存失敗" ? Color(red: 1, green: 0.35, blue: 0.35) : Color.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .frame(width: Self.width - 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture { state.showToast("保存先: \(EditorState.filesLocation(state.mcURL))", seconds: 5) }
                     .padding(.bottom, Self.edgeInset + pitch * CGFloat(Self.bottomCount) + 1)
-                    .allowsHitTesting(false)
             }
         }
         // BPM / Effect の右ウィンドウが開いているあいだは、本家と同じくアイコンが見えなくなる (ウィンドウが列の上まで覆う)
