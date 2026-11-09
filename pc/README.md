@@ -58,6 +58,8 @@ iPad で作った譜面を PC で開いて続きを作り、また iPad に戻�
 - テストプレイ: 上の「▶ プレイ」か P。iPad 版と同じ判定・見た目。D 左 / F 中央左 / J 中央右 / K 右 (押した瞬間にタップ、押している間にワイプ・ホールド・スライド)。Esc でポーズ (スクロール速度・判定の位置・補正・オート・ノーツ音)
 - 範囲選択 (9): iPad の Time range と同じ。始点の拍 → 終点の拍で、その間のノーツを全部選ぶ
 - ノーツ音: 設定タブで タップ / ワイプ / 赤 の音を好きなファイル (ogg / mp3 / wav) に変えられる
+- 再生の速さ (設定タブ): ×0.75 / ×0.5 / ×0.25。遅くしても音程は変わらない (Rubber Band。iPad 版と同じやり方で、再生する位置から少しずつ伸ばして鳴らす)。動かなかったときは知らせて、音程ごと遅くして鳴らす
+- ノーツの重なり: 同じ拍・同じ場所に、赤タップ同士 / 赤タップと白タップ / ワイプとタップなどが 2 個以上ある所と、まったく同じスライドが 2 本ある所を、オレンジの点線と右の数字で示す。下の帯の「⚠ ノーツの重なり ○ か所」を押すと、次の所へ移って選ぶ (白タップ同士はもともとピンク。スライドの始点に置いたタップ・赤タップ・ワイプは始点なので数えない。ダミーは数えない)
 - BPM・offset の自動検出: 「曲の情報」の「BPM・offset を自動検出」。ノーツが無い譜面に曲を読むと自動で始まる (iPad 版と同じ解析。倍・半分の候補、0 拍目のずらし、BPM 変化の目安)
 
 ## 開発
@@ -73,5 +75,7 @@ npm run pack:win   # exe を作る (dist/BeatTriXEditor-win32-x64)
 - `renderer/js/editor.js` … 編集の操作 (EditorState+Tools / +Beatrix と同じ動き)
 - `renderer/js/view.js` … レーンの描画 (Renderers.swift と同じ色・形)
 - `renderer/js/audio.js` … 再生 (Web Audio。曲とノーツ音を同じ AudioContext の時刻に予約)
+- `renderer/js/stretch.js` + `renderer/vendor/rubberband-wasm.js` … 音程を変えずに遅くする (Rubber Band を WebAssembly にしたもの。Worker で動かす)。作り直すときは `tools/build-rubberband.sh`。`npm test` で長さ・音の高さ・位置を確かめる
+  - Rubber Band は GPL v2 以上。リポジトリを公開して配る分には GPL で足りる (ソースを出さずに配るなら商用ライセンスが要る。iPad 版と同じ)
 - `renderer/js/sounddata.js` … ノーツ音 (BeatrixSoundData.swift と同じ音)
 - GitHub Actions: `.github/workflows/build-pc.yml` (pc フォルダを変えると Windows でビルド → Releases の pc-latest)

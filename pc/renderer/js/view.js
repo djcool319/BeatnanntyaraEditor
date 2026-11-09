@@ -202,6 +202,66 @@
     c.restore();
   }
 
+  /// 意図しない重なりを探す。
+  ///   ・同じ拍・同じ場所 (7 鍵の block) に、2 個以上のタップ / 赤タップ / ワイプがあって、白タップだけではない所
+  ///     (白タップだけの重なりは、もともとピンクで描くので入れない)
+  ///   ・始点も中継点もまったく同じスライドが 2 本以上ある所
+  ///   スライドの始点に置いたタップ・赤タップ・ワイプは始点になるので、重なりにしない。ダミーは数えない
+  /// 戻り値: [{ beat, ids: [ノーツの id, ...] }, ...] (拍の順)
+  function findOverlaps(notes) {
+    const groups = new Map();
+    const slides = new Map();
+    const add = (m, k, n) => { let l = m.get(k); if (!l) { l = []; m.set(k, l); } l.push(n); };
+    for (const n of notes) {
+      if (F.isDummy(n)) continue;
+      if (F.isSlide(n)) {
+        add(slides, Beat.key(n.beat) + '|' + n.x + '|' + n.segs.map(s => Beat.key(s.beat) + ',' + s.x).join(';'), n);
+      } else {
+        add(groups, F.keyOf(n.beat, F.blockOfX(n.x)), n);
+      }
+    }
+    const out = [];
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      if (list.every(n => n.type !== 3 && n.type !== 4)) continue;
+      out.push({ beat: list[0].beat, ids: list.map(n => n.id) });
+    }
+    for (const list of slides.values()) if (list.length >= 2) out.push({ beat: list[0].beat, ids: list.map(n => n.id) });
+    out.sort((a, b) => Beat.cmp(a.beat, b.beat));
+    return out;
+  }
+
+  /// 重なっているノーツを、オレンジの点線で囲んで、レーンの右に「!」を出す
+  function drawOverlaps(c, g, notes) {
+    const list = findOverlaps(notes);
+    if (list.length === 0) return;
+    const byId = new Map(notes.map(n => [n.id, n]));
+    c.save();
+    for (const o of list) {
+      const y = g.py(Beat.val(o.beat));
+      if (y < -30 || y > g.H + 30) continue;
+      let xL = Infinity, xR = -Infinity;
+      for (const id of o.ids) {
+        const n = byId.get(id);
+        if (!n) continue;
+        const hw = n.w / 255 * g.trackW / 2;
+        xL = Math.min(xL, g.px(n.x) - hw); xR = Math.max(xR, g.px(n.x) + hw);
+      }
+      if (!isFinite(xL)) continue;
+      rr(c, xL - 4, y - TAP_H / 2 - 4, xR - xL + 8, TAP_H + 8, 4);
+      c.setLineDash([4, 3]);
+      c.lineWidth = 2; c.strokeStyle = '#ff9a1f'; c.stroke();
+      c.setLineDash([]);
+      const bx = g.trackL + g.trackW + 14;
+      c.beginPath(); c.arc(bx, y, 8, 0, Math.PI * 2); c.fillStyle = '#ff9a1f'; c.fill();
+      c.fillStyle = '#1a1206'; c.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(o.ids.length), bx, y + 0.5);
+      c.textAlign = 'start'; c.textBaseline = 'alphabetic';
+    }
+    c.restore();
+  }
+
   function draw(canvas, ed, extra) {
     const dpr = window.devicePixelRatio || 1;
     const W = canvas.clientWidth, H = canvas.clientHeight;
@@ -307,6 +367,7 @@
     }
     drawNotes(c, g, chart.notes, ed.selected);
     drawMarks(c, g, chart.notes);
+    drawOverlaps(c, g, chart.notes);
 
     // Slide modify: 選んでいるスライドの中継点に輪
     if (ed.tool === 'modify' && ed.modifyId) {
@@ -444,5 +505,5 @@
     return (neg ? '-' : '') + m + ':' + (r < 10 ? '0' : '') + r.toFixed(3);
   }
 
-  window.BXView = { draw, makeGeo, fmtTime, fmt };
+  window.BXView = { draw, makeGeo, fmtTime, fmt, findOverlaps };
 })();

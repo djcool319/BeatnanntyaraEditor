@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: data:; img-src 'self' data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; media-src 'self' blob: data:; img-src 'self' data:">
 <title>BeatTriX Editor</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -167,8 +167,9 @@
       <label>ノーツ音の音量<input type="range" id="volSE" min="0" max="1" step="0.01"></label>
       <label class="chk"><input type="checkbox" id="wheelStops"> 再生中にホイールを回したら止める</label>
       <label>再生の速さ
-        <select id="rate"><option value="1">×1.0</option><option value="0.75">×0.75 (音程も下がる)</option><option value="0.5">×0.5 (音程も下がる)</option></select>
+        <select id="rate"><option value="1">×1.0</option><option value="0.75">×0.75</option><option value="0.5">×0.5</option><option value="0.25">×0.25</option></select>
       </label>
+      <p class="muted">遅くしても音程は変わりません (Rubber Band)。</p>
       <label>画面の遅れの補正 (ms)<input type="number" id="latency" step="1"></label>
       <div class="sub">ノーツ音</div>
       <div id="seRows"></div>
@@ -219,6 +220,7 @@
 <footer id="status">
   <span id="statusText">F1 でショートカット一覧</span>
   <span class="spacer"></span>
+  <button id="overlapWarn" class="overlap-warn hidden" title="クリックで次の重なりへ"></button>
   <span id="dirtyMark"></span>
 </footer>
 
@@ -235,6 +237,8 @@
 <script src="js/sounddata.js"></script>
 <script src="js/format.js"></script>
 <script src="js/shapes.js"></script>
+<script src="vendor/rubberband-wasm.js"></script>
+<script src="js/stretch.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/view.js"></script>

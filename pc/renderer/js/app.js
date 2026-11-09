@@ -7,6 +7,7 @@
 
   const ed = new window.BXEditor();
   const audio = new window.BXAudio();
+  audio.onStretchError = () => toast('音程を変えずに遅くする処理 (Rubber Band) が動かなかったので、音程ごと遅くして鳴らします');
   const lane = $('lane');
   const over = $('overview');
 
@@ -602,7 +603,26 @@
   }
   /// その欄の数字を打っている途中か (打っている途中は一覧を作り直さない)
   function editingIn(box) { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && box.contains(a); }
+  // 意図しない重なり (同じ拍・同じ場所の赤タップ / ワイプなど、まったく同じスライド)。下の帯に数を出して、押すと次の所へ
+  let overlapList = [];
+  function syncOverlaps() {
+    overlapList = window.BXView.findOverlaps(ed.chart.notes);
+    const b = $('overlapWarn');
+    b.classList.toggle('hidden', overlapList.length === 0);
+    b.textContent = '⚠ ノーツの重なり ' + overlapList.length + ' か所 (押すと次へ)';
+  }
+  $('overlapWarn').onclick = () => {
+    if (overlapList.length === 0) return;
+    const cur = ed.viewBeat + 1e-6;
+    const next = overlapList.find(o => Beat.val(o.beat) > cur) || overlapList[0];
+    stop();
+    ed.viewBeat = Math.max(0, Beat.val(next.beat) - 1);
+    ed.selected = new Set(next.ids);
+    needDraw = true;
+    scheduleUI();
+  };
   function syncUI() {
+    syncOverlaps();
     const bx = ed.chart.bx;
     setVal('mTitle', bx.name || '');
     setVal('mArtist', bx.artist || '');

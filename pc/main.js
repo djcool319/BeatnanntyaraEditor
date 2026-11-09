@@ -339,7 +339,26 @@ function smokeTest() {
       })()`);
       log.push('renderer: ' + res);
       const o = JSON.parse(res);
-      finish(o.same && o.notes === 4 && o.ui && o.audio && o.play);
+      // 音程を変えずに遅くする (Rubber Band の Worker) が、この exe の中で動くか
+      const rb = await win.webContents.executeJavaScript(`new Promise((resolve) => {
+        const a = new window.BXAudio();
+        if (!a.ensureWorker()) { resolve('no worker'); return; }
+        const sr = 44100, ch = [new Float32Array(sr), new Float32Array(sr)];
+        for (let i = 0; i < sr; i++) { ch[0][i] = ch[1][i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / sr); }
+        const timer = setTimeout(() => resolve('timeout'), 15000);
+        a.worker.onmessage = (e) => {
+          clearTimeout(timer);
+          const m = e.data;
+          if (m.error) { resolve('error ' + m.error); return; }
+          resolve('ok ' + m.channels.length + 'ch ' + m.channels[0].length);
+        };
+        a.worker.onerror = (e) => { clearTimeout(timer); resolve('worker error ' + e.message); };
+        a.worker.postMessage({ type: 'load', key: 1, sampleRate: sr, channels: ch });
+        a.worker.postMessage({ type: 'start', job: 1, key: 1, rate: 0.5, from: 0, finer: true });
+        a.worker.postMessage({ type: 'more', job: 1, frames: 22050 });
+      })`);
+      log.push('rubberband: ' + rb);
+      finish(o.same && o.notes === 4 && o.ui && o.audio && o.play && rb === 'ok 2ch 22050');
     } catch (e) {
       log.push('renderer error: ' + e.message);
       finish(false);
