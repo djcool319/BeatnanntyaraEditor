@@ -373,6 +373,7 @@ final class EditorState: ObservableObject {
         }
         recomputeTotal()
         self.announceSaveLocation = c.notes.isEmpty
+        rememberContent(of: mcURL)
         let ud = UserDefaults.standard
         if let v = ud.object(forKey: "editor.musicVolume") as? Double { self.musicVolume = min(max(v, 0), 1) }
         if let v = ud.object(forKey: "editor.noteVolume") as? Double { self.noteVolume = min(max(v, 0), 1) }
@@ -877,6 +878,7 @@ final class EditorState: ObservableObject {
         saveWork?.cancel()
         var saved = false
         var why = ""
+        var results: [WriteResult] = []
         do {
             let data = try chart.beatrixData()
             let dir = chartDir
@@ -885,27 +887,30 @@ final class EditorState: ObservableObject {
             let inApp = Self.samePath(mcURL.deletingLastPathComponent(), dir)
             if inApp {
                 // アプリ内の譜面: 曲名・難易度を変えたら、ファイル名も「曲名(EX).json」に付け替える
-                // (先に新しい名前で書けたときだけ、前のファイルを消す)
+                // (新しい名前で書けてから、前のファイルを消す。新しい名前のファイルが前からあれば、その中身はバックアップに残る)
                 if mcURL.lastPathComponent != want.lastPathComponent {
                     let old = mcURL
-                    try data.write(to: want, options: .atomic)
+                    results.append(try writeChart(data, to: want))
                     try? FileManager.default.removeItem(at: old)
                     mcURL = want
                 }
             } else if mcURL.lastPathComponent != want.lastPathComponent {
                 // 「ファイル」から開いた譜面で、曲名が変わった: 元のファイルは変えずに、アプリ内の「新しい名前.json」へ保存を切り替える
                 mcURL = want
-            } else {
-                try? data.write(to: want, options: .atomic)          // 「ファイル」から開いた譜面も、アプリ内に控えを残す
+            } else if !Self.samePath(want, mcURL) {
+                // 「ファイル」から開いた譜面も、アプリ内に控えを残す。
+                // ただし、アプリ内に別の内容の同じ名前の譜面があるときは、それには触らない (上書きしない)
+                if let r = try? writeChart(data, to: want, keepForeign: true) { results.append(r) }
             }
             do {
-                try data.write(to: mcURL, options: .atomic)
+                results.append(try writeChart(data, to: mcURL))
                 saveStatus = "保存済み"
                 saved = true
             } catch {
-                // 元のファイルに書けない: アプリ内の BeatrixEditor フォルダに書く
+                // 元のファイルに書けない: アプリ内の BeatrixEditor フォルダに書く (そこに別の内容があれば、バックアップに残してから)
                 let backup = Self.appChartDirectory().appendingPathComponent(chart.bxFileName)
-                if (try? data.write(to: backup, options: .atomic)) != nil {
+                if let r = try? writeChart(data, to: backup) {
+                    results.append(r)
                     saveStatus = "元ファイルに書込不可(アプリ内に保存)"
                     saved = true
                 } else {
@@ -914,6 +919,11 @@ final class EditorState: ObservableObject {
             }
         } catch {
             why = error.localizedDescription
+        }
+        for r in results {
+            if case .backedUpForeign(let b) = r {
+                showToast("前からあった同じ名前の譜面は、バックアップに残しました\n\(Self.filesLocation(b))", seconds: 6)
+            }
         }
         if saved {
             saveFailed = false
@@ -935,6 +945,89 @@ final class EditorState: ObservableObject {
                                 .init(title: "あとで", style: .cancel) {}
                               ], delay: 0.1)
         }
+    }
+
+    // MARK: 譜面ファイルを安全に書く
+    //   ・中身が同じなら書かない
+    //   ・このエディタで開いた / 書いた内容 (knownContent) と違う中身 = 別の譜面が入っていたら、
+    //     その中身を必ずバックアップ (このiPad内 > BeatTriX Editor > バックアップ) に残してから書く (残せなければ書かない)
+    //     keepForeign = true のときは、書かずにそのままにする
+    //   ・自分の譜面でも、5 分に 1 回は前の中身をバックアップに残す (開いてから最初に変えたときも残る)
+
+    enum WriteResult { case unchanged, written, keptForeign, backedUpForeign(URL) }
+    enum SaveError: LocalizedError {
+        case backupFailed
+        var errorDescription: String? { "前の内容をバックアップに残せなかったので、上書きしませんでした" }
+    }
+
+    private var knownContent: [String: Data] = [:]
+    private var lastBackupAt: [String: Date] = [:]
+
+    func rememberContent(of url: URL) {
+        if let d = try? Data(contentsOf: url) { knownContent[Self.normalizedPath(url)] = d }
+    }
+
+    @discardableResult
+    func writeChart(_ data: Data, to url: URL, keepForeign: Bool = false) throws -> WriteResult {
+        let key = Self.normalizedPath(url)
+        if let ex = try? Data(contentsOf: url), !ex.isEmpty {
+            if ex == data {
+                knownContent[key] = data
+                return .unchanged
+            }
+            if knownContent[key] != ex {
+                if keepForeign { return .keptForeign }
+                guard let b = Self.backupChart(ex, name: url.lastPathComponent) else { throw SaveError.backupFailed }
+                try data.write(to: url, options: .atomic)
+                knownContent[key] = data
+                lastBackupAt[key] = Date()
+                return .backedUpForeign(b)
+            }
+            if Date().timeIntervalSince(lastBackupAt[key] ?? .distantPast) > 300 {
+                Self.backupChart(ex, name: url.lastPathComponent)
+                lastBackupAt[key] = Date()
+            }
+        }
+        try data.write(to: url, options: .atomic)
+        knownContent[key] = data
+        return .written
+    }
+
+    /// バックアップの置き場所 (「ファイル」アプリの このiPad内 > BeatTriX Editor > バックアップ)。曲名から譜面を探すときは見ない
+    static func backupDirectory() -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("バックアップ", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// 譜面の中身を「曲名(EX) 2026-11-09 21.07.30.json」の名前でバックアップに残す (新しい方から 500 個まで)
+    @discardableResult
+    static func backupChart(_ data: Data, name: String) -> URL? {
+        let fm = FileManager.default
+        let dir = backupDirectory()
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let stem = (name as NSString).deletingPathExtension
+        let stamp = f.string(from: Date())
+        var url = dir.appendingPathComponent("\(stem) \(stamp).json")
+        var k = 2
+        while fm.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent("\(stem) \(stamp) \(k).json")
+            k += 1
+        }
+        do { try data.write(to: url, options: .atomic) } catch { return nil }
+        if let list = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]),
+           list.count > 500 {
+            let sorted = list.sorted {
+                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a > b
+            }
+            for u in sorted.dropFirst(500) { try? fm.removeItem(at: u) }
+        }
+        return url
     }
 
     /// 「ファイル」アプリでの場所 (例: このiPad内 > BeatTriX Editor > BeatrixEditor > 曲名(EX).json)

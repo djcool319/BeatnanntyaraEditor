@@ -781,6 +781,7 @@ extension EditorState {
         ghost = nil
         chart = c
         mcURL = url
+        rememberContent(of: url)
         clearHistory()
         chartChanged()
     }

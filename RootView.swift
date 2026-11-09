@@ -193,8 +193,55 @@ struct RootView: View {
         message = auto ? "曲名から譜面を入れました: \(url.lastPathComponent)" : ""
     }
 
+    /// 「エディタを開く」。「ファイル」から選んだ譜面と同じ名前の譜面がアプリ内に別の内容であれば、どちらを開くか聞く
+    ///   (前は、選んだ方を開くと、アプリ内の方 (新しく作業していた方) が控えの保存で上書きされて消えていた)
     private func openEditor() {
         guard let url = mcURL else { return }
+        guard let data = (try? Data(contentsOf: url)) ?? mcData,
+              let chart = try? ChartData.parseBeatrix(data) else {
+            openEditor(at: url)
+            return
+        }
+        let inside = EditorState.chartDirectory(json: url, audio: oggURL).appendingPathComponent(chart.bxFileName)
+        guard !EditorState.samePath(inside, url),
+              let other = try? Data(contentsOf: inside), other != data,
+              let otherChart = try? ChartData.parseBeatrix(other) else {
+            openEditor(at: url)
+            return
+        }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ja_JP")
+        f.dateFormat = "yyyy/MM/dd HH:mm"
+        func date(_ u: URL) -> Date { (try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
+        let dPicked = date(url), dInside = date(inside)
+        let newerInside = dInside > dPicked
+        let msg = """
+        選んだ譜面: \(url.lastPathComponent)
+        \(f.string(from: dPicked)) ・ ノーツ \(chart.notes.count) 個\(newerInside ? "" : " (新しい)")
+
+        アプリ内: \(EditorState.filesLocation(inside))
+        \(f.string(from: dInside)) ・ ノーツ \(otherChart.notes.count) 個\(newerInside ? " (新しい)" : "")
+
+        どちらを開きますか？ (開かなかった方も消しません)
+        """
+        ChoicePrompt.show(title: "アプリ内に、同じ名前の別の譜面があります", message: msg, actions: [
+            .init(title: "アプリ内の方を開く" + (newerInside ? " (新しい)" : "")) {
+                mcURL = inside
+                mcName = inside.lastPathComponent
+                openEditor(at: inside)
+            },
+            .init(title: "選んだ方を開く" + (newerInside ? "" : " (新しい)")) {
+                // アプリ内の方は、バックアップに残してから、選んだ方と同じ中身にそろえる
+                if EditorState.backupChart(other, name: inside.lastPathComponent) != nil {
+                    try? data.write(to: inside, options: .atomic)
+                }
+                openEditor(at: url)
+            },
+            .init(title: "やめる", style: .cancel) {}
+        ], delay: 0.1)
+    }
+
+    private func openEditor(at url: URL) {
         // 最初に選んだ時点の mcData は、編集前の古い内容。Quit で戻ってきたあとにそれで開き直すと、
         // 編集した内容が消えるうえ、オートセーブ (アプリを離れたときの保存も) で、保存済みのファイルが古い内容で上書きされてしまう。
         // → 開くたびに、ファイルから読み直す (読めなかったときだけ、選んだときの内容を使う)
@@ -293,6 +340,7 @@ enum ChartFinder {
                 count += 1
                 if count > 8000 { break }
                 if en.level > 6 { en.skipDescendants(); continue }
+                if u.lastPathComponent == "バックアップ" && root == docs { en.skipDescendants(); continue }
                 guard u.pathExtension.lowercased() == "json" else { continue }
                 let path = u.standardizedFileURL.path
                 if seen.contains(path) { continue }
