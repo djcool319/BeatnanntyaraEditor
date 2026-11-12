@@ -38,8 +38,9 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let tapWidth = 0.3027
     private let sideWidth = 0.2825
     /// ノーツの厚み (奥行き)。本家のプレハブ: タップ 0.02 / ワイプ 0.015
-    private let tapDepth = 0.04             // 本家の画面収録で測った厚み (棒の下の暗い縁を含む)
-    private let wipeDepth = 0.034
+    /// (縦画面・2D は遠近で太くならないぶん、少し厚くする)
+    private var tapDepth: Double { session.flat2D ? 0.055 : 0.04 }             // 本家の画面収録で測った厚み (棒の下の暗い縁を含む)
+    private var wipeDepth: Double { session.flat2D ? 0.047 : 0.034 }
     // ------------------------
 
     private let source: BxPlayChart
@@ -52,6 +53,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     private let level: Double
     private let artist: String
     private var link: CADisplayLink?
+    /// 今の形を作ったときの「縦画面・2D」(ポーズ中に切り替えたら、形を作り直す)
+    private var layoutFlat = false
     private var running = false
     private var pausedT = 0.0
     private var silentHost = 0.0
@@ -283,7 +286,8 @@ final class BeatrixGameView: UIView, GameSessionView {
     private var judgeImagesHeight: CGFloat = 0
 
     private func judgeImage(_ j: BxJudge) -> UIImage? {
-        let h = bounds.height
+        // 文字の大きさの基準 (縦画面では横幅から。layoutSubviews と同じ)
+        let h = bounds.width < bounds.height ? bounds.width * 0.8 : bounds.height
         if h <= 0 { return nil }
         if judgeImagesHeight != h {
             judgeImages = [:]
@@ -572,12 +576,15 @@ final class BeatrixGameView: UIView, GameSessionView {
         shownGauge = -1
 
         let g = geo()
+        layoutFlat = session.flat2D
+        // 文字の大きさの基準 (縦画面では横幅から決める。大きくなりすぎないように)
+        let hs = w < h ? w * 0.8 : h
         // コンボ (本家: 大きな灰色の数字) と判定の文字 (本家: PERFECT!! など)
-        comboLabel.font = Self.roundedFont(h * 0.14, .heavy)
+        comboLabel.font = Self.roundedFont(hs * 0.14, .heavy)
         comboLabel.frame = CGRect(x: 0, y: h * 0.57 - h * 0.09, width: w, height: h * 0.18)
         judgeView.frame = CGRect(x: 0, y: h * 0.71 - h * 0.08, width: w, height: h * 0.16)
         shownJudgeKey = ""
-        earlyLabel.font = Self.roundedFont(h * 0.026, .heavy)
+        earlyLabel.font = Self.roundedFont(hs * 0.026, .heavy)
         earlyLabel.frame = CGRect(x: 0, y: h * 0.785, width: w, height: h * 0.035)
         countLabel.frame = CGRect(x: 0, y: h * 0.22, width: w, height: 70)
         // 歌詞: 判定ラインのすぐ上 (レーンの幅の中)
@@ -680,6 +687,7 @@ final class BeatrixGameView: UIView, GameSessionView {
     }
 
     @objc private func tick(_ l: CADisplayLink) {
+        if layoutFlat != session.flat2D { setNeedsLayout() }    // ポーズ中に「縦画面・2D」を切り替えた
         guard running else { return }
         audio?.refreshAnchor()
         let t = chartTime(at: uptime())
@@ -812,17 +820,23 @@ final class BeatrixGameView: UIView, GameSessionView {
     // MARK: 遠近
 
     /// 奥行き d (判定ライン = 0、奥が +) → 画面。消失点は画面の上の外にある (本家のスクリーンショットから測った比)
+    /// flat = true (縦画面・2D の試験モード): 遠近なし。レーンの幅はどこでも同じで、d に比例してまっすぐ上へ
     private struct Geo {
         let midX: CGFloat
         let judgeY: CGFloat
         let vanishY: CGFloat
         let halfJ: CGFloat          // 判定ラインでのレーンの半分の幅
+        var flat = false
+        var pxPerD: CGFloat = 1     // flat のとき: 奥行き 1 あたりの画面の長さ
 
-        func s(_ d: Double) -> CGFloat { CGFloat(1.0 / (1.0 + max(d, -0.85))) }
-        func y(_ d: Double) -> CGFloat { vanishY + (judgeY - vanishY) * s(d) }
+        func s(_ d: Double) -> CGFloat { flat ? 1 : CGFloat(1.0 / (1.0 + max(d, -0.85))) }
+        func y(_ d: Double) -> CGFloat {
+            flat ? judgeY - CGFloat(d) * pxPerD : vanishY + (judgeY - vanishY) * s(d)
+        }
         /// frac: レーンの左端 = 0 / 右端 = 1
         func x(_ frac: Double, _ d: Double) -> CGFloat { midX + CGFloat(frac - 0.5) * 2 * halfJ * s(d) }
         func depth(atY yy: CGFloat) -> Double {
+            if flat { return Double((judgeY - yy) / pxPerD) }
             let sv = (yy - vanishY) / (judgeY - vanishY)
             return Double(1 / max(sv, 0.01)) - 1
         }
@@ -832,6 +846,12 @@ final class BeatrixGameView: UIView, GameSessionView {
         let w = bounds.width
         let h = bounds.height
         let judgeY = h * 0.80
+        if session.flat2D {
+            // 縦画面・2D: レーンは画面の幅いっぱい近く (横画面で選んだときは、縦長の比になるように細く)。
+            // 先が見える長さは、遠近のとき (画面の上で奥行き約 1.8) と同じにする
+            let halfJ = min(w * 0.46, h * 0.36)
+            return Geo(midX: w / 2, judgeY: judgeY, vanishY: 0, halfJ: halfJ, flat: true, pxPerD: judgeY / 1.8)
+        }
         // レーンの幅: iPad (4:3) は本家の画面収録 (1920 × 1440) の値。iPhone (横長) は本家の iPhone の画面収録 (2532 × 1170) の値で、
         // 判定ラインでのレーンの幅が画面の高さの約 1.58 倍 (横の 73%)。そのあいだの比の画面は、比に合わせてなめらかに変える
         let t = Self.wideness(w, h)
@@ -848,7 +868,9 @@ final class BeatrixGameView: UIView, GameSessionView {
     /// 左上の帯・ゲージ・II などの大きさの単位。iPad は画面の高さ / 1440 (本家の画面収録の大きさ)。
     /// iPhone は本家の iPhone と同じく、高さに対して約 1.35 倍
     static func hudUnit(_ size: CGSize) -> CGFloat {
-        size.height / 1440 * (1 + 0.35 * wideness(size.width, size.height))
+        // 縦画面: 横幅を 4:3 の横画面の高さに見立てる (帯が画面からはみ出さないように)
+        if size.width < size.height { return size.width * 0.75 / 1440 }
+        return size.height / 1440 * (1 + 0.35 * wideness(size.width, size.height))
     }
 
     private var depthSpeed: Double { baseDepthSpeed * min(max(session.speed, 0.5), 2.0) }
@@ -1325,6 +1347,9 @@ struct BeatrixPlayScreen: View {
             }
         }
         .statusBarHidden(true)
+        // 「縦画面・2D」(試験) がオンなら、プレイのあいだだけ画面を縦にする
+        .onAppear { if session.flat2D { AppOrientation.setPlayPortrait(true) } }
+        .onDisappear { AppOrientation.setPlayPortrait(false) }
         .compatHideSystemOverlays()
         .compatDeferBottomGestures()
         .onAppear {

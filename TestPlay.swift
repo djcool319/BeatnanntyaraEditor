@@ -1866,6 +1866,13 @@ final class GameSession: ObservableObject {
     @Published var judgeAtEdge: Bool {
         didSet { UserDefaults.standard.set(judgeAtEdge, forKey: "bx.judgeAtEdge") }
     }
+    /// びーとり式テストプレイの「縦画面・2D」(試験)。遠近なしで、まっすぐ上から流れる。オンのあいだは画面を縦にする
+    @Published var flat2D: Bool {
+        didSet {
+            UserDefaults.standard.set(flat2D, forKey: "bx.flat2D")
+            AppOrientation.setPlayPortrait(flat2D)
+        }
+    }
     /// びーとり式テストプレイの効果音 (オフにすると、タップ・ワイプ・赤・「しゅ〜」を鳴らさない)
     @Published var seOn: Bool {
         didSet { UserDefaults.standard.set(seOn, forKey: "bx.seOn") }
@@ -1889,6 +1896,7 @@ final class GameSession: ObservableObject {
         speed = s == 0 ? 1.0 : min(max(s, 0.5), 2.0)
         offsetMs = min(max(UserDefaults.standard.double(forKey: "slide.offset"), -300), 300)
         judgeAtEdge = (UserDefaults.standard.object(forKey: "bx.judgeAtEdge") as? Bool) ?? true
+        flat2D = UserDefaults.standard.bool(forKey: "bx.flat2D")
         seOn = (UserDefaults.standard.object(forKey: "bx.seOn") as? Bool) ?? true
         autoPlay = UserDefaults.standard.bool(forKey: "bx.autoPlay")
         var adj = (UserDefaults.standard.object(forKey: "bx.playAdjustMs") as? Double) ?? -30
@@ -3172,6 +3180,17 @@ struct PauseOverlay: View {
                     }
                     
                     // びーとり式テストプレイ: ジャストになる見た目の位置
+                    if session.chartOffsetRaw != nil {
+                        Toggle(isOn: $session.flat2D) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("縦画面・2D (試験)")
+                                Text("遠近なしで、上からまっすぐ流れる。オンにすると画面が縦になります")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 6) {
                         Text("判定の位置")
                         Picker("判定の位置", selection: $session.judgeAtEdge) {

@@ -122,14 +122,27 @@ final class AppOrientation {
     static func set(portrait: Bool) {
         guard PhoneLayout.isPhone else { return }
         UserDefaults.standard.set(portrait, forKey: key)
-        mask = portrait ? .portrait : .landscape
+        if !playPortrait { apply(portrait ? .portrait : .landscape) }
+    }
+
+    /// テストプレイの「縦画面・2D」(試験) のあいだだけ縦にする (iPad も)。終わったら、いつもの向きに戻す
+    private static var playPortrait = false
+    static func setPlayPortrait(_ on: Bool) {
+        if on == playPortrait { return }
+        playPortrait = on
+        apply(on ? .portrait : initialMask())
+    }
+
+    private static func apply(_ m: UIInterfaceOrientationMask) {
+        mask = m
+        let portrait = m == .portrait
         if #available(iOS 16.0, *) {
             for scene in UIApplication.shared.connectedScenes {
                 guard let ws = scene as? UIWindowScene else { continue }
                 for w in ws.windows {
                     w.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
                 }
-                ws.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+                ws.requestGeometryUpdate(.iOS(interfaceOrientations: m)) { _ in }
             }
         } else {
             // iOS 15: 向きを直接指定して、回し直してもらう
