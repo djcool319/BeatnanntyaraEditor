@@ -2458,6 +2458,8 @@ function makeEditor() {
   def('GetNoteSlideBodyX', (n, i) => native('segX', nid(n, 1, 'GetNoteSlideBodyX'), checkInt(i, 2, 'GetNoteSlideBodyX')));
   def('GetNoteFlag', () => 0);
   def('GetNoteGroup', () => 0);
+  // グループはこのエディタに無いので、何もしない (Malody のプラグインがよく呼ぶので、エラーや知らせは出さない)
+  def('SetNoteGroup', () => undefined);
   // 操作型プラグイン (OnClick / OnDragStart / OnDragMove) の中で、いま触れているレーン上の位置
   def('GetClickX', () => native('clickX'));
   def('GetClickBeat', () => beatTable(native('clickBeat')));
@@ -2528,7 +2530,14 @@ function makeEditor() {
   // ----- 画面表示・入力 -----
   def('ShowMessage', (s) => { native('message', tostr(s)); });
   def('ShowTip', (s) => { native('tip', tostr(s)); });
-  def('GetUserInput', (title, dflt) => native('input', title === undefined ? '' : tostr(title), dflt === undefined ? '' : tostr(dflt)));
+  // GetUserInput(題, 初期値) は入力を返す。Malody V 5 系の書き方 GetUserInput(題, 初期値, function(入力) ... end) にも対応:
+  // 入力が決まったらその関数を呼ぶ (キャンセルしたときは呼ばない)
+  def('GetUserInput', (title, dflt, cb) => {
+    const v = native('input', title === undefined ? '' : tostr(title), dflt === undefined ? '' : tostr(dflt));
+    if (cb === undefined || cb === null) return v;
+    if (v !== undefined) call(cb, v);
+    return undefined;
+  });
 
   // ----- スプライト (レーンの上に画像を重ねる。操作型プラグインのつまみなど) -----
   //   モジュールの .Beat (拍の表) / .X (中心。レーン幅に対する %) / .Width (幅。レーン幅に対する %) を書き換えると、すぐ画面に反映される
@@ -2566,7 +2575,7 @@ function makeEditor() {
   });
 
   // ----- まだ対応していない API (呼ばれたら画面で知らせる) -----
-  const unsupported = ['SetNoteFlag', 'SetNoteGroup', 'WriteFilePlugin', 'ReadFileSelect', 'ReadBytesSelect',
+  const unsupported = ['SetNoteFlag', 'WriteFilePlugin', 'ReadFileSelect', 'ReadBytesSelect',
     'ReadData', 'WriteData', 'WriteChartCustom', 'CallShortcut', 'GetUserSelect', 'GetUserOption',
     'AddText', 'AddSpriteUndo', 'AddTextUndo', 'RemoveSpriteUndo'];
   for (const name of unsupported) {
